@@ -16,32 +16,17 @@ export function BrandMark({
       aria-hidden="true"
       className={`vr-brand-mark${pulsing ? ' is-pulsing' : ''}${className ? ` ${className}` : ''}`}
     >
-      <rect width="36" height="36" rx="7" fill="var(--vr-accent-brand)" />
-      <path
-        d="M10.5 11.5C13.5 13.4 14.8 15.5 14.8 18C14.8 20.5 13.5 22.6 10.5 24.5"
-        stroke="#FFFFFF"
-        strokeWidth="2.1"
-        strokeLinecap="round"
-      />
-      <path
-        d="M25.5 11.5C22.5 13.4 21.2 15.5 21.2 18C21.2 20.5 22.5 22.6 25.5 24.5"
-        stroke="#FFFFFF"
-        strokeWidth="2.1"
-        strokeLinecap="round"
-      />
-      <path
-        d="M14.5 18H21.5"
-        stroke="#B9D3EC"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-      <circle cx="18" cy="18" r="2.4" fill="#FFFFFF" className="vr-mark-node" />
+      <circle cx="18" cy="18" r="18" fill="var(--vr-accent-brand)" />
+      <circle cx="10.5" cy="18" r="1.5" fill="#FFFFFF" />
+      <rect x="14.2" y="13.5" width="2.4" height="9" rx="1.2" fill="#FFFFFF" />
+      <circle cx="19.5" cy="18" r="1.5" fill="#FFFFFF" className="vr-mark-node" />
+      <rect x="23" y="11.5" width="2.4" height="13" rx="1.2" fill="#FFFFFF" />
     </svg>
   );
 }
 
 export function BrandWordmark({
-  size = 24,
+  size = 28,
   className = '',
 }: {
   size?: number;

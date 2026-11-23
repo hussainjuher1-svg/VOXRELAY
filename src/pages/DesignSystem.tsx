@@ -19,13 +19,13 @@ import { Badge } from '../components/ui/Primitives';
 import { Select } from '../components/ui/Select';
 
 const SWATCHES = [
-  { name: 'Cool White Canvas', token: '--vr-paper', hex: '#F7F9FB', contrast: '14.9:1 vs Ink' },
-  { name: 'Pale Blue Panel', token: '--vr-panel-blue', hex: '#EAF1F8', contrast: 'Diagram surface' },
-  { name: 'Surface White', token: '--vr-card', hex: '#FFFFFF', contrast: '15.4:1 vs Ink' },
-  { name: 'Dark Ink', token: '--vr-ink', hex: '#162634', contrast: 'Primary copy & heading' },
-  { name: 'Deep Blue', token: '--vr-accent-brand', hex: '#174A7E', contrast: '8.7:1 AA Primary CTA' },
-  { name: 'Rule Hairline', token: '--vr-hairline', hex: '#DCE3EC', contrast: 'Section dividers' },
-  { name: 'Verified Green', token: '--vr-ok', hex: '#047857', contrast: '5.4:1 AA Semantic' },
+  { name: 'Cream Paper', token: '--vr-paper', hex: '#F8F4EC', contrast: '15.2:1 vs Ink' },
+  { name: 'Forest Green', token: '--vr-forest', hex: '#184D42', contrast: 'Hero blob & marquee' },
+  { name: 'Deep Forest', token: '--vr-dark', hex: '#112A24', contrast: 'Workspace preview band' },
+  { name: 'Terracotta', token: '--vr-accent-brand', hex: '#DE4E26', contrast: 'Primary CTA & Stage 01' },
+  { name: 'Marigold Gold', token: '--vr-gold', hex: '#F2B632', contrast: 'Badge, underline & Stage 02' },
+  { name: 'Sage Mint', token: '--vr-sage', hex: '#96B5AA', contrast: 'Stage 04 card' },
+  { name: 'Ink Pine', token: '--vr-ink', hex: '#162E2A', contrast: 'Primary display & rules' },
 ];
 
 export function DesignSystemPage() {
@@ -72,8 +72,8 @@ export function DesignSystemPage() {
               <BrandWordmark size={34} />
               <p className="editorial-prose">
                 {isAr
-                  ? 'قوسا تواصل بشري يربط بينهما محور ارتكاز ثابت بلون الأخضر النهري.'
-                  : 'Opposing acoustic relay arches bridged across a steady human checkpoint node.'}
+                  ? 'دائرة الطمي الدافئ (#DE4E26) مع أشرطة الموجة الصوتية ونقطة الارتكاز البيضاء.'
+                  : 'Terracotta circular signal emblem (#DE4E26) with paired waveform bars and human anchor dots.'}
               </p>
             </div>
             <div className="editorial-card">

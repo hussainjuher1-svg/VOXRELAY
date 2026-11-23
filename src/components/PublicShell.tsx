@@ -34,11 +34,15 @@ export function PublicShell({
   const navItems = isAr
     ? [
         { to: '/how-it-works', label: 'آلية العمل' },
-        { to: '/privacy', label: 'الخصوصية' },
+        { to: '/interpreters', label: 'للمترجمين' },
+        { to: '/organizations', label: 'للمؤسسات' },
+        { to: '/privacy', label: 'الثقة' },
       ]
     : [
         { to: '/how-it-works', label: 'How it works' },
-        { to: '/privacy', label: 'Privacy' },
+        { to: '/interpreters', label: 'For interpreters' },
+        { to: '/organizations', label: 'For organizations' },
+        { to: '/privacy', label: 'Trust' },
       ];
 
   return (
@@ -49,23 +53,21 @@ export function PublicShell({
 
       <header className="pub-header">
         <div className="pub-header-inner">
-          <div className="pub-header-left">
-            <Link to="/" className="brand-wordmark-link" aria-label="VOXRELAY">
-              <BrandWordmark size={22} />
-            </Link>
+          <Link to="/" className="brand-wordmark-link" aria-label="VOXRELAY">
+            <BrandWordmark size={28} />
+          </Link>
 
-            <nav className="pub-nav" aria-label={isAr ? 'التنقل الرئيسي' : 'Primary'}>
-              {navItems.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  className={({ isActive }) => `pub-nav-link${isActive ? ' is-active' : ''}`}
-                >
-                  {item.label}
-                </NavLink>
-              ))}
-            </nav>
-          </div>
+          <nav className="pub-nav" aria-label={isAr ? 'التنقل الرئيسي' : 'Primary'}>
+            {navItems.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) => `pub-nav-link${isActive ? ' is-active' : ''}`}
+              >
+                {item.label}
+              </NavLink>
+            ))}
+          </nav>
 
           <div className="pub-actions">
             <button
@@ -74,11 +76,15 @@ export function PublicShell({
               onClick={() => setLocale(isAr ? 'en' : 'ar')}
               aria-label={isAr ? 'Switch to English' : 'التبديل إلى العربية'}
             >
-              {isAr ? 'English' : 'العربية'}
+              {isAr ? 'EN' : 'العربية'}
             </button>
 
             <Link to="/login" className="hdr-signin-link">
               {isAr ? 'تسجيل الدخول' : 'Sign in'}
+            </Link>
+
+            <Link to="/contact" className="hdr-start-pill">
+              {isAr ? 'ابدأ مجاناً' : 'Start free'}
             </Link>
 
             <button
@@ -101,6 +107,9 @@ export function PublicShell({
                   {item.label}
                 </Link>
               ))}
+              <Link to="/faq" className="mobile-nav-item">
+                {isAr ? 'الأسئلة الشائعة' : 'FAQ'}
+              </Link>
               <Link to="/status" className="mobile-nav-item">
                 {isAr ? 'حالة النظام' : 'System status'}
               </Link>
@@ -108,7 +117,7 @@ export function PublicShell({
                 {isAr ? 'تسجيل الدخول' : 'Sign in'}
               </Link>
               <Link to="/contact" className="mobile-nav-cta">
-                {isAr ? 'طلب الوصول' : 'Request access'}
+                {isAr ? 'ابدأ مجاناً' : 'Start free'}
               </Link>
             </nav>
           </div>
@@ -121,17 +130,18 @@ export function PublicShell({
 
       <footer className="pub-footer">
         <div className="pub-footer-inner">
-          <Link to="/" className="pub-footer-wordmark">
-            VOXRELAY
+          <Link to="/" className="brand-wordmark-link" aria-label="VOXRELAY">
+            <BrandWordmark size={24} />
           </Link>
 
           <nav className="pub-footer-links" aria-label={isAr ? 'روابط التذييل' : 'Footer'}>
             <Link to="/how-it-works">{isAr ? 'آلية العمل' : 'How it works'}</Link>
-            <Link to="/privacy">{isAr ? 'ميثاق الخصوصية' : 'Privacy charter'}</Link>
-            <Link to="/status">{isAr ? 'حالة النظام' : 'System status'}</Link>
+            <Link to="/interpreters">{isAr ? 'للمترجمين' : 'For interpreters'}</Link>
+            <Link to="/organizations">{isAr ? 'للمؤسسات' : 'For organizations'}</Link>
+            <Link to="/privacy">{isAr ? 'ميثاق الخصوصية' : 'Privacy'}</Link>
+            <Link to="/status">{isAr ? 'حالة النظام' : 'Status'}</Link>
             <Link to="/faq">{isAr ? 'الأسئلة الشائعة' : 'FAQ'}</Link>
-            <Link to="/contact">{isAr ? 'الدعم' : 'Support'}</Link>
-            <Link to="/design">{isAr ? 'نظام التصميم' : 'Design system'}</Link>
+            <Link to="/contact">{isAr ? 'طلب الوصول' : 'Contact'}</Link>
           </nav>
         </div>
       </footer>

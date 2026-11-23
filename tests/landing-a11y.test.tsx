@@ -27,7 +27,7 @@ function renderAt(initialPath = '/') {
 }
 
 describe('Public homepage layout, accessibility, Radix primitives, and routing', () => {
-  it('renders the calm public homepage with workflow diagram, boundary strip, and zero floating assistant', () => {
+  it('renders the full editorial VOXRELAY homepage matching the 7 reference sections without floating assistant', () => {
     const { container } = renderAt('/');
     const h1 = container.querySelector('h1');
     const firstH2 = container.querySelector('h2');
@@ -36,23 +36,20 @@ describe('Public homepage layout, accessibility, Radix primitives, and routing',
     expect(Boolean(h1!.compareDocumentPosition(firstH2!) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
 
     expect(
-      screen.getByRole('heading', { level: 1, name: /schedule and prepare for interpreting sessions/i })
+      screen.getByRole('heading', { level: 1, name: /infrastructure for the humans between languages/i })
     ).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 2, name: /from schedule to call/i })).toBeInTheDocument();
-    expect(screen.getByText(/14:30–15:15/)).toBeInTheDocument();
-    expect(screen.getByText(/on your call platform/i)).toBeInTheDocument();
-    expect(screen.getByText(/the interpreter joins the call/i)).toBeInTheDocument();
-    expect(
-      screen.getByText(/voxrelay doesn’t record calls, transcribe speech, or store patient identities/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/HUMAN-LED · NEVER AI-REPLACED/i)).toBeInTheDocument();
+    expect(screen.getByText(/Audio stays in your tab/i)).toBeInTheDocument();
 
-    expect(screen.getByRole('heading', { level: 2, name: /calendar import/i })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 2, name: /microphone check/i })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 2, name: /english–arabic glossary/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: /one workflow, four honest stages/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: /calm on the inside\. alive where it counts/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: /built against real friction/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: /what voxrelay will not do/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: /ai, on your terms/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: /ready when you are/i })).toBeInTheDocument();
 
-    // No floating Assistant button or T3 badge noise on public homepage
+    // No floating Assistant button on public homepage
     expect(screen.queryByRole('button', { name: /work assistant/i })).not.toBeInTheDocument();
-    expect(screen.queryByText(/T3 · Human-only/i)).not.toBeInTheDocument();
   });
 
   it('toggles mobile navigation drawer with matching aria-controls', () => {

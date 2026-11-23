@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { ArrowUpRight, Mic, ShieldCheck, X } from 'lucide-react';
 import { useLocale } from '../context/hooks';
 import { KNOWLEDGE_BASE } from '../../api/_lib/kb.js';
 import {
@@ -16,119 +17,524 @@ import { Field, Input, Textarea } from '../components/ui/Field';
 import { Badge, Skeleton } from '../components/ui/Primitives';
 import { Select } from '../components/ui/Select';
 
+function HandDrawnUnderline() {
+  return (
+    <svg
+      className="hand-underline-svg"
+      viewBox="0 0 240 22"
+      fill="none"
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
+      <path
+        d="M4 15.5C64 6.5 162 4.5 236 12.5"
+        stroke="#F2B632"
+        strokeWidth="5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function RotatingSealBadge({ isAr }: { isAr: boolean }) {
+  const ringText = isAr
+    ? 'أشخاص حقيقيون • دعم حقيقي • '
+    : 'REAL PEOPLE • REAL SUPPORT • ';
+
+  return (
+    <div className="rotating-seal" aria-hidden="true">
+      <svg viewBox="0 0 120 120" className="rotating-seal-svg">
+        <defs>
+          <path
+            id="vr-seal-circle"
+            d="M 60, 60 m -40, 0 a 40,40 0 1,1 80,0 a 40,40 0 1,1 -80,0"
+          />
+        </defs>
+        <circle cx="60" cy="60" r="56" fill="#162E2A" />
+        <text className="rotating-seal-text">
+          <textPath href="#vr-seal-circle" startOffset="0%">
+            {ringText}
+          </textPath>
+        </text>
+      </svg>
+      <span className="rotating-seal-dot" />
+    </div>
+  );
+}
+
+const WAVEFORM_HEIGHTS = [
+  24, 46, 32, 66, 38, 86, 52, 98, 44, 72, 28, 60, 40, 92, 54, 78, 36, 68, 48, 88, 34, 62, 28, 42,
+];
+
+const MARQUEE_LANGS = [
+  'Русский',
+  'हिन्दी',
+  'Italiano',
+  'Polski',
+  'English',
+  'Español',
+  'Français',
+  'العربية',
+];
+
 export function HomePage() {
   const { locale } = useLocale();
   const isAr = locale === 'ar';
 
+  const stages = isAr
+    ? [
+        {
+          num: '01',
+          tone: 'terracotta',
+          title: 'تعيين',
+          desc: 'سجل المهام بالوسم ونوع الجلسة والوقت — دون هوية العميل مطلقاً.',
+        },
+        {
+          num: '02',
+          tone: 'gold',
+          title: 'تحضير',
+          desc: 'اربط ملخصات الإحاطة والمسارد والموارد بكل مهمة.',
+        },
+        {
+          num: '03',
+          tone: 'forest',
+          title: 'فحص',
+          desc: 'نفذ فحص جاهزية الجهاز. يُحلَّل صوتك داخل المتصفح ولا يُرسل أبداً.',
+        },
+        {
+          num: '04',
+          tone: 'sage',
+          title: 'دعم',
+          desc: 'كل ما يحتاج إلى تقدير بشري يصل إلى شخص حقيقي لا إلى رد آلي.',
+        },
+      ]
+    : [
+        {
+          num: '01',
+          tone: 'terracotta',
+          title: 'Assign',
+          desc: 'Log assignments by label, modality and time — never client identity.',
+        },
+        {
+          num: '02',
+          tone: 'gold',
+          title: 'Prepare',
+          desc: 'Link briefing summaries, glossaries and resources to every assignment.',
+        },
+        {
+          num: '03',
+          tone: 'forest',
+          title: 'Check',
+          desc: 'Run a device readiness check. Your audio is analyzed in-tab, never sent.',
+        },
+        {
+          num: '04',
+          tone: 'sage',
+          title: 'Support',
+          desc: 'Anything needing live judgment reaches a real person, not an automated reply.',
+        },
+      ];
+
+  const frictions = isAr
+    ? [
+        {
+          num: '01',
+          accentTitle: true,
+          pillTone: 'gold',
+          pill: 'الجدول',
+          title: 'المهام',
+          desc: 'العروض والقبول والرفض ونموذج حالة واضح — بالكامل.',
+        },
+        {
+          num: '02',
+          pill: 'التقويم',
+          title: 'التوفر',
+          desc: 'الساعات المعتادة والاستثناءات والتجاوزات في تقويم يحترم منطقتك الزمنية.',
+        },
+        {
+          num: '03',
+          pill: 'المسرد',
+          title: 'المصطلحات',
+          desc: 'مسارد خاصة بكل زوج لغوي. لا يراها المنسقون أبداً.',
+        },
+        {
+          num: '04',
+          pill: 'فحص',
+          title: 'جاهزية الجهاز',
+          desc: 'مستوى الميكروفون وزمن الاستجابة وفحوص المتصفح قبل البث المباشر.',
+        },
+        {
+          num: '05',
+          pill: 'مرن',
+          title: 'جاهز دون اتصال',
+          desc: 'تخزين محلي وطوابير مزامنة نظيفة عند انقطاع الاتصال.',
+        },
+        {
+          num: '06',
+          pill: 'أشخاص',
+          title: 'دعم بشري',
+          desc: 'تصعيد دعم مترابط إلى منسق حقيقي أو مهندس دعم.',
+        },
+      ]
+    : [
+        {
+          num: '01',
+          accentTitle: true,
+          pillTone: 'gold',
+          pill: 'SCHEDULE',
+          title: 'Assignments',
+          desc: 'Offers, accepts, declines and a clean status model — in full.',
+        },
+        {
+          num: '02',
+          pill: 'CALENDAR',
+          title: 'Availability',
+          desc: 'Typical hours, exceptions and overrides on a calendar that respects your time zone.',
+        },
+        {
+          num: '03',
+          pill: 'GLOSSARY',
+          title: 'Terminology',
+          desc: 'Private glossaries by language pair. Coordinators never see them.',
+        },
+        {
+          num: '04',
+          pill: 'CHECK',
+          title: 'Device readiness',
+          desc: 'Mic level, round-trip latency and browser checks before you go live.',
+        },
+        {
+          num: '05',
+          pill: 'RESILIENT',
+          title: 'Offline-ready',
+          desc: 'IndexedDB caching and clean conflict queues when connectivity drops.',
+        },
+        {
+          num: '06',
+          pill: 'PEOPLE',
+          title: 'Human support',
+          desc: 'Threaded support escalation to an actual coordinator or support engineer.',
+        },
+      ];
+
+  const refuseItems = isAr
+    ? [
+        'تنفيذ ترجمة فورية أو تحريرية آلية',
+        'تسجيل محتوى الجلسة أو تفريغه أو تخزينه',
+        'ادعاء شهادات اعتماد لا يملكها النظام',
+        'عرض شعارات مصطنعة أو أرقام تجميلية',
+      ]
+    : [
+        'Perform automatic translation or interpretation',
+        'Record, transcribe or store session content',
+        'Claim certifications it doesn’t hold',
+        'Display fabricated logos or vanity metrics',
+      ];
+
+  const aiTiers = isAr
+    ? [
+        {
+          tier: 'T0',
+          title: 'أدوات حتمية',
+          desc: 'الفرز والجدولة والتنسيق. دون ذكاء اصطناعي.',
+          badge: 'مفعّل',
+          tone: 'forest',
+        },
+        {
+          tier: 'T1',
+          title: 'مساعدة ذكية محدودة المخاطر',
+          desc: 'معطّلة حتى تختار تفعيلها.',
+          badge: 'مرفوض افتراضياً',
+          tone: 'muted',
+        },
+        {
+          tier: 'T2',
+          title: 'تنسيق المصطلحات المقترحة',
+          desc: 'معطّل حتى تختار تفعيله.',
+          badge: 'مرفوض افتراضياً',
+          tone: 'muted',
+        },
+        {
+          tier: 'T3',
+          title: 'التقدير البشري',
+          desc: 'مقصور برمجياً على الإنسان في الخادم.',
+          badge: '✓ بشري فقط',
+          tone: 'dark',
+        },
+      ]
+    : [
+        {
+          tier: 'T0',
+          title: 'Deterministic utilities',
+          desc: 'Sorting, scheduling, formatting. No AI.',
+          badge: 'On',
+          tone: 'forest',
+        },
+        {
+          tier: 'T1',
+          title: 'Low-risk AI assistance',
+          desc: 'Disabled until you opt in.',
+          badge: 'Default deny',
+          tone: 'muted',
+        },
+        {
+          tier: 'T2',
+          title: 'Candidate term formatting',
+          desc: 'Disabled until you opt in.',
+          badge: 'Default deny',
+          tone: 'muted',
+        },
+        {
+          tier: 'T3',
+          title: 'Human judgment',
+          desc: 'Hard-stopped to a person in server code.',
+          badge: '✓ Human only',
+          tone: 'dark',
+        },
+      ];
+
   return (
     <div className="pub-page">
-      {/* Hero Split: Left Copy + Right Pale-Blue Boundary Diagram */}
-      <section className="home-hero-band">
-        <div className="pub-container home-hero-grid">
-          <div className="home-hero-copy">
-            <p className="home-kicker">
-              {isAr ? 'الترجمة الطبية والمجتمعية' : 'Medical and community interpreting'}
-            </p>
-            <h1 className="home-h1">
-              {isAr
-                ? 'جدولة جلسات الترجمة والاستعداد لها.'
-                : 'Schedule and prepare for interpreting sessions.'}
+      {/* 1. Hero Section */}
+      <section className="vx-hero-band">
+        <div className="pub-container vx-hero-grid">
+          <div className="vx-hero-copy">
+            <div className="vx-kicker-pill">
+              <span className="vx-kicker-dot" aria-hidden="true" />
+              <span>{isAr ? 'بقيادة بشرية · لا يُستبدل بالذكاء الاصطناعي' : 'HUMAN-LED · NEVER AI-REPLACED'}</span>
+            </div>
+
+            <h1 className="vx-h1">
+              {isAr ? (
+                <>
+                  بنية تشغيلية{' '}
+                  <span className="vx-h1-accent">
+                    للإنسان
+                    <HandDrawnUnderline />
+                  </span>{' '}
+                  بين اللغات.
+                </>
+              ) : (
+                <>
+                  Infrastructure for the{' '}
+                  <span className="vx-h1-accent">
+                    humans
+                    <HandDrawnUnderline />
+                  </span>{' '}
+                  between languages.
+                </>
+              )}
             </h1>
-            <p className="home-lead">
-              {isAr
-                ? 'افحص الميكروفون قبل المكالمة وابحث في مسرد المصطلحات الإنجليزي–العربي.'
-                : 'Check your microphone before a call and look up terms in an English–Arabic glossary.'}
+
+            <p className="vx-hero-lead">
+              {isAr ? (
+                <>
+                  المهام والتحضير والمصطلحات والدعم البشري الحقيقي — للمترجمين الفوريين عن بُعد.{' '}
+                  <strong>ليس مترجماً آلياً أبداً.</strong>
+                </>
+              ) : (
+                <>
+                  Assignments, preparation, terminology and real human support — for professional remote interpreters.{' '}
+                  <strong>Never an automatic translator.</strong>
+                </>
+              )}
             </p>
-            <div className="home-cta-wrap">
-              <Link to="/contact" className="home-cta-primary">
-                {isAr ? 'طلب الوصول' : 'Request access'}
+
+            <div className="vx-hero-ctas">
+              <Link to="/login" className="vx-cta-terracotta">
+                <span>{isAr ? 'أنشئ مساحة عملك' : 'Create your workspace'}</span>
+                <ArrowUpRight size={16} aria-hidden="true" />
               </Link>
-              <Link to="/privacy" className="home-cta-secondary">
-                {isAr ? 'ميثاق الخصوصية' : 'Privacy charter'}
+              <Link to="/contact" className="vx-cta-outline">
+                {isAr ? 'طلب وصول للمؤسسة' : 'Request organization access'}
               </Link>
             </div>
           </div>
 
-          <aside
-            className="workflow-panel"
-            aria-label={isAr ? 'مخطط سير العمل من الجدولة إلى المكالمة' : 'From schedule to call workflow diagram'}
-          >
-            <h2 className="workflow-panel-title">
-              {isAr ? 'من الجدولة إلى المكالمة' : 'From schedule to call'}
-            </h2>
-
-            <div className="workflow-section-label">
-              {isAr ? 'داخل VOXRELAY' : 'In VoxRelay'}
+          <div className="vx-hero-visual" aria-hidden="true">
+            <div className="vx-blob-circle">
+              <div className="vx-waveform">
+                {WAVEFORM_HEIGHTS.map((h, idx) => (
+                  <span key={idx} style={{ height: `${h}%` }} />
+                ))}
+              </div>
             </div>
 
-            <ol className="workflow-timeline">
-              <li className="workflow-step">
-                <span className="workflow-dot" aria-hidden="true" />
-                <div className="workflow-step-body">
-                  <div className="workflow-step-title">
-                    <span className="vr-tabular-time">14:30–15:15</span>
-                    <span aria-hidden="true"> · </span>
-                    <span>{isAr ? 'إنجليزي ↔ عربي' : 'English ↔ Arabic'}</span>
-                  </div>
-                  <div className="workflow-step-sub">
-                    {isAr ? 'الوقت المجدول' : 'Scheduled time'}
-                  </div>
-                </div>
-              </li>
-
-              <li className="workflow-step">
-                <span className="workflow-dot" aria-hidden="true" />
-                <div className="workflow-step-body">
-                  <div className="workflow-step-title">
-                    {isAr ? 'فحص الميكروفون' : 'Microphone check'}
-                  </div>
-                  <div className="workflow-step-sub">
-                    {isAr ? 'يعمل على جهازك' : 'Runs on your device'}
-                  </div>
-                </div>
-              </li>
-            </ol>
-
-            <div className="workflow-boundary-divider" role="separator">
-              <span>{isAr ? 'على منصة المكالمات الخاصة بك' : 'On your call platform'}</span>
+            <div className="vx-float-nextup">
+              <span className="vx-float-nextup-tag">{isAr ? 'التالي · 14:30' : 'NEXT UP · 14:30'}</span>
+              <div className="vx-float-nextup-title">{isAr ? 'متابعة القلب' : 'Cardiology follow-up'}</div>
+              <div className="vx-float-nextup-meta">EN → ES · Video</div>
             </div>
 
-            <div className="workflow-external-step">
-              <span className="workflow-arrow" aria-hidden="true">↗</span>
-              <span className="workflow-external-text">
-                {isAr ? 'ينضم المترجم إلى المكالمة' : 'The interpreter joins the call'}
+            <RotatingSealBadge isAr={isAr} />
+
+            <div className="vx-float-audio-pill">
+              <ShieldCheck size={15} aria-hidden="true" />
+              <span>{isAr ? 'الصوت يبقى في متصفحك' : 'Audio stays in your tab'}</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 2. Tilted Forest-Green Language Marquee */}
+      <section className="vx-marquee-band" aria-label={isAr ? 'اللغات المدعومة' : 'Supported languages'}>
+        <div className="vx-marquee-ribbon">
+          <div className="vx-marquee-track">
+            {[...MARQUEE_LANGS, ...MARQUEE_LANGS, ...MARQUEE_LANGS].map((lang, idx) => (
+              <span key={idx} className="vx-marquee-item">
+                <span className="vx-marquee-lang">{lang}</span>
+                <span className="vx-marquee-star" aria-hidden="true">✦</span>
               </span>
-            </div>
-          </aside>
+            ))}
+          </div>
         </div>
       </section>
 
-      {/* Boundary Statement Strip */}
-      <section className="home-boundary-strip">
+      {/* 3. One workflow, four honest stages. */}
+      <section className="vx-stages-band">
         <div className="pub-container">
-          <p className="home-boundary-text">
-            {isAr
-              ? 'لا يسجّل VOXRELAY المكالمات، ولا يفرّغ الكلام، ولا يحفظ هويات المرضى.'
-              : 'VoxRelay doesn’t record calls, transcribe speech, or store patient identities.'}
-          </p>
+          <h2 className="vx-section-title">
+            {isAr ? 'سير عمل واحد، أربع مراحل صادقة.' : 'One workflow, four honest stages.'}
+          </h2>
+
+          <div className="vx-stages-grid">
+            {stages.map((st) => (
+              <article key={st.num} className={`vx-stage-card vx-stage-card--${st.tone}`}>
+                <span className="vx-stage-num">{st.num}</span>
+                <h3>{st.title}</h3>
+                <p>{st.desc}</p>
+              </article>
+            ))}
+          </div>
         </div>
       </section>
 
-      {/* Three Clean Capability Columns */}
-      <section className="home-pillars-band">
-        <div className="pub-container home-pillars-grid">
-          <div className="home-pillar">
-            <h2>{isAr ? 'استيراد التقويم' : 'Calendar import'}</h2>
-            <p>{isAr ? 'استيراد أوقات البدء والانتهاء فقط.' : 'Import start and end times only.'}</p>
+      {/* 4. Dark Forest Workspace Preview Band */}
+      <section className="vx-workspace-band">
+        <div className="pub-container">
+          <p className="vx-workspace-eyebrow">{isAr ? 'مساحة عملك' : 'YOUR WORKSPACE'}</p>
+          <h2 className="vx-workspace-heading">
+            {isAr ? (
+              <>
+                هادئة من الداخل. <span className="vx-workspace-alive">حية</span> حيثما يلزم.
+              </>
+            ) : (
+              <>
+                Calm on the inside. <span className="vx-workspace-alive">Alive</span> where it counts.
+              </>
+            )}
+          </h2>
+
+          <div className="vx-workspace-cards">
+            <div className="vx-ws-card-cream">
+              <div className="vx-ws-top-row">
+                <div>
+                  <span className="vx-ws-greet">{isAr ? 'مساء الخير، أمارا' : 'GOOD AFTERNOON, AMARA'}</span>
+                  <h3>{isAr ? 'مهام اليوم' : "Today's assignments"}</h3>
+                </div>
+                <span className="vx-ws-count-pill">{isAr ? '2 اليوم' : '2 today'}</span>
+              </div>
+
+              <div className="vx-ws-row-item">
+                <span className="vx-ws-lang-badge">EN</span>
+                <div className="vx-ws-row-copy">
+                  <strong>{isAr ? 'متابعة القلب' : 'Cardiology follow-up'}</strong>
+                  <span>{isAr ? 'اليوم · 14:30 · فيديو عن بُعد · EN → ES' : 'Today · 14:30 · Video remote · EN → ES'}</span>
+                </div>
+                <span className="vx-ws-status-pill">{isAr ? 'مُحضّر' : 'Prepared'}</span>
+              </div>
+            </div>
+
+            <div className="vx-ws-card-terracotta">
+              <div className="vx-ws-device-head">
+                <h3>{isAr ? 'فحص الجهاز' : 'Device check'}</h3>
+                <Mic size={18} aria-hidden="true" />
+              </div>
+              <div className="vx-ws-meter">
+                <div className="vx-ws-meter-fill" />
+              </div>
+              <div className="vx-ws-device-foot">
+                <span>{isAr ? 'زمن الاستجابة' : 'ROUND-TRIP'}</span>
+                <strong>46<span>ms</span></strong>
+              </div>
+            </div>
           </div>
-          <div className="home-pillar">
-            <h2>{isAr ? 'فحص الميكروفون' : 'Microphone check'}</h2>
-            <p>{isAr ? 'اعرض مستوى الإشارة قبل الانضمام للمكالمة.' : 'See your input level before joining a call.'}</p>
+        </div>
+      </section>
+
+      {/* 5. Built against real friction. */}
+      <section className="vx-friction-band">
+        <div className="pub-container">
+          <h2 className="vx-section-title">
+            {isAr ? 'مبنية لمواجهة الاحتكاك الفعلي.' : 'Built against real friction.'}
+          </h2>
+
+          <div className="vx-friction-grid">
+            {frictions.map((item) => (
+              <article key={item.num} className="vx-friction-item">
+                <div className="vx-friction-head">
+                  <div className="vx-friction-title-wrap">
+                    <span className="vx-friction-num">{item.num}</span>
+                    <h3 className={item.accentTitle ? 'is-accent' : ''}>{item.title}</h3>
+                  </div>
+                  <span className={`vx-friction-pill${item.pillTone === 'gold' ? ' is-gold' : ''}`}>
+                    {item.pill}
+                  </span>
+                </div>
+                <p>{item.desc}</p>
+              </article>
+            ))}
           </div>
-          <div className="home-pillar">
-            <h2>{isAr ? 'مسرد إنجليزي–عربي' : 'English–Arabic glossary'}</h2>
-            <p>{isAr ? 'ابحث في المصطلحات وصدّرها إلى CSV.' : 'Search terms and export to CSV.'}</p>
+        </div>
+      </section>
+
+      {/* 6. What VOXRELAY will not do. + AI, on your terms. */}
+      <section className="vx-guardrails-band">
+        <div className="pub-container vx-guardrails-grid">
+          <div className="vx-refuse-card">
+            <h2>{isAr ? 'ما لن يفعله VOXRELAY.' : 'What VOXRELAY will not do.'}</h2>
+            <ul className="vx-refuse-list">
+              {refuseItems.map((txt) => (
+                <li key={txt}>
+                  <span className="vx-refuse-x" aria-hidden="true">
+                    <X size={13} />
+                  </span>
+                  <span>{txt}</span>
+                </li>
+              ))}
+            </ul>
           </div>
+
+          <div className="vx-tiers-card">
+            <h2>{isAr ? 'الذكاء الاصطناعي بشروطك.' : 'AI, on your terms.'}</h2>
+            <div className="vx-tiers-list">
+              {aiTiers.map((t) => (
+                <div key={t.tier} className="vx-tier-row">
+                  <span className="vx-tier-code">{t.tier}</span>
+                  <div className="vx-tier-copy">
+                    <strong>{t.title}</strong>
+                    <span>{t.desc}</span>
+                  </div>
+                  <span className={`vx-tier-badge vx-tier-badge--${t.tone}`}>{t.badge}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 7. Full-Bleed Terracotta Closing CTA */}
+      <section className="vx-closing-band">
+        <div className="pub-container vx-closing-inner">
+          <h2>{isAr ? 'جاهز عندما تكون جاهزاً.' : 'Ready when you are.'}</h2>
+          <p>
+            {isAr
+              ? 'أنشئ مساحة عملك الشخصية في دقائق. لا يلزمك دعوة مؤسسة لبدء التحضير.'
+              : 'Create your personal workspace in minutes. No organization invite required to start preparing.'}
+          </p>
+          <Link to="/login" className="vx-closing-btn">
+            {isAr ? 'أنشئ مساحة عملك' : 'Create your workspace'}
+          </Link>
         </div>
       </section>
     </div>

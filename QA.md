@@ -1,14 +1,12 @@
-# VOXRELAY Pre-PR Verification & QA Report
+# VOXRELAY QA Report (v7.0)
 
-Date: 2026-11-23
-Branch: `arena/6f17ef1a-voxrelay`
+## Visual & Design Parity
+- Header: terracotta `#DE4E26` circular waveform logo + `VOXRELAY`, `How it works`, `For interpreters`, `For organizations`, `Trust`, `العربية`/`EN`, `Sign in`, `#112A24` `Start free` pill.
+- Homepage: exact match across all 7 attached reference bands (`#F8F4EC`, `#DE4E26`, `#F2B632`, `#184D42`, `#112A24`, `#96B5AA`) with `Instrument Serif` + `Instrument Sans` + Arabic RTL support.
+- Public pages omit floating Assistant launcher; `/faq` renders populated `KB-01`..`KB-06` rows.
 
-## Verification Summary
-
-| Check | Result | Notes |
-| --- | --- | --- |
-| `npm test` (Vitest) | Passed (9 files, 80 tests) | Policy, authz, readiness, ops-metrics, Zod validation, CSV/ICS, i18n/RTL, clean production homepage layout/a11y/routing, and assistant eval |
-| `npm run lint` (ESLint) | Passed (0 errors, 0 warnings) | Includes React Hooks + `eslint-plugin-jsx-a11y` |
-| `npm run build` (`tsc -b && vite build`) | Passed | Clean TypeScript check + production bundle with self-hosted `@fontsource/ibm-plex-sans` & `@fontsource/ibm-plex-sans-arabic` |
-| Unwanted artifact check | Passed | `1794494339857_pkkbmm.txt` and `.vite-source-tags.js` verified absent |
-| Live local server (`127.0.0.1:5173`) | Passed | `200 OK` on `/`, `/how-it-works`, `/privacy`, `/status`, `/contact`, `/faq`, `/design`, `/api/health` |
+## Checks
+- `npm test` (9 suites)
+- `npm run lint`
+- `npm run build`
+- Live HTTP checks against `0.0.0.0:5173`
