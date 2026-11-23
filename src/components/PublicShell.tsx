@@ -129,6 +129,7 @@ export function PublicShell({
             <Link to="/privacy">{isAr ? 'ميثاق الخصوصية' : 'Privacy charter'}</Link>
             <Link to="/status">{isAr ? 'حالة النظام' : 'System status'}</Link>
             <Link to="/contact">{isAr ? 'الدعم' : 'Support'}</Link>
+            <Link to="/design">{isAr ? 'نظام التصميم' : 'Design system'}</Link>
           </nav>
         </div>
       </footer>

@@ -1,8 +1,11 @@
-# VOXRELAY Static Public Design Specification
+# VOXRELAY Studio Warm Design Specification
 
-## Visual & Structural Summary (`v4.0`)
+## Visual & Structural Summary (`v5.0`)
 
-1. **Art Direction:** Cool-white canvas (`#F7F9FB`), dark ink (`#162634`), deep blue (`#174A7E`) for the primary `Request access` CTA and workflow timeline, and a pale-blue panel (`#EAF1F8`) housing the right-side **From schedule to call** diagram.
-2. **Typography:** Upright `IBM Plex Sans` and `IBM Plex Sans Arabic` (`52px` semibold headline, `18px` body copy, `tabular-nums` for `14:30–15:15`). Zero italics, zero decorative monospace, and zero pill-shaped menus.
-3. **Boundary Clarity:** The workflow diagram visually stops before the external call (`On your call platform` → `↗ The interpreter joins the call`), reinforced by the boundary strip (`VoxRelay doesn’t record calls, transcribe speech, or store patient identities.`) and three plain columns (`Calendar import`, `Microphone check`, `English–Arabic glossary`).
-4. **Clutter Removal:** Zero floating Assistant button, zero `T3` badges, and zero empty spec cards on the public homepage.
+1. **Identity & Palette:** Preserves `Instrument Serif` display typography paired with `Instrument Sans`, `Amiri`, and `IBM Plex Sans Arabic` on a warm studio paper canvas (`#FAF7F2`), accented with burnt terracotta (`#B84A2E`) and studio gold (`#C6922B`).
+2. **Editorial Craft Elements:**
+   - **Hand-drawn SVG underline** (`HandDrawnUnderline`) under the hero headline phrase (`interpreting sessions.`).
+   - **Rotating circular seal badge** (`RotatingSealBadge`) with continuous slow rotation (paused automatically under `prefers-reduced-motion: reduce`).
+   - **Floating layered cards** over a warm linen stage: local microphone signal check (`Device check`), main boundary timeline (`From schedule to call` stopping clearly before `On your call platform`), and bilingual glossary preview (`Informed consent` ↔ `الموافقة المستنيرة`).
+   - **Tilted language marquee** (`-1.35deg`, mirrored in RTL) highlighting supported scripts (`English ↔ العربية`, `Español ↔ English`, `Français ↔ العربية`, `עברית ↔ English`, `हिन्दी ↔ English`) and core boundaries.
+3. **Product Honesty:** Zero call recording, zero speech transcription, zero patient identity storage, zero floating Assistant clutter on the public site, and full EN/AR RTL parity.

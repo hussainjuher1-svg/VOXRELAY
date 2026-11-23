@@ -19,13 +19,13 @@ import { Badge } from '../components/ui/Primitives';
 import { Select } from '../components/ui/Select';
 
 const SWATCHES = [
-  { name: 'Cool White Canvas', token: '--vr-paper', hex: '#F7F9FB', contrast: '14.9:1 vs Ink' },
-  { name: 'Pale Blue Panel', token: '--vr-panel-blue', hex: '#EAF1F8', contrast: 'Diagram surface' },
-  { name: 'Surface White', token: '--vr-card', hex: '#FFFFFF', contrast: '15.4:1 vs Ink' },
-  { name: 'Dark Ink', token: '--vr-ink', hex: '#162634', contrast: 'Primary copy & heading' },
-  { name: 'Deep Blue', token: '--vr-accent-brand', hex: '#174A7E', contrast: '8.7:1 AA Primary CTA' },
-  { name: 'Rule Hairline', token: '--vr-hairline', hex: '#DCE3EC', contrast: 'Section dividers' },
-  { name: 'Verified Green', token: '--vr-ok', hex: '#047857', contrast: '5.4:1 AA Semantic' },
+  { name: 'Studio Warm Canvas', token: '--vr-paper', hex: '#FAF7F2', contrast: '15.8:1 vs Ink' },
+  { name: 'Warm Linen Panel', token: '--vr-panel-warm', hex: '#F3EDE2', contrast: 'Card stage surface' },
+  { name: 'Surface White', token: '--vr-card', hex: '#FFFFFF', contrast: 'Floating cards & forms' },
+  { name: 'Espresso Ink', token: '--vr-ink', hex: '#1F1A17', contrast: 'Primary copy & display' },
+  { name: 'Terracotta', token: '--vr-accent-brand', hex: '#B84A2E', contrast: '5.3:1 AA Primary CTA' },
+  { name: 'Studio Gold', token: '--vr-gold', hex: '#C6922B', contrast: 'Warm accent & seal' },
+  { name: 'Warm Hairline', token: '--vr-hairline', hex: '#E4DBCE', contrast: 'Structural rules' },
 ];
 
 export function DesignSystemPage() {
@@ -43,12 +43,12 @@ export function DesignSystemPage() {
             <div>
               <p className="eyebrow">{isAr ? 'مواصفات التصميم ٢.٠' : 'Design System v2.0'}</p>
               <h1 className="page-display">
-                {isAr ? 'نظام التصميم لـ VOXRELAY' : 'VOXRELAY Design System'}
+                {isAr ? 'نظام التصميم Studio Warm لـ VOXRELAY' : 'VOXRELAY Studio Warm Design System'}
               </h1>
               <p className="editorial-prose">
                 {isAr
-                  ? 'خلفية بيضاء باردة (#F7F9FB) مع حبر داكن (#162634) وأزرق عميق (#174A7E) وخطوط IBM Plex Sans و IBM Plex Sans Arabic الواضحة.'
-                  : 'Cool-white canvas (#F7F9FB), dark ink (#162634), deep blue (#174A7E) actions and timeline, pale-blue panels (#EAF1F8), and upright IBM Plex Sans + IBM Plex Sans Arabic typography.'}
+                  ? 'خلفية ورقية دافئة (#FAF7F2) مع التراكوتا (#B84A2E) والذهب (#C6922B) وخطوط Instrument Serif و Instrument Sans و IBM Plex Sans Arabic.'
+                  : 'Editorial Studio Warm palette (#FAF7F2, terracotta #B84A2E, gold #C6922B), Instrument Serif + Instrument Sans + IBM Plex Sans Arabic typography, hand-drawn underline, floating cards, and tilted language marquee.'}
               </p>
             </div>
             <div className="hero-cta-row">
@@ -121,12 +121,12 @@ export function DesignSystemPage() {
           <div className="editorial-card">
             <p className="eyebrow">{isAr ? 'الطباعة' : '03 · Typography'}</p>
             <h2 className="section-display">
-              {isAr ? 'IBM Plex Sans + IBM Plex Sans Arabic' : 'IBM Plex Sans + IBM Plex Sans Arabic (Upright)'}
+              {isAr ? 'Instrument Serif + Instrument Sans + IBM Plex Sans Arabic' : 'Instrument Serif + Instrument Sans'}
             </h2>
             <p className="editorial-prose">
               {isAr
-                ? 'خطوط متزنة بدون ميلان أو زخرفة، مع أرقام جدولية للأوقات والمواعيد.'
-                : 'Upright 52px semibold headings, 18px body copy, and tabular numerals for session times—no italics and no decorative monospace.'}
+                ? 'عناوين تحريرية دافئة مع نصوص واضحة وأرقام جدولية للأوقات والمواعيد.'
+                : 'Expressive editorial Instrument Serif display headlines paired with crisp Instrument Sans UI copy and tabular numerals for session times.'}
             </p>
             <span className="vr-tabular-time">14:30–15:15 · VR-0042</span>
           </div>

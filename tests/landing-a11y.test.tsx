@@ -84,7 +84,7 @@ describe('Public homepage layout, accessibility, Radix primitives, and routing',
     cleanup();
 
     renderAt('/design');
-    expect(await screen.findByRole('heading', { level: 1, name: /voxrelay design system/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: /voxrelay studio warm design system/i })).toBeInTheDocument();
     cleanup();
 
     renderAt('/does-not-exist-xyz');
