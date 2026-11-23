@@ -1,34 +1,32 @@
-/* VOXRELAY Studio Warm Design System v5.0 — CSS Custom Properties */
+/* VOXRELAY Production Design System v6.0 — CSS Custom Properties */
 :root {
-  --vr-paper: #faf7f2;
+  --vr-paper: #f7f9fb;
   --vr-card: #ffffff;
-  --vr-panel-warm: #f3ede2;
-  --vr-panel-warm-border: #e1d6c5;
-  --vr-vellum: #f3ede2;
-  --vr-dark: #1d1714;
+  --vr-panel-blue: #eaf1f8;
+  --vr-panel-blue-border: #d2e0ee;
+  --vr-vellum: #eef3f8;
+  --vr-dark: #0f1b28;
 
-  --vr-ink: #1f1a17;
-  --vr-ink-2: #4e453e;
-  --vr-muted: #6d6259;
+  --vr-ink: #162634;
+  --vr-ink-2: #3b4d5e;
+  --vr-muted: #5a6d7e;
 
-  --vr-hairline: #e4dbce;
-  --vr-hairline-strong: #cfc2b0;
+  --vr-hairline: #dce3ec;
+  --vr-hairline-strong: #c4d0de;
 
-  --vr-accent-brand: #b84a2e;
-  --vr-accent-brand-hover: #9c3b22;
-  --vr-gold: #c6922b;
-  --vr-gold-soft: #f9f0dc;
-  --vr-secondary-soft: #f9ebe6;
+  --vr-accent-brand: #174a7e;
+  --vr-accent-brand-hover: #123b66;
+  --vr-secondary-soft: #eaf1f8;
 
-  --vr-ok: #1f6b4a;
-  --vr-ok-soft: #eaf4ef;
-  --vr-danger: #9b2c2c;
-  --vr-danger-soft: #fbeaea;
+  --vr-ok: #047857;
+  --vr-ok-soft: #ecfdf5;
+  --vr-danger: #b91c1c;
+  --vr-danger-soft: #fef2f2;
 
-  --vr-font-serif: 'Instrument Serif', 'Amiri', Georgia, serif;
-  --vr-font-sans: 'Instrument Sans', 'IBM Plex Sans Arabic', 'Noto Sans Hebrew', 'Noto Sans Devanagari', system-ui, -apple-system, sans-serif;
+  --vr-font-sans: 'IBM Plex Sans', 'IBM Plex Sans Arabic', 'Noto Sans Hebrew', 'Noto Sans Devanagari', system-ui, -apple-system, sans-serif;
+  --vr-font-serif: var(--vr-font-sans);
 
-  --vr-r-sm: 6px;
-  --vr-r-md: 8px;
-  --vr-r-lg: 14px;
+  --vr-r-sm: 4px;
+  --vr-r-md: 6px;
+  --vr-r-lg: 8px;
 }

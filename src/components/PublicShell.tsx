@@ -126,8 +126,10 @@ export function PublicShell({
           </Link>
 
           <nav className="pub-footer-links" aria-label={isAr ? 'روابط التذييل' : 'Footer'}>
+            <Link to="/how-it-works">{isAr ? 'آلية العمل' : 'How it works'}</Link>
             <Link to="/privacy">{isAr ? 'ميثاق الخصوصية' : 'Privacy charter'}</Link>
             <Link to="/status">{isAr ? 'حالة النظام' : 'System status'}</Link>
+            <Link to="/faq">{isAr ? 'الأسئلة الشائعة' : 'FAQ'}</Link>
             <Link to="/contact">{isAr ? 'الدعم' : 'Support'}</Link>
             <Link to="/design">{isAr ? 'نظام التصميم' : 'Design system'}</Link>
           </nav>

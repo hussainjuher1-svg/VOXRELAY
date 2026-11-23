@@ -1,11 +1,8 @@
-# VOXRELAY Studio Warm Design Specification
+# VOXRELAY Production UI Specification
 
-## Visual & Structural Summary (`v5.0`)
+## Visual & Structural Discipline (`v6.0`)
 
-1. **Identity & Palette:** Preserves `Instrument Serif` display typography paired with `Instrument Sans`, `Amiri`, and `IBM Plex Sans Arabic` on a warm studio paper canvas (`#FAF7F2`), accented with burnt terracotta (`#B84A2E`) and studio gold (`#C6922B`).
-2. **Editorial Craft Elements:**
-   - **Hand-drawn SVG underline** (`HandDrawnUnderline`) under the hero headline phrase (`interpreting sessions.`).
-   - **Rotating circular seal badge** (`RotatingSealBadge`) with continuous slow rotation (paused automatically under `prefers-reduced-motion: reduce`).
-   - **Floating layered cards** over a warm linen stage: local microphone signal check (`Device check`), main boundary timeline (`From schedule to call` stopping clearly before `On your call platform`), and bilingual glossary preview (`Informed consent` ↔ `الموافقة المستنيرة`).
-   - **Tilted language marquee** (`-1.35deg`, mirrored in RTL) highlighting supported scripts (`English ↔ العربية`, `Español ↔ English`, `Français ↔ العربية`, `עברית ↔ English`, `हिन्दी ↔ English`) and core boundaries.
-3. **Product Honesty:** Zero call recording, zero speech transcription, zero patient identity storage, zero floating Assistant clutter on the public site, and full EN/AR RTL parity.
+1. **Zero Gimmicks:** Removed serif marketing headlines, italic highlights, hand-drawn squiggles, rotating stickers, tilted marquees, pastel boxes, and "AI wrapper" slogans.
+2. **Surface & Color:** Cool-white canvas (`#F7F9FB`), dark ink (`#162634`), deep blue (`#174A7E`) for primary CTA and timeline indicators, and a flat pale-blue workflow diagram panel (`#EAF1F8`).
+3. **Typography:** Strictly upright `IBM Plex Sans` and `IBM Plex Sans Arabic` (`52px` semibold hero H1, `18px` body copy, `tabular-nums` for `14:30–15:15`).
+4. **Clear Boundary Diagram:** Shows `In VoxRelay` (`14:30–15:15 · English ↔ Arabic`, `Microphone check`) stopping clearly before `On your call platform` → `↗ The interpreter joins the call`.

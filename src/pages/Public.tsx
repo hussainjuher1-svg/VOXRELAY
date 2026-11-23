@@ -16,256 +16,94 @@ import { Field, Input, Textarea } from '../components/ui/Field';
 import { Badge, Skeleton } from '../components/ui/Primitives';
 import { Select } from '../components/ui/Select';
 
-function HandDrawnUnderline() {
-  return (
-    <svg
-      className="hand-underline-svg"
-      viewBox="0 0 280 20"
-      fill="none"
-      preserveAspectRatio="none"
-      aria-hidden="true"
-    >
-      <path
-        d="M3 14.5C68 7.2 184 4.8 276 11.4"
-        stroke="#B84A2E"
-        strokeWidth="3.4"
-        strokeLinecap="round"
-      />
-      <path
-        d="M16 17.2C96 12.1 198 10.6 266 15.1"
-        stroke="#C6922B"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        opacity="0.85"
-      />
-    </svg>
-  );
-}
-
-function RotatingSealBadge({ isAr }: { isAr: boolean }) {
-  const ringText = isAr
-    ? 'ترجمة بشرية فقط · دون تسجيل · عربي ↔ إنجليزي · '
-    : 'HUMAN INTERPRETING · NO RECORDING · EN ↔ AR · ';
-
-  return (
-    <div className="rotating-seal" aria-hidden="true">
-      <svg viewBox="0 0 120 120" className="rotating-seal-svg">
-        <defs>
-          <path
-            id="vr-seal-circle"
-            d="M 60, 60 m -44, 0 a 44,44 0 1,1 88,0 a 44,44 0 1,1 -88,0"
-          />
-        </defs>
-        <circle cx="60" cy="60" r="56" fill="var(--vr-card)" stroke="var(--vr-hairline-strong)" strokeWidth="1" />
-        <text className="rotating-seal-text">
-          <textPath href="#vr-seal-circle" startOffset="0%">
-            {ringText}
-          </textPath>
-        </text>
-      </svg>
-      <span className="rotating-seal-center">
-        <span className="rotating-seal-dot" />
-      </span>
-    </div>
-  );
-}
-
-const MARQUEE_ITEMS_EN = [
-  'English ↔ العربية',
-  'Calendar import (.ics)',
-  'Español ↔ English',
-  'Local microphone check',
-  'Français ↔ العربية',
-  'Bilingual CSV export',
-  'עברית ↔ English',
-  'Zero call recording',
-  'हिन्दी ↔ English',
-];
-
-const MARQUEE_ITEMS_AR = [
-  'العربية ↔ English',
-  'استيراد التقويم (.ics)',
-  'Español ↔ العربية',
-  'فحص الميكروفون محلياً',
-  'Français ↔ العربية',
-  'تصدير مسرد CSV',
-  'עברית ↔ English',
-  'دون تسجيل للمكالمات',
-  'हिन्दी ↔ English',
-];
-
 export function HomePage() {
   const { locale } = useLocale();
   const isAr = locale === 'ar';
-  const marqueeItems = isAr ? MARQUEE_ITEMS_AR : MARQUEE_ITEMS_EN;
 
   return (
     <div className="pub-page">
-      {/* 1. Studio Warm Editorial Hero + Floating Cards + Rotating Badge */}
-      <section className="warm-hero-band">
-        <div className="pub-container warm-hero-grid">
-          <div className="warm-hero-copy">
-            <div className="warm-kicker-row">
-              <span className="warm-kicker-pill">
-                <span className="warm-kicker-dot" aria-hidden="true" />
-                {isAr ? 'الترجمة الطبية والمجتمعية' : 'Medical and community interpreting'}
-              </span>
-            </div>
-
-            <h1 className="warm-h1">
-              {isAr ? (
-                <>
-                  جدولة{' '}
-                  <span className="warm-underline-phrase">
-                    جلسات الترجمة
-                    <HandDrawnUnderline />
-                  </span>{' '}
-                  والاستعداد لها.
-                </>
-              ) : (
-                <>
-                  Schedule and prepare for{' '}
-                  <span className="warm-underline-phrase">
-                    interpreting sessions.
-                    <HandDrawnUnderline />
-                  </span>
-                </>
-              )}
-            </h1>
-
-            <p className="warm-lead">
-              {isAr
-                ? 'افحص الميكروفون قبل المكالمة وابحث في مسرد المصطلحات الإنجليزي–العربي — بقيادة بشرية كاملة.'
-                : 'Check your microphone before a call and look up terms in an English–Arabic glossary—built around human interpreters.'}
+      {/* Hero Split: Left Copy + Right Pale-Blue Boundary Diagram */}
+      <section className="home-hero-band">
+        <div className="pub-container home-hero-grid">
+          <div className="home-hero-copy">
+            <p className="home-kicker">
+              {isAr ? 'الترجمة الطبية والمجتمعية' : 'Medical and community interpreting'}
             </p>
-
-            <div className="warm-cta-row">
-              <Link to="/contact" className="warm-cta-primary">
+            <h1 className="home-h1">
+              {isAr
+                ? 'جدولة جلسات الترجمة والاستعداد لها.'
+                : 'Schedule and prepare for interpreting sessions.'}
+            </h1>
+            <p className="home-lead">
+              {isAr
+                ? 'افحص الميكروفون قبل المكالمة وابحث في مسرد المصطلحات الإنجليزي–العربي.'
+                : 'Check your microphone before a call and look up terms in an English–Arabic glossary.'}
+            </p>
+            <div className="home-cta-wrap">
+              <Link to="/contact" className="home-cta-primary">
                 {isAr ? 'طلب الوصول' : 'Request access'}
               </Link>
-              <Link to="/how-it-works" className="warm-cta-secondary">
-                {isAr ? 'استكشف سير العمل' : 'See how it works'}
+              <Link to="/privacy" className="home-cta-secondary">
+                {isAr ? 'ميثاق الخصوصية' : 'Privacy charter'}
               </Link>
             </div>
           </div>
 
-          {/* Right Studio Stack: Floating Cards + Rotating Seal */}
-          <div
-            className="warm-stage"
-            aria-label={isAr ? 'بطاقات سير العمل من الجدولة إلى المكالمة' : 'From schedule to call workflow cards'}
+          <aside
+            className="workflow-panel"
+            aria-label={isAr ? 'مخطط سير العمل من الجدولة إلى المكالمة' : 'From schedule to call workflow diagram'}
           >
-            <RotatingSealBadge isAr={isAr} />
+            <h2 className="workflow-panel-title">
+              {isAr ? 'من الجدولة إلى المكالمة' : 'From schedule to call'}
+            </h2>
 
-            {/* Floating Card 1 (Top-left): Local Mic Check */}
-            <div className="float-card float-card--mic">
-              <div className="float-card-head">
-                <span className="float-tag float-tag--gold">
-                  {isAr ? 'فحص محلي' : 'Device check'}
-                </span>
-                <span className="float-status-ok">{isAr ? 'جاهز' : 'Ready'}</span>
-              </div>
-              <div className="float-mic-bars" aria-hidden="true">
-                <span style={{ height: '38%' }} />
-                <span style={{ height: '72%' }} />
-                <span style={{ height: '55%' }} />
-                <span style={{ height: '88%' }} />
-                <span style={{ height: '64%' }} />
-                <span style={{ height: '42%' }} />
-              </div>
-              <p className="float-card-caption">
-                {isAr ? 'مستوى الصوت على جهازك فقط' : 'Runs on your device · Zero recording'}
-              </p>
+            <div className="workflow-section-label">
+              {isAr ? 'داخل VOXRELAY' : 'In VoxRelay'}
             </div>
 
-            {/* Main Workflow Card: Stops cleanly before external call */}
-            <div className="float-card float-card--main">
-              <div className="workflow-panel-head">
-                <h2 className="workflow-panel-title">
-                  {isAr ? 'من الجدولة إلى المكالمة' : 'From schedule to call'}
-                </h2>
-                <span className="workflow-section-badge">
-                  {isAr ? 'داخل VOXRELAY' : 'In VoxRelay'}
-                </span>
-              </div>
-
-              <ol className="workflow-timeline">
-                <li className="workflow-step">
-                  <span className="workflow-dot" aria-hidden="true" />
-                  <div className="workflow-step-body">
-                    <div className="workflow-step-title">
-                      <span className="vr-tabular-time">14:30–15:15</span>
-                      <span aria-hidden="true"> · </span>
-                      <span>{isAr ? 'إنجليزي ↔ عربي' : 'English ↔ Arabic'}</span>
-                    </div>
-                    <div className="workflow-step-sub">
-                      {isAr ? 'الوقت المجدول' : 'Scheduled time'}
-                    </div>
+            <ol className="workflow-timeline">
+              <li className="workflow-step">
+                <span className="workflow-dot" aria-hidden="true" />
+                <div className="workflow-step-body">
+                  <div className="workflow-step-title">
+                    <span className="vr-tabular-time">14:30–15:15</span>
+                    <span aria-hidden="true"> · </span>
+                    <span>{isAr ? 'إنجليزي ↔ عربي' : 'English ↔ Arabic'}</span>
                   </div>
-                </li>
-
-                <li className="workflow-step">
-                  <span className="workflow-dot workflow-dot--gold" aria-hidden="true" />
-                  <div className="workflow-step-body">
-                    <div className="workflow-step-title">
-                      {isAr ? 'فحص الميكروفون' : 'Microphone check'}
-                    </div>
-                    <div className="workflow-step-sub">
-                      {isAr ? 'يعمل على جهازك' : 'Runs on your device'}
-                    </div>
+                  <div className="workflow-step-sub">
+                    {isAr ? 'الوقت المجدول' : 'Scheduled time'}
                   </div>
-                </li>
-              </ol>
+                </div>
+              </li>
 
-              <div className="workflow-boundary-divider" role="separator">
-                <span>{isAr ? 'على منصة المكالمات الخاصة بك' : 'On your call platform'}</span>
-              </div>
+              <li className="workflow-step">
+                <span className="workflow-dot" aria-hidden="true" />
+                <div className="workflow-step-body">
+                  <div className="workflow-step-title">
+                    {isAr ? 'فحص الميكروفون' : 'Microphone check'}
+                  </div>
+                  <div className="workflow-step-sub">
+                    {isAr ? 'يعمل على جهازك' : 'Runs on your device'}
+                  </div>
+                </div>
+              </li>
+            </ol>
 
-              <div className="workflow-external-step">
-                <span className="workflow-arrow" aria-hidden="true">↗</span>
-                <span className="workflow-external-text">
-                  {isAr ? 'ينضم المترجم إلى المكالمة' : 'The interpreter joins the call'}
-                </span>
-              </div>
+            <div className="workflow-boundary-divider" role="separator">
+              <span>{isAr ? 'على منصة المكالمات الخاصة بك' : 'On your call platform'}</span>
             </div>
 
-            {/* Floating Card 2 (Bottom-right): Bilingual Glossary */}
-            <div className="float-card float-card--glossary">
-              <div className="float-card-head">
-                <span className="float-tag float-tag--terracotta">
-                  {isAr ? 'مسرد ثنائي' : 'Glossary'}
-                </span>
-                <span className="float-card-meta">CSV</span>
-              </div>
-              <div className="float-glossary-pair">
-                <span>Informed consent</span>
-                <span dir="rtl">الموافقة المستنيرة</span>
-              </div>
+            <div className="workflow-external-step">
+              <span className="workflow-arrow" aria-hidden="true">↗</span>
+              <span className="workflow-external-text">
+                {isAr ? 'ينضم المترجم إلى المكالمة' : 'The interpreter joins the call'}
+              </span>
             </div>
-          </div>
+          </aside>
         </div>
       </section>
 
-      {/* 2. Tilted Bilingual Language Marquee */}
-      <section className="tilted-marquee-band" aria-label={isAr ? 'اللغات والمزايا المدعومة' : 'Supported scripts and capabilities'}>
-        <div className="tilted-marquee-ribbon">
-          <div className="tilted-marquee-track">
-            {marqueeItems.map((item, idx) => (
-              <span key={`m1-${idx}`} className="tilted-marquee-item">
-                <span className="tilted-marquee-diamond" aria-hidden="true">◆</span>
-                {item}
-              </span>
-            ))}
-            {marqueeItems.map((item, idx) => (
-              <span key={`m2-${idx}`} className="tilted-marquee-item" aria-hidden="true">
-                <span className="tilted-marquee-diamond">◆</span>
-                {item}
-              </span>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* 3. Boundary Statement Strip */}
+      {/* Boundary Statement Strip */}
       <section className="home-boundary-strip">
         <div className="pub-container">
           <p className="home-boundary-text">
@@ -276,24 +114,21 @@ export function HomePage() {
         </div>
       </section>
 
-      {/* 4. Three Crisp Warm Editorial Capability Columns */}
+      {/* Three Clean Capability Columns */}
       <section className="home-pillars-band">
         <div className="pub-container home-pillars-grid">
-          <article className="home-pillar-card">
-            <span className="home-pillar-num">01</span>
+          <div className="home-pillar">
             <h2>{isAr ? 'استيراد التقويم' : 'Calendar import'}</h2>
             <p>{isAr ? 'استيراد أوقات البدء والانتهاء فقط.' : 'Import start and end times only.'}</p>
-          </article>
-          <article className="home-pillar-card">
-            <span className="home-pillar-num">02</span>
+          </div>
+          <div className="home-pillar">
             <h2>{isAr ? 'فحص الميكروفون' : 'Microphone check'}</h2>
             <p>{isAr ? 'اعرض مستوى الإشارة قبل الانضمام للمكالمة.' : 'See your input level before joining a call.'}</p>
-          </article>
-          <article className="home-pillar-card">
-            <span className="home-pillar-num">03</span>
+          </div>
+          <div className="home-pillar">
             <h2>{isAr ? 'مسرد إنجليزي–عربي' : 'English–Arabic glossary'}</h2>
             <p>{isAr ? 'ابحث في المصطلحات وصدّرها إلى CSV.' : 'Search terms and export to CSV.'}</p>
-          </article>
+          </div>
         </div>
       </section>
     </div>
