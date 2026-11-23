@@ -1,0 +1,64 @@
+/* VOXRELAY Enterprise Cool-Slate Design System v3.0 — CSS Custom Properties */
+:root {
+  --vr-paper: #f8fafc;
+  --vr-card: #ffffff;
+  --vr-vellum: #f1f5f9;
+  --vr-dark: #0b0f19;
+  --vr-dark-elevated: #111827;
+
+  --vr-ink: #0f172a;
+  --vr-ink-2: #475569;
+  --vr-muted: #64748b;
+  --vr-ink-inverse: #f8fafc;
+
+  --vr-hairline: #e2e8f0;
+  --vr-hairline-strong: #cbd5e1;
+
+  --vr-accent-brand: #2563eb;
+  --vr-secondary: #0f172a;
+  --vr-secondary-hover: #1e293b;
+  --vr-secondary-soft: #eff6ff;
+
+  --vr-ok: #047857;
+  --vr-ok-soft: #ecfdf5;
+  --vr-danger: #b91c1c;
+  --vr-danger-soft: #fef2f2;
+
+  --vr-font-sans: 'Inter Tight', 'IBM Plex Sans Arabic', 'Noto Sans Hebrew', 'Noto Sans Devanagari', system-ui, -apple-system, sans-serif;
+  --vr-font-serif: var(--vr-font-sans);
+  --vr-font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --vr-r-sm: 4px;
+  --vr-r-md: 6px;
+  --vr-r-lg: 8px;
+
+  --vr-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --vr-dur-fast: 150ms;
+  --vr-dur-base: 180ms;
+}
+
+:root[data-theme='dark'] {
+  --vr-paper: #0b0f19;
+  --vr-card: #111827;
+  --vr-vellum: #161f30;
+  --vr-dark: #070a12;
+  --vr-dark-elevated: #111827;
+
+  --vr-ink: #f8fafc;
+  --vr-ink-2: #cbd5e1;
+  --vr-muted: #94a3b8;
+  --vr-ink-inverse: #f8fafc;
+
+  --vr-hairline: #1e293b;
+  --vr-hairline-strong: #334155;
+
+  --vr-accent-brand: #3b82f6;
+  --vr-secondary: #3b82f6;
+  --vr-secondary-hover: #2563eb;
+  --vr-secondary-soft: rgba(59, 130, 246, 0.14);
+
+  --vr-ok: #10b981;
+  --vr-ok-soft: rgba(16, 185, 129, 0.14);
+  --vr-danger: #f87171;
+  --vr-danger-soft: rgba(248, 113, 113, 0.14);
+}

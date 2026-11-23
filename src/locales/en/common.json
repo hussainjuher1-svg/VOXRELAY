@@ -1,0 +1,104 @@
+{
+  "brand": {
+    "name": "VOXRELAY",
+    "tagline": "Professional work, thoughtfully supported."
+  },
+  "nav": {
+    "home": "VOXRELAY home",
+    "howItWorks": "How it works",
+    "interpreters": "Interpreters",
+    "organizations": "Organizations",
+    "privacy": "Privacy",
+    "status": "Status",
+    "login": "Login",
+    "requestAccess": "Request access",
+    "contact": "Contact",
+    "openWorkspace": "Open workspace",
+    "menu": "Menu",
+    "closeMenu": "Close menu",
+    "switchLang": "العربية"
+  },
+  "hero": {
+    "kicker": "A workspace for remote interpreters",
+    "titleStart": "Make room for the work",
+    "titleEmphasis": "that matters.",
+    "description": "A calmer way to manage assignments, prepare with confidence, keep terminology close, and reach human support.",
+    "primaryCta": "Open workspace",
+    "secondaryCta": "Request access",
+    "footnote": "Human-led workflows. No recording or transcription."
+  },
+  "preview": {
+    "context": "INTERPRETER WORKSPACE",
+    "eyebrow": "YOUR WORKSPACE",
+    "heading": "Work, in one place.",
+    "assignments": "Assignments",
+    "calendarCaption": "Calendar and assignment details",
+    "preparation": "Preparation",
+    "check1": "Review assignment details",
+    "check2": "Check your setup",
+    "terminology": "Terminology",
+    "searchTerms": "Search your terms",
+    "termsCaption": "Your glossary, ready when you need it",
+    "support": "Human support",
+    "supportCopy": "A person to help with operational questions.",
+    "supportLink": "Visit support",
+    "footnote": "No session recordings or transcripts"
+  },
+  "strip": {
+    "label": "THE WORK, SUPPORTED",
+    "assignments": "Assignments",
+    "preparation": "Preparation",
+    "terminology": "Terminology",
+    "support": "Support",
+    "humanLed": "Human-led workflows"
+  },
+  "how": {
+    "eyebrow": "A CLEARER WAY THROUGH THE DAY",
+    "headingLine1": "From assignment",
+    "headingLine2": "to close-out.",
+    "description": "One connected workflow keeps the practical details together, so you can focus on the work in front of you.",
+    "link": "Explore how it works",
+    "step1Title": "Know what's next",
+    "step1Body": "Keep assignments, schedules, and availability together in one clear view.",
+    "step2Title": "Prepare with purpose",
+    "step2Body": "Review assignment details, your checklist, and the terms you've saved.",
+    "step3Title": "Close the loop",
+    "step3Body": "Complete a simple close-out and reach a person when you need operational support."
+  },
+  "principles": {
+    "eyebrow": "BUILT AROUND THE INTERPRETER",
+    "headingLine1": "Useful tools.",
+    "headingEmphasis": "Clear boundaries.",
+    "body": "VOXRELAY supports the work around an interpreting session. It does not interpret, translate, record, or transcribe. Your workspace is for operational details, preparation, terminology, and human support.",
+    "link": "Privacy & responsible technology"
+  },
+  "assistant": {
+    "title": "Workspace assistant",
+    "close": "Close assistant",
+    "intro": "Search workspace guides locally, or navigate directly. Nothing typed here is sent to a server.",
+    "searchPlaceholder": "Search help topics...",
+    "noMatches": "No matching written guides. Try assignments, privacy, or billing.",
+    "goAssignments": "Go to assignments",
+    "howWorks": "How the workspace works",
+    "contactTeam": "Contact the team",
+    "note": "This assistant helps you navigate the workspace. It does not interpret or translate.",
+    "refusal": {
+      "humanRequired": "Human support required. No automated assistance is permitted for judgment decisions.",
+      "orgScope": "Organization-wide records require coordinator, admin, or owner access.",
+      "noTranslation": "VOXRELAY does not translate or interpret. Matching glossary labels from your saved terms are listed below."
+    },
+    "glossary": {
+      "matches": "Saved term matches ({{count}}): {{labels}}",
+      "summary": "You currently have {{count}} saved terminology entries."
+    },
+    "billing": {
+      "summary": "Billing log: {{total}} total entries ({{invoiced}} awaiting payment)."
+    },
+    "followups": {
+      "summary": "You currently have {{open}} open follow-up items."
+    },
+    "assignments": {
+      "summary": "Upcoming assignments: {{count}}. Next reference: {{nextRef}}."
+    }
+  }
+}
