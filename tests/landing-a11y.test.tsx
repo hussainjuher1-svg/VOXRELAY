@@ -26,8 +26,8 @@ function renderAt(initialPath = '/') {
   );
 }
 
-describe('Landing page accessibility, Radix primitives, and routing', () => {
-  it('renders a single h1 before h2s and wires AssistantDock aria-controls to id="assistant-panel"', () => {
+describe('Public homepage layout, accessibility, Radix primitives, and routing', () => {
+  it('renders the calm public homepage with workflow diagram, boundary strip, and zero floating assistant', () => {
     const { container } = renderAt('/');
     const h1 = container.querySelector('h1');
     const firstH2 = container.querySelector('h2');
@@ -35,28 +35,24 @@ describe('Landing page accessibility, Radix primitives, and routing', () => {
     expect(firstH2).toBeTruthy();
     expect(Boolean(h1!.compareDocumentPosition(firstH2!) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
 
-    const toggle = screen.getByRole('button', { name: /work assistant/i });
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    expect(toggle).not.toHaveAttribute('aria-controls');
+    expect(
+      screen.getByRole('heading', { level: 1, name: /schedule and prepare for interpreting sessions/i })
+    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: /from schedule to call/i })).toBeInTheDocument();
+    expect(screen.getByText(/14:30–15:15/)).toBeInTheDocument();
+    expect(screen.getByText(/on your call platform/i)).toBeInTheDocument();
+    expect(screen.getByText(/the interpreter joins the call/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/voxrelay doesn’t record calls, transcribe speech, or store patient identities/i)
+    ).toBeInTheDocument();
 
-    fireEvent.click(toggle);
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    expect(toggle).toHaveAttribute('aria-controls', 'assistant-panel');
-    const panel = document.getElementById('assistant-panel');
-    expect(panel).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /ask kb/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /research prep/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: /calendar import/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: /microphone check/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: /english–arabic glossary/i })).toBeInTheDocument();
 
-    // Verify KB-01..KB-03 specification cards render populated titles & links (no empty boxes)
-    expect(screen.getByText('KB-01')).toBeInTheDocument();
-    expect(screen.getByText('KB-02')).toBeInTheDocument();
-    expect(screen.getByText('KB-03')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /what voxrelay does and never does/i })).toBeInTheDocument();
-
-    fireEvent.keyDown(window, { key: 'Escape' });
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    expect(document.getElementById('assistant-panel')).not.toBeInTheDocument();
-    expect(document.activeElement).toBe(toggle);
+    // No floating Assistant button or T3 badge noise on public homepage
+    expect(screen.queryByRole('button', { name: /work assistant/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/T3 · Human-only/i)).not.toBeInTheDocument();
   });
 
   it('toggles mobile navigation drawer with matching aria-controls', () => {
@@ -76,17 +72,19 @@ describe('Landing page accessibility, Radix primitives, and routing', () => {
     expect(screen.getByRole('combobox', { name: /role/i })).toBeInTheDocument();
   });
 
-  it('routes /privacy, /faq, /design, and unknown routes cleanly', async () => {
+  it('routes /privacy, /faq, /design, and unknown routes cleanly and populates KB rows on /faq', async () => {
     renderAt('/privacy');
     expect(screen.getByRole('heading', { level: 1, name: /what we refuse to store/i })).toBeInTheDocument();
     cleanup();
 
     renderAt('/faq');
     expect(screen.getByRole('heading', { level: 1, name: /canonical answers synced/i })).toBeInTheDocument();
+    expect(screen.getByText('KB-01')).toBeInTheDocument();
+    expect(screen.getByText(/what voxrelay does and never does/i)).toBeInTheDocument();
     cleanup();
 
     renderAt('/design');
-    expect(await screen.findByRole('heading', { level: 1, name: /voxrelay enterprise design system/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: /voxrelay design system/i })).toBeInTheDocument();
     cleanup();
 
     renderAt('/does-not-exist-xyz');

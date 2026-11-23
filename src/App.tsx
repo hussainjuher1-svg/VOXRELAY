@@ -92,7 +92,7 @@ export function AppRoutes() {
       />
       <Suspense fallback={<RouteFallback />}>
         <Routes>
-          <Route path="/" element={wrapPublic(<HomePage onOpenAssistant={openAssistantWith} />)} />
+          <Route path="/" element={wrapPublic(<HomePage />)} />
           <Route path="/how-it-works" element={wrapPublic(<HowItWorksPage />)} />
           <Route path="/interpreters" element={wrapPublic(<InterpretersPage />)} />
           <Route path="/organizations" element={wrapPublic(<OrganizationsPage />)} />

@@ -1,5 +1,5 @@
 export function BrandMark({
-  size = 24,
+  size = 28,
   pulsing = false,
   className = '',
 }: {
@@ -31,32 +31,26 @@ export function BrandMark({
       />
       <path
         d="M14.5 18H21.5"
-        stroke="#93C5FD"
+        stroke="#B9D3EC"
         strokeWidth="2"
         strokeLinecap="round"
       />
-      <circle
-        cx="18"
-        cy="18"
-        r="2.4"
-        fill="#FFFFFF"
-        className="vr-mark-node"
-      />
+      <circle cx="18" cy="18" r="2.4" fill="#FFFFFF" className="vr-mark-node" />
     </svg>
   );
 }
 
 export function BrandWordmark({
   size = 24,
-  compact = false,
+  className = '',
 }: {
   size?: number;
-  compact?: boolean;
+  className?: string;
 }) {
   return (
-    <span className="vr-wordmark">
+    <span className={`vr-wordmark${className ? ` ${className}` : ''}`}>
       <BrandMark size={size} />
-      {!compact && <span className="vr-wordmark-text">VOXRELAY</span>}
+      <span className="vr-wordmark-text">VOXRELAY</span>
     </span>
   );
 }

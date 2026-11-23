@@ -19,12 +19,12 @@ import { Badge } from '../components/ui/Primitives';
 import { Select } from '../components/ui/Select';
 
 const SWATCHES = [
-  { name: 'Slate Canvas', token: '--vr-paper', hex: '#F8FAFC', contrast: '17.4:1 vs Ink' },
-  { name: 'Surface White', token: '--vr-card', hex: '#FFFFFF', contrast: '18.2:1 vs Ink' },
-  { name: 'Slate Subtle', token: '--vr-vellum', hex: '#F1F5F9', contrast: '15.8:1 vs Ink' },
-  { name: 'Primary Ink', token: '--vr-ink', hex: '#0F172A', contrast: 'AAA Primary' },
-  { name: 'Enterprise Blue', token: '--vr-accent-brand', hex: '#2563EB', contrast: '5.1:1 AA Primary CTA' },
-  { name: 'Carbon Sidebar', token: '--vr-dark', hex: '#0B0F19', contrast: 'Sidebar / Footer' },
+  { name: 'Cool White Canvas', token: '--vr-paper', hex: '#F7F9FB', contrast: '14.9:1 vs Ink' },
+  { name: 'Pale Blue Panel', token: '--vr-panel-blue', hex: '#EAF1F8', contrast: 'Diagram surface' },
+  { name: 'Surface White', token: '--vr-card', hex: '#FFFFFF', contrast: '15.4:1 vs Ink' },
+  { name: 'Dark Ink', token: '--vr-ink', hex: '#162634', contrast: 'Primary copy & heading' },
+  { name: 'Deep Blue', token: '--vr-accent-brand', hex: '#174A7E', contrast: '8.7:1 AA Primary CTA' },
+  { name: 'Rule Hairline', token: '--vr-hairline', hex: '#DCE3EC', contrast: 'Section dividers' },
   { name: 'Verified Green', token: '--vr-ok', hex: '#047857', contrast: '5.4:1 AA Semantic' },
 ];
 
@@ -43,12 +43,12 @@ export function DesignSystemPage() {
             <div>
               <p className="eyebrow">{isAr ? 'مواصفات التصميم ٢.٠' : 'Design System v2.0'}</p>
               <h1 className="page-display">
-                {isAr ? 'نظام التصميم التشغيلي لـ VOXRELAY' : 'VOXRELAY Enterprise Design System'}
+                {isAr ? 'نظام التصميم لـ VOXRELAY' : 'VOXRELAY Design System'}
               </h1>
               <p className="editorial-prose">
                 {isAr
-                  ? 'لوحة ألوان واضحة (#F8FAFC / #FFFFFF / #0B0F19) وخطوط Inter Tight و IBM Plex Sans Arabic و IBM Plex Mono بدقة جدولية.'
-                  : 'Cool Slate surfaces (#F8FAFC / #FFFFFF) with Carbon Navy navigation (#0B0F19), crisp 6px radii, and unified Inter Tight + IBM Plex Mono typography.'}
+                  ? 'خلفية بيضاء باردة (#F7F9FB) مع حبر داكن (#162634) وأزرق عميق (#174A7E) وخطوط IBM Plex Sans و IBM Plex Sans Arabic الواضحة.'
+                  : 'Cool-white canvas (#F7F9FB), dark ink (#162634), deep blue (#174A7E) actions and timeline, pale-blue panels (#EAF1F8), and upright IBM Plex Sans + IBM Plex Sans Arabic typography.'}
               </p>
             </div>
             <div className="hero-cta-row">
@@ -121,14 +121,14 @@ export function DesignSystemPage() {
           <div className="editorial-card">
             <p className="eyebrow">{isAr ? 'الطباعة' : '03 · Typography'}</p>
             <h2 className="section-display">
-              {isAr ? 'خط IBM Plex Sans Arabic الواضح للواجهات' : 'Inter Tight + IBM Plex Mono (Zero Serif)'}
+              {isAr ? 'IBM Plex Sans + IBM Plex Sans Arabic' : 'IBM Plex Sans + IBM Plex Sans Arabic (Upright)'}
             </h2>
             <p className="editorial-prose">
               {isAr
-                ? 'نظام طباعي موحّد يعتمد خط IBM Plex Sans Arabic للواجهات والنصوص الطويلة مع IBM Plex Mono للمعرّفات والأوقات.'
-                : 'Uniform sans-serif typography across every heading, body paragraph, and table, paired with tabular monospace for references and timestamps.'}
+                ? 'خطوط متزنة بدون ميلان أو زخرفة، مع أرقام جدولية للأوقات والمواعيد.'
+                : 'Upright 52px semibold headings, 18px body copy, and tabular numerals for session times—no italics and no decorative monospace.'}
             </p>
-            <code>VR-0042 · 2026-12-01 · 45 min</code>
+            <span className="vr-tabular-time">14:30–15:15 · VR-0042</span>
           </div>
 
           <div className="editorial-card">

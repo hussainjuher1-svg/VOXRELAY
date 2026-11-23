@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import * as Tabs from '@radix-ui/react-tabs';
-import { Check, Lock, Mic, ShieldCheck } from 'lucide-react';
 import { useLocale } from '../context/hooks';
 import { KNOWLEDGE_BASE } from '../../api/_lib/kb.js';
 import {
@@ -18,318 +16,115 @@ import { Field, Input, Textarea } from '../components/ui/Field';
 import { Badge, Skeleton } from '../components/ui/Primitives';
 import { Select } from '../components/ui/Select';
 
-export function HomePage({ onOpenAssistant }: { onOpenAssistant?: (q?: string) => void }) {
+export function HomePage() {
   const { locale } = useLocale();
   const isAr = locale === 'ar';
-  const [heroTab, setHeroTab] = useState<'schedule' | 'glossary' | 'readiness'>('schedule');
-  const [checks, setChecks] = useState({ mic: true, phi: true, boundary: true });
 
   return (
     <div className="pub-page">
-      {/* 1. Enterprise Split Hero — Upright Typography + Real Workspace Ledger */}
-      <section className="hero-band">
-        <div className="pub-container hero-split-enterprise">
-          <div className="hero-copy">
-            <p className="eyebrow">
-              {isAr ? 'إدارة عمليات الترجمة الفورية عن بُعد' : 'Remote interpreting operations'}
+      {/* Hero Split: Left Copy + Right Pale-Blue Workflow Diagram */}
+      <section className="home-hero-band">
+        <div className="pub-container home-hero-grid">
+          <div className="home-hero-copy">
+            <p className="home-kicker">
+              {isAr ? 'الترجمة الطبية والمجتمعية' : 'Medical and community interpreting'}
             </p>
-            <h1 className="hero-h1">
+            <h1 className="home-h1">
               {isAr
-                ? 'منصة تشغيل منظمة للتحضير والمواعيد والمصطلحات قبل الجلسة وبعدها.'
-                : 'Coordinate interpreting schedules, readiness, and terminology in one workspace.'}
+                ? 'جدولة جلسات الترجمة والاستعداد لها.'
+                : 'Schedule and prepare for interpreting sessions.'}
             </h1>
-            <p className="hero-lead">
+            <p className="home-lead">
               {isAr
-                ? 'استورد مواعيد التقويم بالتوقيت المحلي والعالمي، افحص الميكروفون محلياً في المتصفح، وأدر مسارد ثنائية اللغة — دون تسجيل صوتي أو تفريغ نصي أو حفظ هوية المريض.'
-                : 'Manage timing-only calendar assignments, run browser-local microphone checks, and maintain bilingual glossaries—without audio recording, live transcription, or patient identity storage.'}
+                ? 'افحص الميكروفون قبل المكالمة وابحث في مسرد المصطلحات الإنجليزي–العربي.'
+                : 'Check your microphone before a call and look up terms in an English–Arabic glossary.'}
             </p>
-            <div className="hero-cta-row">
-              <Link to="/contact" className="cta-primary-pill">
+            <div className="home-cta-wrap">
+              <Link to="/contact" className="home-cta-primary">
                 {isAr ? 'طلب الوصول' : 'Request access'}
               </Link>
-              <Link to="/privacy" className="cta-secondary-pill">
-                {isAr ? 'ميثاق الخصوصية' : 'Read privacy charter'}
-              </Link>
-            </div>
-            <div className="hero-trust-strip">
-              <span>
-                <Lock size={13} aria-hidden="true" />
-                {isAr ? 'استيراد .ics بدون بيانات مرضى' : 'Timing-only .ics intake'}
-              </span>
-              <span>
-                <Mic size={13} aria-hidden="true" />
-                {isAr ? 'فحص صوت محلي بلا تسجيل' : 'Browser-local mic check'}
-              </span>
-              <span>
-                <ShieldCheck size={13} aria-hidden="true" />
-                {isAr ? 'سير عمل بشري حصري T3' : 'Human-only T3 policy'}
-              </span>
             </div>
           </div>
 
-          {/* Crisp Interactive Enterprise Workspace Ledger */}
-          <div className="workspace-preview-card" aria-label={isAr ? 'معاينة مساحة العمل' : 'Interactive workspace preview'}>
-            <div className="workspace-preview-bar">
-              <div className="workspace-preview-title">
-                <span className="status-dot is-ok" aria-hidden="true" />
-                <span>{isAr ? 'هيكل جدول المواعيد' : 'Workspace structure'}</span>
-              </div>
-              <Badge tone="teal">{isAr ? 'سير عمل بشري T3' : 'T3 · Human-only'}</Badge>
-            </div>
-
-            <Tabs.Root
-              value={heroTab}
-              onValueChange={(v) => setHeroTab(v as 'schedule' | 'glossary' | 'readiness')}
-            >
-              <Tabs.List className="workspace-tabs-list" aria-label={isAr ? 'تبويبات المعاينة' : 'Workspace tabs'}>
-                <Tabs.Trigger value="schedule" className="workspace-tab-btn">
-                  {isAr ? 'المواعيد' : 'Schedule ledger'}
-                </Tabs.Trigger>
-                <Tabs.Trigger value="glossary" className="workspace-tab-btn">
-                  {isAr ? 'المسرد' : 'Terminology'}
-                </Tabs.Trigger>
-                <Tabs.Trigger value="readiness" className="workspace-tab-btn">
-                  {isAr ? 'فحص الجاهزية' : 'Pre-flight'}
-                </Tabs.Trigger>
-              </Tabs.List>
-
-              <Tabs.Content value="schedule" className="workspace-tab-body">
-                <div className="ledger-table" role="table" aria-label={isAr ? 'حقول جدول المواعيد' : 'Assignment fields'}>
-                  <div className="ledger-row ledger-row--head" role="row">
-                    <span>{isAr ? 'الحقل' : 'Field'}</span>
-                    <span>{isAr ? 'النوع' : 'Type'}</span>
-                    <span>{isAr ? 'سياسة المعالجة' : 'Handling rule'}</span>
-                    <span>{isAr ? 'النطاق' : 'Scope'}</span>
-                  </div>
-                  <div className="ledger-row" role="row">
-                    <code>start_at</code>
-                    <span>ISO-8601</span>
-                    <span>{isAr ? 'مقروء من DTSTART فقط' : 'Parsed from DTSTART only'}</span>
-                    <code>UTC + TZ</code>
-                  </div>
-                  <div className="ledger-row" role="row">
-                    <code>duration_min</code>
-                    <span>Integer</span>
-                    <span>{isAr ? 'محسوب من DTEND − DTSTART' : 'Derived from DTEND − DTSTART'}</span>
-                    <code>Minutes</code>
-                  </div>
-                  <div className="ledger-row" role="row">
-                    <code>summary</code>
-                    <span>Discarded</span>
-                    <span>{isAr ? 'مُستبعد لمنع إدخال هوية العميل' : 'Ignored on import to exclude PHI'}</span>
-                    <code>0 bytes</code>
-                  </div>
-                </div>
-              </Tabs.Content>
-
-              <Tabs.Content value="glossary" className="workspace-tab-body">
-                <div className="ledger-table" role="table" aria-label={isAr ? 'خصائص المسرد' : 'Terminology engine'}>
-                  <div className="ledger-row ledger-row--head" role="row">
-                    <span>{isAr ? 'الخاصية' : 'Capability'}</span>
-                    <span>{isAr ? 'المعيار' : 'Standard'}</span>
-                    <span>{isAr ? 'السلوك' : 'Behavior'}</span>
-                    <span>{isAr ? 'الحالة' : 'Status'}</span>
-                  </div>
-                  <div className="ledger-row" role="row">
-                    <span>{isAr ? 'استيراد CSV' : 'CSV intake'}</span>
-                    <code>UTF-8/16</code>
-                    <span>{isAr ? 'كشف BOM وتوافق Excel' : 'Automatic BOM detection'}</span>
-                    <code>Active</code>
-                  </div>
-                  <div className="ledger-row" role="row">
-                    <span>{isAr ? 'تطبيع البحث' : 'Script search'}</span>
-                    <code>NFKC/NFD</code>
-                    <span>{isAr ? 'تجاهل التشكيل والهمزات' : 'Matches Arabic & Latin variants'}</span>
-                    <code>Active</code>
-                  </div>
-                  <div className="ledger-row" role="row">
-                    <span>{isAr ? 'وصول سريع' : 'Quick lookup'}</span>
-                    <code>Cmd+K</code>
-                    <span>{isAr ? 'انتقال فوري للمصطلحات والمهام' : 'Jump across terms and routes'}</span>
-                    <code>Ready</code>
-                  </div>
-                </div>
-              </Tabs.Content>
-
-              <Tabs.Content value="readiness" className="workspace-tab-body">
-                <div className="readiness-checks">
-                  <button
-                    type="button"
-                    className={`readiness-item${checks.mic ? ' is-checked' : ''}`}
-                    onClick={() => setChecks((c) => ({ ...c, mic: !c.mic }))}
-                  >
-                    <span className="readiness-box">{checks.mic && <Check size={12} />}</span>
-                    <span>
-                      <strong>{isAr ? 'فحص الميكروفون عبر AudioContext' : 'Local AudioContext mic signal check'}</strong>
-                      <small>{isAr ? 'يعمل في المتصفح دون إرسال أي صوت' : 'Runs locally in browser; zero server stream'}</small>
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    className={`readiness-item${checks.phi ? ' is-checked' : ''}`}
-                    onClick={() => setChecks((c) => ({ ...c, phi: !c.phi }))}
-                  >
-                    <span className="readiness-box">{checks.phi && <Check size={12} />}</span>
-                    <span>
-                      <strong>{isAr ? 'تنقيح البيانات الشخصية آلياً' : 'Automatic PII & attendee stripping'}</strong>
-                      <small>{isAr ? 'استبعاد أسماء المرضى والعناوين عند الاستيراد' : 'Names, attendees, and descriptions discarded on intake'}</small>
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    className={`readiness-item${checks.boundary ? ' is-checked' : ''}`}
-                    onClick={() => setChecks((c) => ({ ...c, boundary: !c.boundary }))}
-                  >
-                    <span className="readiness-box">{checks.boundary && <Check size={12} />}</span>
-                    <span>
-                      <strong>{isAr ? 'التزام T3 البشري الحصري' : 'Sealed T3 human-only runtime policy'}</strong>
-                      <small>{isAr ? 'لا ترجمة حية ولا تفريغ نصي داخل أي جلسة' : 'Live interpreting and speech capture permanently disabled'}</small>
-                    </span>
-                  </button>
-                </div>
-              </Tabs.Content>
-            </Tabs.Root>
-          </div>
-        </div>
-      </section>
-
-      {/* 2. Architectural Boundary Band */}
-      <section className="band-wrapper">
-        <div className="pub-container">
-          <div className="dark-pause-band">
-            <p className="eyebrow eyebrow--inverse">
-              {isAr ? 'الحد الفاصل في البنية' : 'Architectural boundary'}
-            </p>
-            <h2 className="dark-band-display">
-              {isAr
-                ? 'تقنية منظمة تساند المترجم البشري ولا تحل محله.'
-                : 'Operational software built to support human interpreters—never replace them.'}
+          <aside
+            className="workflow-panel"
+            aria-label={isAr ? 'مخطط سير العمل من الجدولة إلى المكالمة' : 'From schedule to call workflow diagram'}
+          >
+            <h2 className="workflow-panel-title">
+              {isAr ? 'من الجدولة إلى المكالمة' : 'From schedule to call'}
             </h2>
-            <p className="dark-band-prose">
-              {isAr
-                ? 'لا ترجمة آلية، لا تسجيل صوتي، ولا تفريغ نصي في أي شاشة. كل جلسة تبقى بقيادة بشرية خالصة.'
-                : 'VOXRELAY enforces a sealed T3 human-only policy across API endpoints, database schema, and assistant guardrails. Live audio stays strictly within your external call platform.'}
-            </p>
-            <div className="dark-band-actions">
-              <Link to="/privacy" className="cta-cream-pill">
-                {isAr ? 'ميثاق الخصوصية' : 'Read the Privacy Charter'}
-              </Link>
-              <button
-                type="button"
-                className="cta-ghost-inverse"
-                onClick={() => onOpenAssistant?.(isAr ? 'ما حدود عمل VOXRELAY؟' : 'What does VOXRELAY never do?')}
-              >
-                {isAr ? 'اسأل المساعد' : 'Ask the assistant'}
-              </button>
-            </div>
-          </div>
-        </div>
-      </section>
 
-      {/* 3. Asymmetrical [34/66] Statement + Hairline-Ruled Rows */}
-      <section className="band-vellum">
-        <div className="pub-container split-editorial-rows">
-          <div className="split-editorial-lead">
-            <p className="eyebrow">{isAr ? 'المعمارية التشغيلية' : 'Operational discipline'}</p>
-            <h2 className="section-display">
-              {isAr ? 'كل ما تحتاجه قبل الجلسة وبعدها' : 'Structured control before and after every session'}
-            </h2>
-            <p className="editorial-prose">
-              {isAr
-                ? 'تفصل المنصة المواعيد والمصطلحات والفوترة عن محتوى اللقاء الطبي أو القانوني.'
-                : 'Designed with clear tabular schedules, strict role isolation, and full auditability for independent practitioners and language teams.'}
-            </p>
-          </div>
-
-          <div className="ruled-statement-list">
-            <div className="ruled-statement-row">
-              <div>
-                <h3>{isAr ? '01 · استيراد مواعيد آمن' : '01 · Timing-only calendar intake'}</h3>
-                <p>
-                  {isAr
-                    ? 'اقرأ أوقات البدء والمدة فقط من ملفات .ics وتجاهل العناوين وأسماء المشاركين.'
-                    : 'Parse DTSTART and DTEND from .ics files while discarding event titles, attendee names, and clinical context.'}
-                </p>
-              </div>
-              <Link to="/how-it-works" className="editorial-inline-link">
-                {isAr ? 'التفاصيل' : 'Workflow'}
-              </Link>
+            <div className="workflow-section-label">
+              {isAr ? 'داخل VOXRELAY' : 'In VoxRelay'}
             </div>
 
-            <div className="ruled-statement-row">
-              <div>
-                <h3>{isAr ? '02 · فحص الميكروفون محلياً' : '02 · Local AudioContext check'}</h3>
-                <p>
-                  {isAr
-                    ? 'قِس مستوى الإشارة داخل المتصفح قبل الاتصال دون رفع أي مقطع صوتي إلى الخادم.'
-                    : 'Verify input signal level live in your browser before joining calls—zero media streams leave your device.'}
-                </p>
-              </div>
-              <Link to="/interpreters" className="editorial-inline-link">
-                {isAr ? 'للمترجمين' : 'Interpreters'}
-              </Link>
-            </div>
-
-            <div className="ruled-statement-row">
-              <div>
-                <h3>{isAr ? '03 · مسارد مصطلحات ثنائية اللغة' : '03 · Bilingual terminology vault'}</h3>
-                <p>
-                  {isAr
-                    ? 'ابحث في المسارد العربية والإنجليزية بدعم كامل للاستيراد والتصدير بترميز UTF-16.'
-                    : 'Maintain English–Arabic glossaries with diacritic-tolerant search and Excel-safe UTF-8/UTF-16 CSV export.'}
-                </p>
-              </div>
-              <Link to="/app/terminology" className="editorial-inline-link">
-                {isAr ? 'المسرد' : 'Glossary'}
-              </Link>
-            </div>
-
-            <div className="ruled-statement-row">
-              <div>
-                <h3>{isAr ? '04 · مراجعة الطلبات والدعم البشري' : '04 · Reviewed access & human support'}</h3>
-                <p>
-                  {isAr
-                    ? 'تُراجع طلبات الانضمام عبر بوابة الإدارة مع إصدار دعوات لمرة واحدة وتذاكر دعم موثقة.'
-                    : 'Every access request goes through an admin approval queue with single-use invite tokens and support ticket SLAs.'}
-                </p>
-              </div>
-              <Link to="/organizations" className="editorial-inline-link">
-                {isAr ? 'للمؤسسات' : 'Organizations'}
-              </Link>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 4. Grounded Specifications */}
-      <section className="band-paper">
-        <div className="pub-container">
-          <div className="section-head-row">
-            <div>
-              <p className="eyebrow">{isAr ? 'مواصفات موثقة' : 'Documented specifications'}</p>
-              <h2 className="section-display">
-                {isAr ? 'ضوابط منشورة في قاعدة المعرفة' : 'Verified rules from the system knowledge base'}
-              </h2>
-            </div>
-            <Link to="/faq" className="editorial-inline-link">
-              {isAr ? 'عرض جميع الأسئلة' : 'Read full FAQ'}
-            </Link>
-          </div>
-
-          <div className="field-notes-grid">
-            {KNOWLEDGE_BASE.slice(0, 3).map((entry) => (
-              <article key={entry.id} className="field-note-card">
-                <div className="field-note-meta">
-                  <span>{entry.id}</span>
-                  <span>{entry.category}</span>
+            <ol className="workflow-timeline">
+              <li className="workflow-step">
+                <span className="workflow-dot" aria-hidden="true" />
+                <div className="workflow-step-body">
+                  <div className="workflow-step-title">
+                    <span className="vr-tabular-time">14:30–15:15</span>
+                    <span aria-hidden="true"> · </span>
+                    <span>{isAr ? 'إنجليزي ↔ عربي' : 'English ↔ Arabic'}</span>
+                  </div>
+                  <div className="workflow-step-sub">
+                    {isAr ? 'الوقت المجدول' : 'Scheduled time'}
+                  </div>
                 </div>
-                <h3>{isAr ? entry.title.ar : entry.title.en}</h3>
-                <p>{isAr ? entry.summary.ar : entry.summary.en}</p>
-                <Link to={entry.href} className="editorial-inline-link">
-                  {isAr ? 'عرض المرجع' : 'Read specification'}
-                </Link>
-              </article>
-            ))}
+              </li>
+
+              <li className="workflow-step">
+                <span className="workflow-dot" aria-hidden="true" />
+                <div className="workflow-step-body">
+                  <div className="workflow-step-title">
+                    {isAr ? 'فحص الميكروفون' : 'Microphone check'}
+                  </div>
+                  <div className="workflow-step-sub">
+                    {isAr ? 'يعمل على جهازك' : 'Runs on your device'}
+                  </div>
+                </div>
+              </li>
+            </ol>
+
+            <div className="workflow-boundary-divider" role="separator">
+              <span>{isAr ? 'على منصة المكالمات الخاصة بك' : 'On your call platform'}</span>
+            </div>
+
+            <div className="workflow-external-step">
+              <span className="workflow-arrow" aria-hidden="true">↗</span>
+              <span className="workflow-external-text">
+                {isAr ? 'ينضم المترجم إلى المكالمة' : 'The interpreter joins the call'}
+              </span>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      {/* Boundary Statement Strip */}
+      <section className="home-boundary-strip">
+        <div className="pub-container">
+          <p className="home-boundary-text">
+            {isAr
+              ? 'لا يسجّل VOXRELAY المكالمات، ولا يفرّغ الكلام، ولا يحفظ هويات المرضى.'
+              : 'VoxRelay doesn’t record calls, transcribe speech, or store patient identities.'}
+          </p>
+        </div>
+      </section>
+
+      {/* Three Crisp Capability Columns */}
+      <section className="home-pillars-band">
+        <div className="pub-container home-pillars-grid">
+          <div className="home-pillar">
+            <h2>{isAr ? 'استيراد التقويم' : 'Calendar import'}</h2>
+            <p>{isAr ? 'استيراد أوقات البدء والانتهاء فقط.' : 'Import start and end times only.'}</p>
+          </div>
+          <div className="home-pillar">
+            <h2>{isAr ? 'فحص الميكروفون' : 'Microphone check'}</h2>
+            <p>{isAr ? 'اعرض مستوى الإشارة قبل الانضمام للمكالمة.' : 'See your input level before joining a call.'}</p>
+          </div>
+          <div className="home-pillar">
+            <h2>{isAr ? 'مسرد إنجليزي–عربي' : 'English–Arabic glossary'}</h2>
+            <p>{isAr ? 'ابحث في المصطلحات وصدّرها إلى CSV.' : 'Search terms and export to CSV.'}</p>
           </div>
         </div>
       </section>
