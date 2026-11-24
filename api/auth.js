@@ -314,7 +314,12 @@ async function handleSupabaseSignup(data, req, res) {
       let finRes = null;
       let finErr = null;
       for (let attempt = 0; attempt < 2; attempt += 1) {
-        ({ data: finRes, error: finErr } = await service.rpc('finalize_access_invite', finalizeArgs));
+        try {
+          ({ data: finRes, error: finErr } = await service.rpc('finalize_access_invite', finalizeArgs));
+        } catch (err) {
+          finRes = null;
+          finErr = err instanceof Error ? err : new Error(String(err));
+        }
         if (!finErr && finRes?.ok) break;
       }
 

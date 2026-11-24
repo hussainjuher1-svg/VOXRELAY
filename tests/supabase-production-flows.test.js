@@ -34,6 +34,9 @@ const state = {
     throwResendEmail: false,
     failFinalizeInvite: false,
     commitFinalizeButReturnError: false,
+    throwFinalizeAfterCommit: false,
+    throwFinalizeInvite: false,
+    failAccessRequestMaybeSingle: false,
     failReleaseInvite: false,
     returnFalseReleaseInvite: false,
     leaseExpiresInMs: 120_000,
@@ -59,6 +62,9 @@ function resetHarness() {
     throwResendEmail: false,
     failFinalizeInvite: false,
     commitFinalizeButReturnError: false,
+    throwFinalizeAfterCommit: false,
+    throwFinalizeInvite: false,
+    failAccessRequestMaybeSingle: false,
     failReleaseInvite: false,
     returnFalseReleaseInvite: false,
     leaseExpiresInMs: 120_000,
@@ -206,6 +212,9 @@ function makeQuery(tableName) {
       return builder;
     },
     async maybeSingle() {
+      if (tableName === 'access_requests' && state.faults.failAccessRequestMaybeSingle) {
+        return { data: null, error: { message: 'simulated access_requests lookup failure' } };
+      }
       const r = await execute();
       if (r.error) return r;
       const first = Array.isArray(r.data) ? r.data[0] || null : r.data || null;
@@ -398,6 +407,9 @@ vi.mock('@supabase/supabase-js', () => ({
       }
 
       if (fnName === 'finalize_access_invite') {
+        if (state.faults.throwFinalizeInvite) {
+          throw new Error('finalize RPC network failure');
+        }
         if (state.faults.failFinalizeInvite || state.faults.failAuditInsert) {
           return { data: null, error: { message: 'finalize transaction aborted' } };
         }
@@ -443,6 +455,9 @@ vi.mock('@supabase/supabase-js', () => ({
           created_at: new Date().toISOString(),
         });
 
+        if (state.faults.throwFinalizeAfterCommit) {
+          throw new Error('finalize RPC threw after commit');
+        }
         if (state.faults.commitFinalizeButReturnError) {
           return { data: null, error: { message: 'finalize response lost after commit' } };
         }
@@ -1281,5 +1296,86 @@ describe('Production Supabase mode (VERCEL=1): reliability, two-phase invites, r
     );
     expect(retry.statusCode).toBe(201);
     expect(state.tables.access_requests.find((r) => r.id === invite.reqId).status).toBe('redeemed');
+  });
+
+  it('preserves user, membership, redeemed invite, and single audit event when finalize RPC throws after commit', async () => {
+    const platformAdmin = registerAuthUser({ email: 'padmin-throw@voxrelay.test', appRole: 'platform_admin' });
+    const invite = await seedAndApproveOrgInvite({
+      email: 'throw.after.commit@clinic.org',
+      orgName: 'Throw After Commit Clinic',
+      adminToken: platformAdmin.token,
+    });
+
+    state.faults.throwFinalizeAfterCommit = true;
+    const res = createRes();
+    await authHandler(
+      createReq({
+        method: 'POST',
+        url: '/api/auth',
+        ip: '198.51.100.213',
+        body: {
+          action: 'signup',
+          email: 'throw.after.commit@clinic.org',
+          password: 'ValidStrongPassword123!',
+          inviteToken: invite.inviteToken,
+        },
+      }),
+      res
+    );
+
+    expect(res.statusCode).toBe(201);
+    expect(res.json().ok).toBe(true);
+    expect(res.json().accountCreated).toBe(true);
+
+    const user = state.usersByEmail.get('throw.after.commit@clinic.org');
+    expect(user).toBeTruthy();
+    const membership = state.tables.memberships.find((m) => m.user_id === user.id && m.org_id === invite.orgId);
+    expect(membership).toBeTruthy();
+
+    const reqRow = state.tables.access_requests.find((r) => r.id === invite.reqId);
+    expect(reqRow.status).toBe('redeemed');
+    expect(reqRow.provisioned_user_id).toBe(user.id);
+
+    const finalizeAudits = state.tables.audit_events.filter(
+      (e) => e.type === 'invite_signup' && e.object_ref === String(invite.reqId) && e.result === 'ok'
+    );
+    expect(finalizeAudits.length).toBe(1);
+  });
+
+  it('returns uncertain 503 without destructive cleanup when finalize RPC throws and reconciliation lookup fails', async () => {
+    const platformAdmin = registerAuthUser({ email: 'padmin-uncertain@voxrelay.test', appRole: 'platform_admin' });
+    const invite = await seedAndApproveOrgInvite({
+      email: 'uncertain.throw@clinic.org',
+      orgName: 'Uncertain Throw Clinic',
+      adminToken: platformAdmin.token,
+    });
+
+    state.faults.throwFinalizeInvite = true;
+    state.faults.failAccessRequestMaybeSingle = true;
+    const res = createRes();
+    await authHandler(
+      createReq({
+        method: 'POST',
+        url: '/api/auth',
+        ip: '198.51.100.214',
+        body: {
+          action: 'signup',
+          email: 'uncertain.throw@clinic.org',
+          password: 'ValidStrongPassword123!',
+          inviteToken: invite.inviteToken,
+        },
+      }),
+      res
+    );
+
+    expect(res.statusCode).toBe(503);
+    expect(res.json().provisioningStatus).toBe('uncertain');
+    expect(res.json().ok).toBe(false);
+
+    // No destructive cleanup: user and membership must still exist.
+    const user = state.usersByEmail.get('uncertain.throw@clinic.org');
+    expect(user).toBeTruthy();
+    const membership = state.tables.memberships.find((m) => m.user_id === user.id && m.org_id === invite.orgId);
+    expect(membership).toBeTruthy();
   });
 });
