@@ -5,6 +5,17 @@ import { HttpError } from './_lib/authz.js';
 import { readJsonBody, sendJson } from './_lib/core.js';
 import { enqueueOutboxEmail, getLocalDb, hashPassword, hashSecret, verifyPassword, writeLocalAudit } from './_lib/local-db.js';
 
+const BREACHED_PASSWORDS = new Set([
+  'password1234',
+  'password12345',
+  '123456789012',
+  'qwertyuiopas',
+  'letmein12345',
+  'admin1234567',
+  'welcome12345',
+  'voxrelay1234',
+]);
+
 const authActionSchema = z.discriminatedUnion('action', [
   z.object({
     action: z.literal('signup'),
@@ -23,6 +34,10 @@ const authActionSchema = z.discriminatedUnion('action', [
     action: z.literal('signout'),
   }),
   z.object({
+    action: z.literal('revoke_session'),
+    sessionId: z.string().min(1).max(120),
+  }),
+  z.object({
     action: z.literal('revoke_all'),
   }),
 ]);
@@ -36,7 +51,8 @@ export default async function handler(req, res) {
     if (actor.mode === 'local' && actor.db) {
       sessions = actor.db
         .prepare('SELECT id, user_agent, expires_at, created_at FROM local_sessions WHERE user_id = ? ORDER BY created_at DESC')
-        .all(actor.user.id);
+        .all(actor.user.id)
+        .map((s) => ({ ...s, isCurrent: s.id === actor.sessionId }));
     }
     return sendJson(res, 200, { authenticated: true, mode: actor.mode, user: actor.user, sessions });
   }
@@ -70,6 +86,19 @@ export default async function handler(req, res) {
       return sendJson(res, 200, { ok: true });
     }
 
+    if (data.action === 'revoke_session') {
+      const actor = await resolveActor(req);
+      if (!actor) return sendJson(res, 401, { error: 'Authentication required.' });
+      if (actor.mode === 'local') {
+        db.prepare('DELETE FROM local_sessions WHERE id = ? AND user_id = ?').run(data.sessionId, actor.user.id);
+        writeLocalAudit(db, { actorId: actor.user.id, area: 'auth', type: 'revoke_session', result: 'ok' });
+        if (actor.sessionId === data.sessionId) {
+          clearSessionCookie(res);
+        }
+      }
+      return sendJson(res, 200, { ok: true });
+    }
+
     if (data.action === 'revoke_all') {
       const actor = await resolveActor(req);
       if (!actor) return sendJson(res, 401, { error: 'Authentication required.' });
@@ -82,6 +111,9 @@ export default async function handler(req, res) {
     }
 
     if (data.action === 'signup') {
+      if (BREACHED_PASSWORDS.has(data.password.toLowerCase())) {
+        return sendJson(res, 400, { error: 'This password appears in known breaches. Choose a stronger passphrase.' });
+      }
       const email = data.email.toLowerCase();
       const existing = db.prepare('SELECT id FROM local_users WHERE email = ?').get(email);
       if (existing) {
@@ -142,8 +174,14 @@ export default async function handler(req, res) {
       }
       if (!verifyPassword(data.password, user.password_hash)) {
         const attempts = (user.failed_attempts || 0) + 1;
-        const lockedUntil = attempts >= 5 ? new Date(Date.now() + 5 * 60_000).toISOString() : null;
+        const lockedUntil = attempts >= 5 ? new Date(Date.now() + 15 * 60_000).toISOString() : null;
         db.prepare('UPDATE local_users SET failed_attempts = ?, locked_until = ? WHERE id = ?').run(attempts, lockedUntil, user.id);
+        writeLocalAudit(db, {
+          actorId: user.id,
+          area: 'auth',
+          type: lockedUntil ? 'account_locked' : 'signin_failed',
+          result: 'denied',
+        });
         return sendJson(res, 401, { error: 'Invalid email or password.' });
       }
 

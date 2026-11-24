@@ -10,6 +10,8 @@ export function redactPii(text) {
 
 const LIVE_INTERPRET_RE = /\b(translate|interpret|transcribe|record\s+session|patient\s+said|doctor\s+said|diagnose|prescribe|legal\s+advice|medical\s+advice|verdict|lawsuit)\b/i;
 const HUMAN_ESCALATE_RE = /\b(human|person|agent|staff|coordinator|escalate|ticket|support\s+team|talk\s+to\s+someone|بشر|دعم|تذكرة)\b/i;
+const GREETING_RE = /^(hi|hello|hey|yo|bro|mate|friend|good\s+(morning|afternoon|evening)|greetings|salam|assalamu\s+alaikum|hola|thanks|thank\s+you|ok|okay|cool|test|مرحبا|أهلا|السلام\s+عليكم|شكرا|হ্যালো|হাই|ধন্যবাদ)[\s!.,?]*$/i;
+const IDENTITY_RE = /^(what\s+is\s+(your|ur)\s+name|who\s+are\s+you|what\s+are\s+you|what\s+can\s+you\s+do|about\s+you|introduce\s+yourself|ما\s+اسمك|من\s+أنت|তোমার\s+নাম\s+কি|তুমি\s+কে)[\s!.,?]*$/i;
 
 const DOMAIN_RESEARCH_BRIEFS = [
   {
@@ -107,10 +109,54 @@ export function buildWorkspaceSnapshot({ db, userId }) {
 
 export async function runAssistantStream({ mode = 'ask', question, locale = 'en', db, userId, emit }) {
   const sanitized = redactPii(question).trim();
-  const lang = locale === 'ar' ? 'ar' : 'en';
+  const lang = locale === 'ar' ? 'ar' : locale === 'bn' ? 'bn' : 'en';
 
   if (!sanitized) {
-    emit({ type: 'error', message: lang === 'ar' ? 'الرجاء إدخال سؤال.' : 'Please enter a question.' });
+    emit({
+      type: 'error',
+      message:
+        lang === 'ar'
+          ? 'الرجاء إدخال سؤال.'
+          : lang === 'bn'
+            ? 'অনুগ্রহ করে একটি প্রশ্ন লিখুন।'
+            : 'Please enter a question.',
+    });
+    return;
+  }
+
+  if (IDENTITY_RE.test(sanitized)) {
+    const identityText =
+      lang === 'ar'
+        ? '### مساعد عمل VOXRELAY\n\n- **الاسم:** مساعد عمل VOXRELAY (Grounded KB).\n- **المهام:** المساعدة في الجدولة واستيراد `.ics`، فحص الجهاز، القاموس، وقواعد الخصوصية.\n- **حدود الأمان:** لا أسجل الصوت ولا أترجم المحادثات الحية (المستوى T3 للبشر فقط).'
+        : lang === 'bn'
+          ? '### VOXRELAY কর্মক্ষেত্র সহকারী\n\n- **নাম:** VOXRELAY কর্মক্ষেত্র সহকারী (Grounded KB)।\n- **কাজ:** সময়সূচী ও `.ics` আমদানি, ডিভাইস পরীক্ষা, পরিভাষা এবং গোপনীয়তা নীতিতে সাহায্য করা।\n- **সীমা:** আমি কোনো অডিও রেকর্ড করি না বা লাইভ অনুবাদ করি না (T3 মানব-বিচারসীমা)।'
+          : "### VOXRELAY Work Assistant\n\n- **Name:** VOXRELAY Work Assistant (grounded workspace & KB helper).\n- **How I help:** Scheduling & `.ics` imports, terminology prep, device readiness, and T0–T3 privacy rules.\n- **Safety boundary:** Zero audio recording and no live translation (T3 human-only).";
+    emit({ type: 'delta', text: identityText });
+    emit({ type: 'quick_chips', show: true });
+    return;
+  }
+
+  if (GREETING_RE.test(sanitized)) {
+    if (mode === 'research') {
+      const researchPrompt =
+        lang === 'ar'
+          ? '### أدخل موضوع الجلسة للتحضير\n\n- اكتب مجال الجلسة مثل: **استقبال أمراض القلب** أو **جلسة هجرة** أو **فحص الفيديو (VRI)**.\n- سأجهز لك ملخص التحضير والمصطلحات المقترحة لحفظها في القاموس.'
+          : lang === 'bn'
+            ? '### প্রস্তুতির জন্য সেশনের বিষয় লিখুন\n\n- যেমন: **cardiology intake**, **immigration hearing**, অথবা **video remote setup**।\n- আমি পরিভাষা ও প্রস্তুতির সংক্ষিপ্তসার তৈরি করে দেব।'
+            : '### Share a Session Topic for Prep\n\n- Enter a domain or encounter topic (for example: **cardiology intake**, **immigration hearing**, or **VRI audio setup**).\n- I will generate a concise prep brief and suggested glossary terms.';
+      emit({ type: 'delta', text: researchPrompt });
+      emit({ type: 'quick_chips', show: true });
+      return;
+    }
+
+    const greetingText =
+      lang === 'ar'
+        ? 'مرحباً! أنا مساعد عمل VOXRELAY. كيف يمكنني مساعدتك اليوم؟ يمكنك سؤالي عن الجدولة واستيراد .ics، الخصوصية وعدم التسجيل، فحص الجهاز، أو مستويات T0–T3 — أو اختيار موضوع سريع أدناه.'
+        : lang === 'bn'
+          ? 'হ্যালো! আমি VOXRELAY কর্মক্ষেত্র সহকারী। সময়সূচী ও .ics আমদানি, গোপনীয়তা, ডিভাইস পরীক্ষা, বা T0–T3 নীতি সম্পর্কে প্রশ্ন করুন বা নিচের যেকোনো বিষয়ে ক্লিক করুন।'
+          : "Hello! I'm the VOXRELAY Work Assistant. How can I help you today? Pick a quick topic below or ask about scheduling, privacy, device readiness, or billing.";
+    emit({ type: 'delta', text: greetingText });
+    emit({ type: 'quick_chips', show: true });
     return;
   }
 
@@ -158,9 +204,13 @@ export async function runAssistantStream({ mode = 'ask', question, locale = 'en'
     await new Promise((r) => setTimeout(r, 60));
 
     if (domain) {
+      const bulletSteps = domain.proposedTerms
+        .slice(0, 3)
+        .map((t) => `- **${t.label}** — ${t.target_term}${t.notes ? ` (${t.notes})` : ''}`)
+        .join('\n');
       emit({
         type: 'delta',
-        text: `### ${domain.title}\n\n${domain.summary}\n\n**Confidence:** ${domain.confidence} · Review any suggested terms below before saving them to your glossary.`,
+        text: `### ${domain.title}\n\n${domain.summary}\n\n- **Confidence:** ${domain.confidence}\n${bulletSteps}\n- Review and click **Save** below to add terms to your glossary.`,
       });
       emit({ type: 'citations', items: domain.sources });
       emit({ type: 'proposed_terms', terms: domain.proposedTerms });
@@ -169,8 +219,11 @@ export async function runAssistantStream({ mode = 'ask', question, locale = 'en'
 
     const fallbackSummary =
       kbMatches.length > 0
-        ? `### Subject & Workspace Preparation Brief\n\n${kbMatches.map((m) => `- **${m.title[lang] || m.title.en}:** ${m.summary[lang] || m.summary.en}`).join('\n')}\n\n**Confidence:** medium · Add custom terms below or escalate to human support for domain-specific references.`
-        : `### Research Brief\n\nNo domain pack matched **"${sanitized}"** directly in the offline reference set. You can add custom terms in Terminology or escalate to human support for coordinator review.`;
+        ? `### Subject & Workspace Preparation Brief\n\n${kbMatches
+            .slice(0, 2)
+            .map((m) => `- **${m.title[lang] || m.title.en}:** ${m.summary[lang] || m.summary.en}`)
+            .join('\n')}\n\n- **Confidence:** medium — add custom terms in Terminology or escalate to human support.`
+        : `### Research Brief\n\n- No domain pack matched **"${sanitized}"** in the offline reference set.\n- Add custom terms in Terminology or open a support ticket for coordinator guidance.`;
 
     emit({ type: 'delta', text: fallbackSummary });
     emit({
@@ -182,7 +235,7 @@ export async function runAssistantStream({ mode = 'ask', question, locale = 'en'
   }
 
   // Ask mode: grounded KB + workspace records + optional Anthropic provider
-  const kbMatches = searchKnowledgeBase(sanitized, lang, 3);
+  const kbMatches = searchKnowledgeBase(sanitized, lang, 2);
   const snapshot = buildWorkspaceSnapshot({ db, userId });
 
   if (kbMatches.length === 0) {
@@ -197,24 +250,33 @@ export async function runAssistantStream({ mode = 'ask', question, locale = 'en'
   }
 
   const contextBlock = kbMatches
-    .map((m) => `[${m.id}] ${m.title[lang] || m.title.en}: ${m.summary[lang] || m.summary.en}`)
-    .join('\n');
+    .map((m) => {
+      const bullets = (m.bullets?.[lang] || m.bullets?.en || []).map((b) => `- ${b}`).join('\n');
+      return `[${m.id}] ${m.title[lang] || m.title.en}\n${bullets || m.summary[lang] || m.summary.en}`;
+    })
+    .join('\n\n');
 
   const anthropicText = await callAnthropicIfConfigured({
-    systemPrompt: `You are the VOXRELAY Workspace Assistant. Answer strictly using ONLY the provided knowledge-base excerpts and workspace counts (assignments=${snapshot.assignments}, terms=${snapshot.terms}, openTickets=${snapshot.openTickets}). Cite sources inline like [KB-01]. Never interpret or translate live dialogue, never record/transcribe, never give medical or legal advice. Keep answers concise (under 120 words). Language: ${lang}.`,
+    systemPrompt: `You are the VOXRELAY Workspace Assistant. Answer strictly using ONLY the provided knowledge-base excerpts and workspace counts (assignments=${snapshot.assignments}, terms=${snapshot.terms}, openTickets=${snapshot.openTickets}). Format EVERY answer as: a short bold heading (with [KB-xx] citation) followed by 2–4 concise bullet points ("- ..."). Never write long paragraphs or dump unrelated rules. Never interpret/translate live dialogue, never record/transcribe, never give medical/legal advice. Keep total length under 95 words. Language: ${lang}.`,
     userMessage: `Question: ${sanitized}\n\nKnowledge base:\n${contextBlock}`,
   });
 
-  const answerText =
-    anthropicText ||
-    kbMatches
-      .map((m) => `${m.summary[lang] || m.summary.en} [${m.id}]`)
-      .join('\n\n') +
-      (userId
-        ? lang === 'ar'
-          ? `\n\nحالة مساحتك الحالية: ${snapshot.assignments} مهام · ${snapshot.terms} مصطلحات · ${snapshot.openTickets} تذاكر مفتوحة.`
-          : `\n\nYour current workspace: ${snapshot.assignments} assignments · ${snapshot.terms} saved terms · ${snapshot.openTickets} open support tickets.`
-        : '');
+  const top = kbMatches[0];
+  const topTitle = top.title[lang] || top.title.en;
+  const topBullets = (top.bullets?.[lang] || top.bullets?.en || [top.summary[lang] || top.summary.en])
+    .slice(0, 4)
+    .map((b) => `- ${b}`)
+    .join('\n');
+
+  const structuredFallback =
+    `### ${topTitle} [${top.id}]\n${topBullets}` +
+    (userId
+      ? lang === 'ar'
+        ? `\n\n- **مساحتك الحالية:** ${snapshot.assignments} مهام · ${snapshot.terms} مصطلحات · ${snapshot.openTickets} تذاكر`
+        : `\n\n- **Your workspace:** ${snapshot.assignments} assignments · ${snapshot.terms} terms · ${snapshot.openTickets} open tickets`
+      : '');
+
+  const answerText = anthropicText || structuredFallback;
 
   emit({ type: 'delta', text: answerText });
   emit({

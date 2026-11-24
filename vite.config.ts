@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { defineConfig, type ViteDevServer } from 'vite';
+import { defineConfig, loadEnv, type ViteDevServer } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
@@ -52,6 +52,17 @@ const devApiPlugin = () => ({
   name: 'voxrelay-dev-api',
   apply: 'serve' as const,
   configureServer(server: ViteDevServer) {
+    server.middlewares.use((_req, res, next) => {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      next();
+    });
+    const env = loadEnv(server.config.mode || 'development', process.cwd(), '');
+    for (const [key, value] of Object.entries(env)) {
+      if (process.env[key] === undefined) {
+        process.env[key] = value;
+      }
+    }
     server.middlewares.use('/api', async (req, res, next) => {
       const rawUrl = req.url || '/';
       const parsed = new URL(rawUrl, 'http://localhost');

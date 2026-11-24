@@ -13,12 +13,16 @@ export function LoginPage() {
   const navigate = useNavigate();
   const returnTo = sanitizeReturnTo(searchParams.get('returnTo'));
   const inviteToken = searchParams.get('invite') || '';
+  const requestedMode = searchParams.get('mode');
 
-  const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>(inviteToken ? 'signup' : 'signin');
+  const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>(
+    inviteToken || requestedMode === 'signup' ? 'signup' : 'signin'
+  );
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [feedback, setFeedback] = useState<{ kind: 'error' | 'info'; text: string } | null>(null);
+  const [needsConfirmation, setNeedsConfirmation] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -27,10 +31,26 @@ export function LoginPage() {
     }
   }, [loading, user, navigate, returnTo]);
 
+  async function handleResendConfirmation() {
+    if (!supabase || !email) return;
+    setBusy(true);
+    try {
+      const { error } = await supabase.auth.resend({ type: 'signup', email });
+      if (error) setFeedback({ kind: 'error', text: error.message });
+      else {
+        setFeedback({ kind: 'info', text: `Confirmation link re-sent to ${email}. Check your inbox and spam folder.` });
+        setNeedsConfirmation(false);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
     setFeedback(null);
+    setNeedsConfirmation(false);
 
     try {
       if (mode === 'forgot') {
@@ -69,6 +89,14 @@ export function LoginPage() {
       if (localRes && localRes.status !== 503) {
         const localData = await localRes.json().catch(() => ({}));
         if (localRes.ok) {
+          if (mode === 'signup' && supabase) {
+            // Mirror signup to Supabase Auth when configured so future Supabase sign-ins also work
+            void supabase.auth.signUp({
+              email,
+              password,
+              options: { data: { full_name: fullName } },
+            });
+          }
           await refreshSession();
           navigate(returnTo, { replace: true });
           return;
@@ -85,18 +113,48 @@ export function LoginPage() {
       }
 
       if (mode === 'signup') {
-        const { error } = await supabase.auth.signUp({ email, password });
-        if (error) setFeedback({ kind: 'error', text: error.message });
-        else setFeedback({ kind: 'info', text: 'Account created. Verify your email if required, then continue.' });
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { full_name: fullName } },
+        });
+        if (error) {
+          setFeedback({ kind: 'error', text: error.message });
+        } else if (data.session) {
+          navigate(returnTo, { replace: true });
+        } else {
+          setNeedsConfirmation(true);
+          setFeedback({
+            kind: 'info',
+            text: 'Account created. Check your inbox to confirm your email, or resend confirmation below.',
+          });
+        }
         return;
       }
 
       const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) setFeedback({ kind: 'error', text: error.message });
+      if (error) {
+        if (/email not confirmed/i.test(error.message)) {
+          setNeedsConfirmation(true);
+        }
+        setFeedback({ kind: 'error', text: error.message });
+      }
     } finally {
       setBusy(false);
     }
   }
+
+  const passwordStrength = (() => {
+    if (!password) return { score: 0, label: 'Enter 12+ characters' };
+    let score = 0;
+    if (password.length >= 12) score += 25;
+    if (password.length >= 16) score += 15;
+    if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score += 20;
+    if (/\d/.test(password)) score += 20;
+    if (/[^A-Za-z0-9]/.test(password)) score += 20;
+    const label = score >= 80 ? 'Strong' : score >= 50 ? 'Good' : 'Weak — add length, digits & symbols';
+    return { score, label };
+  })();
 
   return (
     <PublicShell>
@@ -157,20 +215,36 @@ export function LoginPage() {
             />
           </Field>
           {mode !== 'forgot' && (
-            <Field
-              label="Password"
-              htmlFor="auth-password"
-              hint={mode === 'signup' ? 'Minimum 12 characters.' : undefined}
-            >
-              <Input
-                id="auth-password"
-                type="password"
-                required
-                minLength={mode === 'signup' ? 12 : 1}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </Field>
+            <div>
+              <Field
+                label="Password"
+                htmlFor="auth-password"
+                hint={mode === 'signup' ? 'Minimum 12 characters, breached passwords blocked.' : undefined}
+              >
+                <Input
+                  id="auth-password"
+                  type="password"
+                  required
+                  minLength={mode === 'signup' ? 12 : 1}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </Field>
+              {mode === 'signup' && password.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <div className="meter-track" aria-label="Password strength">
+                    <div
+                      className="meter-fill"
+                      style={{
+                        width: `${passwordStrength.score}%`,
+                        background: passwordStrength.score >= 80 ? '#184d42' : passwordStrength.score >= 50 ? '#f2b632' : '#de4e26',
+                      }}
+                    />
+                  </div>
+                  <span style={{ fontSize: 12, color: 'var(--vr-ink-2)' }}>{passwordStrength.label}</span>
+                </div>
+              )}
+            </div>
           )}
           <Button type="submit" loading={busy}>
             {busy
@@ -182,9 +256,14 @@ export function LoginPage() {
                   : 'Send reset link'}
           </Button>
           {feedback && (
-            <p className={feedback.kind === 'error' ? 'form-error' : 'form-success'} role="status">
-              {feedback.text}
-            </p>
+            <div role="status">
+              <p className={feedback.kind === 'error' ? 'form-error' : 'form-success'}>{feedback.text}</p>
+              {needsConfirmation && supabase && email && (
+                <Button type="button" size="sm" variant="secondary" onClick={handleResendConfirmation} disabled={busy}>
+                  Resend confirmation email
+                </Button>
+              )}
+            </div>
           )}
         </form>
       </section>

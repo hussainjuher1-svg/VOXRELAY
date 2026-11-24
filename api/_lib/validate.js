@@ -65,7 +65,7 @@ export const contactRequestSchema = z.object({
   name: maxCodePoints(120, 'Name').optional().default(''),
   fullName: maxCodePoints(120, 'Full name').optional(),
   email: z.string().trim().email('Valid email address is required').max(160),
-  audience: z.enum(['interpreter', 'organization', 'other']).default('interpreter'),
+  audience: z.enum(['interpreter', 'organization', 'support', 'other']).default('interpreter'),
   organization: maxCodePoints(140, 'Organization').optional().default(''),
   country: maxCodePoints(80, 'Country').optional().default(''),
   languages: maxCodePoints(160, 'Languages').optional().default(''),
@@ -88,7 +88,7 @@ export const sessionDocSchema = z.object({
 export const assistantRequestSchema = z.object({
   question: maxCodePoints(400, 'Question').min(1, 'Question is required'),
   mode: z.enum(['ask', 'research']).default('ask'),
-  locale: z.enum(['en', 'ar']).default('en'),
+  locale: z.enum(['en', 'bn', 'ar']).default('en'),
   tier: z.string().max(16).optional(),
   category: z.string().max(64).optional(),
 });

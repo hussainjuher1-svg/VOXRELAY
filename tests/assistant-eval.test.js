@@ -108,6 +108,66 @@ describe('Assistant Eval (40+ golden, adversarial, and research cases)', () => {
     expect(vri.proposedTerms.length).toBeGreaterThan(0);
   });
 
+  it('replies warmly to greetings with quick chips and no tier-rule dump', async () => {
+    for (const greet of ['hi', 'hello!', 'hey']) {
+      const events = [];
+      await runAssistantStream({
+        mode: 'ask',
+        question: greet,
+        locale: 'en',
+        db: null,
+        userId: null,
+        emit: (ev) => events.push(ev),
+      });
+      const text = events.filter((e) => e.type === 'delta').map((e) => e.text).join('');
+      const hasQuickChips = events.some((e) => e.type === 'quick_chips' && e.show);
+      expect(text.toLowerCase()).toContain('hello');
+      expect(text).not.toContain('T3');
+      expect(hasQuickChips).toBe(true);
+    }
+  });
+
+  it('answers all 4 canonical FAQ chip questions with exact citations and concise bullet structure', async () => {
+    const pairs = [
+      ['How does scheduling & .ics import work?', 'KB-04'],
+      ['How does zero recording & privacy work?', 'KB-01'],
+      ['What are T0–T3 operational tiers?', 'KB-05'],
+      ['How do I run a device check?', 'KB-07'],
+    ];
+    for (const [question, expectedId] of pairs) {
+      const out = await runEval({ mode: 'ask', question });
+      expect(out.citations.some((c) => c.id === expectedId)).toBe(true);
+      expect(out.text).toContain('\n- ');
+    }
+  });
+
+  it('answers identity questions and handles casual words in Research Prep gracefully', async () => {
+    const idEvents = [];
+    await runAssistantStream({
+      mode: 'ask',
+      question: 'what is your name',
+      locale: 'en',
+      db: null,
+      userId: null,
+      emit: (ev) => idEvents.push(ev),
+    });
+    const idText = idEvents.filter((e) => e.type === 'delta').map((e) => e.text).join('');
+    expect(idText).toContain('VOXRELAY Work Assistant');
+    expect(idText).toContain('\n- ');
+
+    const broEvents = [];
+    await runAssistantStream({
+      mode: 'research',
+      question: 'bro',
+      locale: 'en',
+      db: null,
+      userId: null,
+      emit: (ev) => broEvents.push(ev),
+    });
+    const broText = broEvents.filter((e) => e.type === 'delta').map((e) => e.text).join('');
+    expect(broText).toContain('Share a Session Topic');
+  });
+
   it('redacts emails, phones, and SSNs before processing', () => {
     const cleaned = redactPii('Contact john@example.com or 555-234-5678, SSN 123-45-6789');
     expect(cleaned).not.toContain('john@example.com');

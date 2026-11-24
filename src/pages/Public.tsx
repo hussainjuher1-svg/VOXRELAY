@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowUpRight, Mic, ShieldCheck, X } from 'lucide-react';
-import { useLocale } from '../context/hooks';
+import { ArrowUpRight, Mic, MicOff, ShieldCheck, X } from 'lucide-react';
+import { useAuth, useLocale } from '../context/hooks';
 import { KNOWLEDGE_BASE } from '../../api/_lib/kb.js';
 import {
   ChapterFollowupIllustration,
@@ -77,9 +77,244 @@ const MARQUEE_LANGS = [
   'العربية',
 ];
 
+function LiveDeviceCheckCard({ isAr }: { isAr: boolean }) {
+  const [micActive, setMicActive] = useState(false);
+  const [micLevel, setMicLevel] = useState(0);
+  const [peakLevel, setPeakLevel] = useState(0);
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
+  const [pinging, setPinging] = useState(false);
+  const [micError, setMicError] = useState<string | null>(null);
+
+  const streamRef = useRef<MediaStream | null>(null);
+  const ctxRef = useRef<AudioContext | null>(null);
+  const rafRef = useRef<number | null>(null);
+
+  const measureLatency = useCallback(async (showSpinner = false) => {
+    if (typeof window === 'undefined' || typeof fetch !== 'function') return;
+    if (window.location.origin === 'null') return;
+    if (showSpinner) setPinging(true);
+    try {
+      const t0 = performance.now();
+      const res = await fetch('/api/health', { cache: 'no-store' });
+      const elapsed = Math.max(1, Math.round(performance.now() - t0));
+      if (res.ok) {
+        setLatencyMs(elapsed);
+      }
+    } catch {
+      // Leave latency as null if offline / unreachable
+    } finally {
+      if (showSpinner) setPinging(false);
+    }
+  }, []);
+
+  const stopMic = useCallback(() => {
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    if (ctxRef.current) {
+      void ctxRef.current.close().catch(() => {});
+      ctxRef.current = null;
+    }
+    setMicActive(false);
+    setMicLevel(0);
+  }, []);
+
+  async function toggleMic() {
+    if (micActive) {
+      stopMic();
+      return;
+    }
+    setMicError(null);
+    void measureLatency();
+
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      setMicError(isAr ? 'واجهة الميكروفون غير متاحة في هذا المتصفح.' : 'Microphone API is unavailable in this browser.');
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AudioCtx) {
+        stream.getTracks().forEach((t) => t.stop());
+        setMicError(isAr ? 'محرك Web Audio غير مدعوم.' : 'Web Audio is not supported.');
+        return;
+      }
+
+      const ctx = new AudioCtx();
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+
+      streamRef.current = stream;
+      ctxRef.current = ctx;
+      setMicActive(true);
+      setPeakLevel(0);
+
+      const data = new Uint8Array(analyser.fftSize);
+      const tick = () => {
+        analyser.getByteTimeDomainData(data);
+        let sumSq = 0;
+        for (let i = 0; i < data.length; i += 1) {
+          const v = (data[i] - 128) / 128;
+          sumSq += v * v;
+        }
+        const rms = Math.sqrt(sumSq / data.length);
+        const pct = Math.min(100, Math.round(rms * 280));
+        setMicLevel(pct);
+        setPeakLevel((prev) => Math.max(prev, pct));
+        rafRef.current = requestAnimationFrame(tick);
+      };
+      rafRef.current = requestAnimationFrame(tick);
+    } catch {
+      setMicError(
+        isAr ? 'تم رفض إذن الميكروفون أو لا يوجد ميكروفون متصل.' : 'Microphone permission denied or no device found.'
+      );
+    }
+  }
+
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      void measureLatency(false);
+    }, 0);
+    return () => {
+      window.clearTimeout(id);
+      stopMic();
+    };
+  }, [measureLatency, stopMic]);
+
+  useEffect(() => {
+    if (!micActive) return;
+    const id = window.setInterval(() => {
+      void measureLatency(false);
+    }, 2500);
+    return () => window.clearInterval(id);
+  }, [micActive, measureLatency]);
+
+  return (
+    <div className="vx-ws-card-terracotta">
+      <div className="vx-ws-device-head">
+        <h3>{isAr ? 'فحص الجهاز' : 'Device check'}</h3>
+        <button
+          type="button"
+          className="vx-ws-mic-btn"
+          onClick={toggleMic}
+          aria-pressed={micActive}
+        >
+          {micActive ? <MicOff size={15} aria-hidden="true" /> : <Mic size={15} aria-hidden="true" />}
+          <span>
+            {micActive
+              ? isAr
+                ? 'إيقاف الميكروفون'
+                : 'Stop mic test'
+              : isAr
+                ? 'اختبار الميكروفون'
+                : 'Test mic live'}
+          </span>
+        </button>
+      </div>
+
+      <div className="vx-ws-meter-wrap">
+        <div
+          className="vx-ws-meter"
+          role="progressbar"
+          aria-label={isAr ? 'مستوى إشارة الميكروفون' : 'Live microphone input level'}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={micLevel}
+        >
+          <div className="vx-ws-meter-fill" style={{ width: `${micLevel}%` }} />
+        </div>
+        <div className="vx-ws-meter-meta">
+          <span>
+            {micError
+              ? micError
+              : micActive
+                ? isAr
+                  ? `بث مباشر من المتصفح · المستوى ${micLevel}% (الذروة ${peakLevel}%)`
+                  : `Live in-tab input · Level ${micLevel}% (peak ${peakLevel}%)`
+                : isAr
+                  ? 'اضغط لاختبار الميكروفون محلياً دون إرسال أي صوت'
+                  : 'Click Test mic live — audio stays in your tab'}
+          </span>
+        </div>
+      </div>
+
+      <div className="vx-ws-device-foot">
+        <button
+          type="button"
+          className="vx-ws-rtt-btn"
+          onClick={() => void measureLatency(true)}
+          disabled={pinging}
+        >
+          {isAr ? 'زمن الاستجابة الفعلي ↻' : 'ROUND-TRIP (LIVE) ↻'}
+        </button>
+        <strong>
+          {latencyMs !== null ? latencyMs : '—'}
+          <span>ms</span>
+        </strong>
+      </div>
+    </div>
+  );
+}
+
+interface HomeAssignment {
+  id: string;
+  ref: string;
+  start_at: string;
+  duration_minutes: number;
+  language_pair: string;
+  modality: string;
+  status: string;
+}
+
 export function HomePage() {
   const { locale } = useLocale();
+  const { user, session } = useAuth();
   const isAr = locale === 'ar';
+  const [assignments, setAssignments] = useState<HomeAssignment[]>([]);
+
+  useEffect(() => {
+    if (!user && !session?.access_token) return;
+    let active = true;
+    const headers: Record<string, string> = {};
+    if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`;
+    fetch('/api/assignments', { headers, credentials: 'same-origin' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (active && Array.isArray(json?.data)) {
+          setAssignments(json.data);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [user, session?.access_token]);
+
+  const activeAssignments = user ? assignments : [];
+  const nextAssignment =
+    activeAssignments.find((a) => a.status !== 'completed' && a.status !== 'cancelled') || activeAssignments[0] || null;
+  const userGreetingName =
+    (user && 'full_name' in user && typeof user.full_name === 'string' && user.full_name.trim()) ||
+    (user && 'user_metadata' in user && typeof user.user_metadata?.full_name === 'string' && user.user_metadata.full_name.trim()) ||
+    (user?.email ? user.email.split('@')[0] : '');
+
+  function formatUtcTime(iso: string) {
+    try {
+      return `${new Date(iso).toISOString().slice(11, 16)} UTC`;
+    } catch {
+      return '—';
+    }
+  }
 
   const stages = isAr
     ? [
@@ -341,8 +576,16 @@ export function HomePage() {
             </p>
 
             <div className="vx-hero-ctas">
-              <Link to="/login" className="vx-cta-terracotta">
-                <span>{isAr ? 'أنشئ مساحة عملك' : 'Create your workspace'}</span>
+              <Link to={user ? '/app' : '/login?mode=signup'} className="vx-cta-terracotta">
+                <span>
+                  {user
+                    ? isAr
+                      ? 'افتح مساحة عملك'
+                      : 'Open your workspace'
+                    : isAr
+                      ? 'أنشئ مساحة عملك'
+                      : 'Create your workspace'}
+                </span>
                 <ArrowUpRight size={16} aria-hidden="true" />
               </Link>
               <Link to="/contact" className="vx-cta-outline">
@@ -351,8 +594,8 @@ export function HomePage() {
             </div>
           </div>
 
-          <div className="vx-hero-visual" aria-hidden="true">
-            <div className="vx-blob-circle">
+          <div className="vx-hero-visual">
+            <div className="vx-blob-circle" aria-hidden="true">
               <div className="vx-waveform">
                 {WAVEFORM_HEIGHTS.map((h, idx) => (
                   <span key={idx} style={{ height: `${h}%` }} />
@@ -360,18 +603,43 @@ export function HomePage() {
               </div>
             </div>
 
-            <div className="vx-float-nextup">
-              <span className="vx-float-nextup-tag">{isAr ? 'التالي · 14:30' : 'NEXT UP · 14:30'}</span>
-              <div className="vx-float-nextup-title">{isAr ? 'متابعة القلب' : 'Cardiology follow-up'}</div>
-              <div className="vx-float-nextup-meta">EN → ES · Video</div>
-            </div>
+            <Link
+              to={nextAssignment ? `/app/session/${nextAssignment.id}` : user ? '/app/assignments' : '/login?mode=signup'}
+              className="vx-float-nextup"
+            >
+              <span className="vx-float-nextup-tag">
+                {nextAssignment
+                  ? `${nextAssignment.ref} · ${formatUtcTime(nextAssignment.start_at)}`
+                  : isAr
+                    ? 'التالي · جاهز للجدولة'
+                    : 'NEXT UP · SCHEDULE'}
+              </span>
+              <div className="vx-float-nextup-title">
+                {nextAssignment
+                  ? nextAssignment.language_pair
+                  : user
+                    ? isAr
+                      ? 'أضف أول مهمة'
+                      : 'Add your first assignment'
+                    : isAr
+                      ? 'مساحة عمل بدون تسجيل'
+                      : 'Timing-only schedule'}
+              </div>
+              <div className="vx-float-nextup-meta">
+                {nextAssignment
+                  ? `${nextAssignment.modality} · ${nextAssignment.duration_minutes} min`
+                  : isAr
+                    ? 'افتح الجدول أو استورد .ics ↗'
+                    : 'Open schedule or import .ics ↗'}
+              </div>
+            </Link>
 
             <RotatingSealBadge isAr={isAr} />
 
-            <div className="vx-float-audio-pill">
+            <Link to="/app/device-check" className="vx-float-audio-pill">
               <ShieldCheck size={15} aria-hidden="true" />
               <span>{isAr ? 'الصوت يبقى في متصفحك' : 'Audio stays in your tab'}</span>
-            </div>
+            </Link>
           </div>
         </div>
       </section>
@@ -429,35 +697,62 @@ export function HomePage() {
             <div className="vx-ws-card-cream">
               <div className="vx-ws-top-row">
                 <div>
-                  <span className="vx-ws-greet">{isAr ? 'مساء الخير، أمارا' : 'GOOD AFTERNOON, AMARA'}</span>
-                  <h3>{isAr ? 'مهام اليوم' : "Today's assignments"}</h3>
+                  <span className="vx-ws-greet">
+                    {userGreetingName
+                      ? isAr
+                        ? `مرحباً، ${userGreetingName}`
+                        : `WORKSPACE · ${userGreetingName.toUpperCase()}`
+                      : isAr
+                        ? 'جدول المترجم الفوري'
+                        : 'INTERPRETER SCHEDULE'}
+                  </span>
+                  <h3>{isAr ? 'مهامك المجدولة' : 'Your assignments'}</h3>
                 </div>
-                <span className="vx-ws-count-pill">{isAr ? '2 اليوم' : '2 today'}</span>
+                <Link to={user ? '/app/assignments' : '/login?mode=signup'} className="vx-ws-count-pill">
+                  {isAr ? `${activeAssignments.length} مجدول` : `${activeAssignments.length} scheduled`}
+                </Link>
               </div>
 
-              <div className="vx-ws-row-item">
-                <span className="vx-ws-lang-badge">EN</span>
-                <div className="vx-ws-row-copy">
-                  <strong>{isAr ? 'متابعة القلب' : 'Cardiology follow-up'}</strong>
-                  <span>{isAr ? 'اليوم · 14:30 · فيديو عن بُعد · EN → ES' : 'Today · 14:30 · Video remote · EN → ES'}</span>
-                </div>
-                <span className="vx-ws-status-pill">{isAr ? 'مُحضّر' : 'Prepared'}</span>
-              </div>
+              {nextAssignment ? (
+                <Link to={`/app/session/${nextAssignment.id}`} className="vx-ws-row-item">
+                  <span className="vx-ws-lang-badge">{nextAssignment.language_pair.slice(0, 5)}</span>
+                  <div className="vx-ws-row-copy">
+                    <strong>{nextAssignment.ref} · {nextAssignment.language_pair}</strong>
+                    <span>
+                      {formatUtcTime(nextAssignment.start_at)} · {nextAssignment.modality} · {nextAssignment.duration_minutes} min
+                    </span>
+                  </div>
+                  <span className="vx-ws-status-pill">{nextAssignment.status}</span>
+                </Link>
+              ) : (
+                <Link to={user ? '/app/assignments' : '/login?mode=signup'} className="vx-ws-row-item">
+                  <span className="vx-ws-lang-badge">.ics</span>
+                  <div className="vx-ws-row-copy">
+                    <strong>
+                      {user
+                        ? isAr
+                          ? 'لا توجد مهام مجدولة بعد'
+                          : 'No assignments scheduled yet'
+                        : isAr
+                          ? 'سجّل الدخول أو أنشئ حساباً لبدء الجدول'
+                          : 'Sign in or create an account to save your schedule'}
+                    </strong>
+                    <span>
+                      {user
+                        ? isAr
+                          ? 'اضغط لإضافة مهمة أو استيراد ملف .ics'
+                          : 'Click to create an assignment or import .ics timing slots'
+                        : isAr
+                          ? 'توقيت الجلسات واللغة والمدة فقط — دون هوية العميل'
+                          : 'Timing, modality & language pairs only — zero client identity'}
+                    </span>
+                  </div>
+                  <span className="vx-ws-status-pill">{user ? (isAr ? 'إضافة' : 'Add') : isAr ? 'ابدأ' : 'Open'}</span>
+                </Link>
+              )}
             </div>
 
-            <div className="vx-ws-card-terracotta">
-              <div className="vx-ws-device-head">
-                <h3>{isAr ? 'فحص الجهاز' : 'Device check'}</h3>
-                <Mic size={18} aria-hidden="true" />
-              </div>
-              <div className="vx-ws-meter">
-                <div className="vx-ws-meter-fill" />
-              </div>
-              <div className="vx-ws-device-foot">
-                <span>{isAr ? 'زمن الاستجابة' : 'ROUND-TRIP'}</span>
-                <strong>46<span>ms</span></strong>
-              </div>
-            </div>
+            <LiveDeviceCheckCard isAr={isAr} />
           </div>
         </div>
       </section>
@@ -532,8 +827,14 @@ export function HomePage() {
               ? 'أنشئ مساحة عملك الشخصية في دقائق. لا يلزمك دعوة مؤسسة لبدء التحضير.'
               : 'Create your personal workspace in minutes. No organization invite required to start preparing.'}
           </p>
-          <Link to="/login" className="vx-closing-btn">
-            {isAr ? 'أنشئ مساحة عملك' : 'Create your workspace'}
+          <Link to={user ? '/app' : '/login?mode=signup'} className="vx-closing-btn">
+            {user
+              ? isAr
+                ? 'افتح مساحة عملك'
+                : 'Open your workspace'
+              : isAr
+                ? 'أنشئ مساحة عملك'
+                : 'Create your workspace'}
           </Link>
         </div>
       </section>
@@ -826,6 +1127,16 @@ export function FaqPage({ onOpenAssistant }: { onOpenAssistant?: (q?: string) =>
   const { locale } = useLocale();
   const isAr = locale === 'ar';
   const [openId, setOpenId] = useState<string>(KNOWLEDGE_BASE[0]?.id || 'KB-01');
+  const [search, setSearch] = useState('');
+  const [topic, setTopic] = useState<'all' | 'privacy' | 'audio' | 'workflow'>('all');
+
+  const filteredKb = KNOWLEDGE_BASE.filter((item) => {
+    const text = `${item.id} ${item.title.en} ${item.summary.en} ${item.title.ar} ${item.summary.ar}`.toLowerCase();
+    if (topic === 'privacy' && !/privacy|zero|pii|rls|ai|t3/.test(text)) return false;
+    if (topic === 'audio' && !/audio|mic|device|latency|check/.test(text)) return false;
+    if (topic === 'workflow' && !/schedule|ics|glossary|support|billing|assign/.test(text)) return false;
+    return !search.trim() || text.includes(search.trim().toLowerCase());
+  });
 
   return (
     <div className="pub-page">
@@ -840,8 +1151,33 @@ export function FaqPage({ onOpenAssistant }: { onOpenAssistant?: (q?: string) =>
 
       <section className="band-vellum">
         <div className="pub-container narrow-measure">
+          <div className="vx-filter-row">
+            <div className="vx-filter-chips" role="group" aria-label="Knowledge base topics">
+              {(['all', 'workflow', 'privacy', 'audio'] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  className={`vx-filter-chip${topic === t ? ' is-active' : ''}`}
+                  onClick={() => setTopic(t)}
+                >
+                  {t === 'all' ? `All (${KNOWLEDGE_BASE.length})` : t}
+                </button>
+              ))}
+            </div>
+            <input
+              type="search"
+              dir="auto"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={isAr ? 'ابحث في الأسئلة...' : 'Filter knowledge base...'}
+              aria-label="Filter FAQ articles"
+              className="ui-input"
+              style={{ maxWidth: 240 }}
+            />
+          </div>
+
           <div className="faq-accordion">
-            {KNOWLEDGE_BASE.map((item) => {
+            {filteredKb.map((item) => {
               const expanded = openId === item.id;
               const qTitle = isAr ? item.title.ar : item.title.en;
               const qSummary = isAr ? item.summary.ar : item.summary.en;
@@ -898,15 +1234,29 @@ export function StatusPage() {
     aiProviderEnabled: boolean;
     checkedAt: string;
   } | null>(null);
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetch('/api/status')
-      .then((r) => r.json())
-      .then((d) => setStatusData(d))
-      .catch(() => setStatusData(null))
-      .finally(() => setLoading(false));
+  const fetchStatus = useCallback(async () => {
+    const t0 = performance.now();
+    try {
+      const r = await fetch('/api/status', { cache: 'no-store' });
+      const d = await r.json();
+      setStatusData(d);
+      setLatencyMs(Math.max(1, Math.round(performance.now() - t0)));
+    } catch {
+      setStatusData(null);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      void fetchStatus();
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [fetchStatus]);
 
   return (
     <div className="pub-page">
@@ -914,6 +1264,19 @@ export function StatusPage() {
         <div className="pub-container narrow-measure">
           <p className="eyebrow">{isAr ? 'حالة النظام الحية' : 'Live diagnostics'}</p>
           <h1 className="page-display">{isAr ? 'حالة المنصة والجاهزية' : 'System status'}</h1>
+          <div style={{ marginTop: 14 }}>
+            <button
+              type="button"
+              className="vx-filter-chip is-active"
+              onClick={() => {
+                setLoading(true);
+                void fetchStatus();
+              }}
+            >
+              {isAr ? 'إعادة فحص الآن' : 'Run live re-check'}
+              {latencyMs !== null ? ` · ${latencyMs} ms` : ''}
+            </button>
+          </div>
         </div>
       </section>
 
@@ -1114,10 +1477,11 @@ export function ContactPage() {
                 </Field>
               </div>
 
-              <Field label={isAr ? 'نبذة عن احتياج العمل' : 'Workflow notes'} htmlFor="contact-msg">
+              <Field label={isAr ? 'نبذة عن احتياج العمل' : 'Workflow notes'} htmlFor="contact-msg" required>
                 <Textarea
                   id="contact-msg"
                   rows={4}
+                  required
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   placeholder={

@@ -4,17 +4,88 @@ import { useAuth, useLocale } from '../context/hooks';
 import { BrandMark } from './BrandLogo';
 import { Button } from './ui/Button';
 import { Badge } from './ui/Primitives';
+import '../workspace.css';
 
 interface Citation {
   id: string;
   title: string;
-  route: string;
+  route?: string;
+  href?: string;
 }
 
 interface ProposedTerm {
   label: string;
   target_term: string;
   notes?: string;
+}
+
+function renderInlineFormatted(text: string) {
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
+  return parts.map((part, idx) => {
+    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+      return <strong key={idx}>{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
+      return (
+        <code key={idx} className="assistant-inline-code">
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+    return part;
+  });
+}
+
+function AssistantFormattedBody({ text }: { text: string }) {
+  const lines = text.split('\n');
+  const blocks: Array<
+    | { type: 'heading'; text: string }
+    | { type: 'list'; items: string[] }
+    | { type: 'para'; text: string }
+  > = [];
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.startsWith('### ')) {
+      blocks.push({ type: 'heading', text: line.slice(4) });
+    } else if (/^[-•*]\s+/.test(line)) {
+      const content = line.replace(/^[-•*]\s+/, '');
+      const prev = blocks[blocks.length - 1];
+      if (prev && prev.type === 'list') prev.items.push(content);
+      else blocks.push({ type: 'list', items: [content] });
+    } else {
+      blocks.push({ type: 'para', text: line });
+    }
+  }
+
+  return (
+    <div className="assistant-msg-rich">
+      {blocks.map((b, i) => {
+        if (b.type === 'heading') {
+          return (
+            <h4 key={i} className="assistant-msg-heading">
+              {renderInlineFormatted(b.text)}
+            </h4>
+          );
+        }
+        if (b.type === 'list') {
+          return (
+            <ul key={i} className="assistant-msg-list">
+              {b.items.map((item, j) => (
+                <li key={j}>{renderInlineFormatted(item)}</li>
+              ))}
+            </ul>
+          );
+        }
+        return (
+          <p key={i} className="assistant-msg-text">
+            {renderInlineFormatted(b.text)}
+          </p>
+        );
+      })}
+    </div>
+  );
 }
 
 interface ChatMessage {
@@ -24,6 +95,7 @@ interface ChatMessage {
   text: string;
   citations?: Citation[];
   escalate?: boolean;
+  showFaqChips?: boolean;
   redactedCount?: number;
   proposedTerms?: ProposedTerm[];
   feedback?: 'up' | 'down' | null;
@@ -44,6 +116,7 @@ export function AssistantTrigger({
 }) {
   const { locale } = useLocale();
   const isAr = locale === 'ar';
+  const isBn = locale === 'bn';
 
   return (
     <button
@@ -52,12 +125,14 @@ export function AssistantTrigger({
       className={variant === 'sidebar' ? 'sidebar-assistant-btn' : 'hdr-assistant-btn'}
       aria-expanded={open}
       aria-controls={open ? 'assistant-panel' : undefined}
-      aria-label={isAr ? 'مساعد العمل' : 'Work assistant'}
-      title={isAr ? 'مساعد العمل (Cmd+/)' : 'Work assistant (Cmd+/)'}
+      aria-label={isAr ? 'مساعد العمل' : isBn ? 'কর্মক্ষেত্র সহকারী' : 'Work assistant'}
+      title={isAr ? 'مساعد العمل (Cmd+/)' : isBn ? 'কর্মক্ষেত্র সহকারী (Cmd+/)' : 'Work assistant (Cmd+/)'}
       onClick={onToggle}
     >
+      <span className="vox-border-beam-glow vox-border-beam-glow--pill vox-border-beam-glow--always" aria-hidden="true" />
+      <span className="vox-border-beam vox-border-beam--pill vox-border-beam--always" aria-hidden="true" />
       <BrandMark size={16} pulsing={streaming} />
-      <span>{isAr ? 'المساعد' : 'Assistant'}</span>
+      <span>{isAr ? 'المساعد' : isBn ? 'সহকারী' : 'Assistant'}</span>
     </button>
   );
 }
@@ -88,26 +163,38 @@ export function AssistantDock({
   const [savedTerms, setSavedTerms] = useState<Record<string, boolean>>({});
   const [escalatedMsgId, setEscalatedMsgId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const wasOpen = useRef(false);
 
-  const suggestions = useMemo(() => {
-    if (isAr) {
-      if (pathname.startsWith('/privacy')) {
-        return ['هل يسجل VOXRELAY الصوت؟', 'ما البيانات المحذوفة من المواعيد؟'];
-      }
-      if (pathname.startsWith('/app')) {
-        return ['كيف أستورد ملف تقويم .ics؟', 'تحضير مصطلحات عيادة قلب'];
-      }
-      return ['ما حدود عمل VOXRELAY؟', 'كيف أطلب الوصول؟', 'تحضير مصطلحات موعد أشعة'];
-    }
-    if (pathname.startsWith('/privacy')) {
-      return ['Does VOXRELAY record audio?', 'What fields does .ics import read?'];
-    }
-    if (pathname.startsWith('/app')) {
-      return ['How does .ics import work?', 'Cardiology intake prep brief'];
-    }
-    return ['What does VOXRELAY never do?', 'How do I request access?', 'Legal intake prep brief'];
-  }, [isAr, pathname]);
+  const faqChips = useMemo(
+    () =>
+      isAr
+        ? [
+            'كيف يعمل الجدول واستيراد .ics؟',
+            'كيف تعمل الخصوصية وعدم التسجيل؟',
+            'ما هي مستويات T0–T3 التشغيلية؟',
+            'كيف أقوم بفحص الجهاز؟',
+          ]
+        : [
+            'How does scheduling & .ics import work?',
+            'How does zero recording & privacy work?',
+            'What are T0–T3 operational tiers?',
+            'How do I run a device check?',
+          ],
+    [isAr]
+  );
+
+  const researchSuggestions = useMemo(
+    () =>
+      isAr
+        ? ['تحضير مصطلحات عيادة قلب', 'تحضير مصطلحات جلسة قانونية', 'تحضير جلسة فيديو عن بُعد']
+        : ['Cardiology intake prep brief', 'Administrative hearing legal prep', 'Remote video audio VRI setup'],
+    [isAr]
+  );
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, streaming]);
 
   useEffect(() => {
     if (open) {
@@ -195,16 +282,38 @@ export function AssistantDock({
               setMessages((prev) =>
                 prev.map((m) => (m.id === assistantId ? { ...m, text: m.text + evt.text } : m))
               );
+            } else if (evt.type === 'citations') {
+              setMessages((prev) =>
+                prev.map((m) => (m.id === assistantId ? { ...m, citations: evt.items || [] } : m))
+              );
+            } else if (evt.type === 'proposed_terms') {
+              setMessages((prev) =>
+                prev.map((m) => (m.id === assistantId ? { ...m, proposedTerms: evt.terms || [] } : m))
+              );
+            } else if (evt.type === 'offer_ticket') {
+              setMessages((prev) =>
+                prev.map((m) => (m.id === assistantId ? { ...m, escalate: true } : m))
+              );
+            } else if (evt.type === 'quick_chips') {
+              setMessages((prev) =>
+                prev.map((m) => (m.id === assistantId ? { ...m, showFaqChips: true } : m))
+              );
+            } else if (evt.type === 'error') {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId ? { ...m, text: m.text || evt.message || 'Unable to process request.' } : m
+                )
+              );
             } else if (evt.type === 'done') {
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === assistantId
                     ? {
                         ...m,
-                        citations: evt.citations || [],
-                        escalate: Boolean(evt.escalate),
-                        redactedCount: evt.redactedCount || 0,
-                        proposedTerms: evt.proposedTerms || [],
+                        citations: evt.citations || m.citations || [],
+                        escalate: Boolean(evt.escalate || m.escalate),
+                        redactedCount: evt.redactedCount || m.redactedCount || 0,
+                        proposedTerms: evt.proposedTerms || m.proposedTerms || [],
                       }
                     : m
                 )
@@ -282,11 +391,14 @@ export function AssistantDock({
 
   async function escalateToHuman(msg: ChatMessage) {
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`;
       const res = await fetch('/api/support', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
+        credentials: 'same-origin',
         body: JSON.stringify({
-          category: 'assistant_escalation',
+          category: 'boundary_escalation',
           subject: isAr ? 'تصعيد من مساعد العمل' : 'Work Assistant escalation',
           body: msg.text.slice(0, 600),
           route: pathname,
@@ -355,20 +467,22 @@ export function AssistantDock({
         {messages.length === 0 ? (
           <div className="assistant-empty">
             <p className="assistant-greeting">
-              {isAr
-                ? 'اسأل عن سياسات الخصوصية أو استيراد المواعيد أو جهز قائمة مصطلحات قبل الجلسة.'
-                : 'Ask about scheduling rules, privacy safeguards, or prepare domain glossary briefs before a session.'}
+              {mode === 'research'
+                ? isAr
+                  ? 'أدخل موضوع الجلسة أو اختر موضوعاً أدناه لتحضير قائمة مصطلحات.'
+                  : 'Enter a session domain or pick a topic below to generate a grounded terminology prep brief.'
+                : isAr
+                  ? 'مرحباً! اسأل عن الجدولة واستيراد .ics، الخصوصية وعدم التسجيل، فحص الجهاز، أو مستويات T0–T3.'
+                  : 'Hi! Ask about scheduling & .ics import, zero-recording privacy, device checks, or T0–T3 operational tiers.'}
             </p>
             <div className="assistant-chips">
-              {suggestions.map((chip) => (
+              {(mode === 'research' ? researchSuggestions : faqChips).map((chip) => (
                 <button
                   key={chip}
                   type="button"
                   className="assistant-chip"
                   onClick={() => {
-                    const autoResearch = /prep|تحضير/i.test(chip);
-                    if (autoResearch) setMode('research');
-                    void sendQuestion(chip, autoResearch ? 'research' : mode);
+                    void sendQuestion(chip, mode);
                   }}
                 >
                   {chip}
@@ -377,108 +491,139 @@ export function AssistantDock({
             </div>
           </div>
         ) : (
-          messages.map((msg) => (
-            <div key={msg.id} className={`assistant-msg assistant-msg--${msg.role}`}>
-              <div className="assistant-msg-meta">
-                <span>{msg.role === 'user' ? (isAr ? 'أنت' : 'You') : 'VOXRELAY'}</span>
-                {msg.redactedCount ? (
-                  <Badge tone="amber">
-                    {isAr ? `تم تنقيح ${msg.redactedCount}` : `${msg.redactedCount} PII redacted`}
-                  </Badge>
-                ) : null}
-              </div>
-              <p className="assistant-msg-text">{msg.text || (streaming ? '...' : '')}</p>
-
-              {msg.citations && msg.citations.length > 0 && (
-                <div className="assistant-citations">
-                  {msg.citations.map((c) => (
-                    <Link key={c.id} to={c.route} className="assistant-citation-chip">
-                      [{c.id}] {c.title}
-                    </Link>
-                  ))}
+          messages.map((msg, idx) => {
+            const isLast = idx === messages.length - 1;
+            const isTyping = msg.role === 'assistant' && streaming && isLast && !msg.text;
+            return (
+              <div key={msg.id} className={`assistant-msg assistant-msg--${msg.role}`}>
+                <div className="assistant-msg-meta">
+                  <span>{msg.role === 'user' ? (isAr ? 'أنت' : 'You') : 'VOXRELAY'}</span>
+                  {msg.redactedCount ? (
+                    <Badge tone="amber">
+                      {isAr ? `تم تنقيح ${msg.redactedCount}` : `${msg.redactedCount} PII redacted`}
+                    </Badge>
+                  ) : null}
                 </div>
-              )}
+                {isTyping ? (
+                  <div className="assistant-typing-dots" aria-label={isAr ? 'يكتب الآن...' : 'VOXRELAY is typing...'}>
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                ) : (
+                  <AssistantFormattedBody text={msg.text} />
+                )}
 
-              {msg.proposedTerms && msg.proposedTerms.length > 0 && (
-                <div className="assistant-proposed-terms">
-                  <p className="assistant-proposed-label">
-                    {isAr ? 'مصطلحات مقترحة للحفظ (بموافقتك):' : 'Suggested terms (confirm to save):'}
-                  </p>
-                  {msg.proposedTerms.map((term) => (
-                    <div key={term.label} className="assistant-term-row">
-                      <span>
-                        <strong>{term.label}</strong> — {term.target_term}
-                      </span>
-                      <Button
-                        size="sm"
-                        variant={savedTerms[term.label] ? 'secondary' : 'primary'}
-                        disabled={Boolean(savedTerms[term.label])}
-                        onClick={() => void saveTerm(term)}
+                {msg.showFaqChips && (
+                  <div className="assistant-chips" style={{ marginTop: 4 }}>
+                    {faqChips.map((chip) => (
+                      <button
+                        key={chip}
+                        type="button"
+                        className="assistant-chip"
+                        onClick={() => {
+                          setMode('ask');
+                          void sendQuestion(chip, 'ask');
+                        }}
                       >
-                        {savedTerms[term.label]
-                          ? isAr
-                            ? 'محفوظ'
-                            : 'Saved'
-                          : isAr
-                            ? 'حفظ'
-                            : 'Save'}
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
+                        {chip}
+                      </button>
+                    ))}
+                  </div>
+                )}
 
-              {msg.role === 'assistant' && msg.text && (
-                <div className="assistant-msg-actions">
-                  <button
-                    type="button"
-                    onClick={() => navigator.clipboard?.writeText(msg.text)}
-                  >
-                    {isAr ? 'نسخ' : 'Copy'}
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={msg.feedback === 'up'}
-                    onClick={() => void submitFeedback(msg.id, 'up')}
-                  >
-                    {isAr ? 'مفيد' : 'Helpful'}
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={msg.feedback === 'down'}
-                    onClick={() => void submitFeedback(msg.id, 'down')}
-                  >
-                    {isAr ? 'غير كافٍ' : 'Needs work'}
-                  </button>
-                  {msg.escalate && (
+                {msg.citations && msg.citations.length > 0 && (
+                  <div className="assistant-citations">
+                    {msg.citations.map((c) => (
+                      <Link key={c.id} to={c.href || c.route || '/faq'} className="assistant-citation-chip">
+                        [{c.id}] {c.title}
+                      </Link>
+                    ))}
+                  </div>
+                )}
+
+                {msg.proposedTerms && msg.proposedTerms.length > 0 && (
+                  <div className="assistant-proposed-terms">
+                    <p className="assistant-proposed-label">
+                      {isAr ? 'مصطلحات مقترحة للحفظ (بموافقتك):' : 'Suggested terms (confirm to save):'}
+                    </p>
+                    {msg.proposedTerms.map((term) => (
+                      <div key={term.label} className="assistant-term-row">
+                        <span>
+                          <strong>{term.label}</strong> — {term.target_term}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant={savedTerms[term.label] ? 'secondary' : 'primary'}
+                          disabled={Boolean(savedTerms[term.label])}
+                          onClick={() => void saveTerm(term)}
+                        >
+                          {savedTerms[term.label]
+                            ? isAr
+                              ? 'محفوظ'
+                              : 'Saved'
+                            : isAr
+                              ? 'حفظ'
+                              : 'Save'}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {msg.role === 'assistant' && msg.text && !msg.showFaqChips && (
+                  <div className="assistant-msg-actions">
                     <button
                       type="button"
-                      className="is-escalate"
-                      onClick={() => void escalateToHuman(msg)}
+                      onClick={() => navigator.clipboard?.writeText(msg.text)}
                     >
-                      {escalatedMsgId === msg.id
-                        ? isAr
-                          ? 'تم فتح تذكرة'
-                          : 'Ticket opened'
-                        : isAr
-                          ? 'إحالة لدعم بشري'
-                          : 'Human support'}
+                      {isAr ? 'نسخ' : 'Copy'}
                     </button>
-                  )}
-                </div>
-              )}
-            </div>
-          ))
+                    <button
+                      type="button"
+                      aria-pressed={msg.feedback === 'up'}
+                      onClick={() => void submitFeedback(msg.id, 'up')}
+                    >
+                      {isAr ? 'مفيد' : 'Helpful'}
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={msg.feedback === 'down'}
+                      onClick={() => void submitFeedback(msg.id, 'down')}
+                    >
+                      {isAr ? 'غير كافٍ' : 'Needs work'}
+                    </button>
+                    {msg.escalate && (
+                      <button
+                        type="button"
+                        className="is-escalate"
+                        onClick={() => void escalateToHuman(msg)}
+                      >
+                        {escalatedMsgId === msg.id
+                          ? isAr
+                            ? 'تم فتح تذكرة'
+                            : 'Ticket opened'
+                          : isAr
+                            ? 'إحالة لدعم بشري'
+                            : 'Human support'}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })
         )}
         {streaming && activeSteps.length > 0 && (
           <div className="assistant-steps" aria-live="polite">
             {activeSteps.map((s) => (
               <div key={s} className="assistant-step-line">
-                • {s}
+                {s}
               </div>
             ))}
           </div>
         )}
+        <div ref={messagesEndRef} />
       </div>
 
       <form
@@ -491,8 +636,15 @@ export function AssistantDock({
         <input
           ref={inputRef}
           type="text"
+          dir="auto"
           value={input}
           onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              void sendQuestion(input);
+            }
+          }}
           placeholder={
             mode === 'research'
               ? isAr
@@ -504,9 +656,13 @@ export function AssistantDock({
           }
           aria-label={isAr ? 'رسالة المساعد' : 'Assistant message'}
         />
-        <Button type="submit" size="sm" loading={streaming} disabled={!input.trim()}>
-          {isAr ? 'إرسال' : 'Send'}
-        </Button>
+        <button
+          type="submit"
+          className="assistant-send-btn"
+          disabled={streaming || !input.trim()}
+        >
+          {streaming ? (isAr ? 'جارٍ...' : 'Sending') : isAr ? 'إرسال' : 'Send'}
+        </button>
       </form>
     </aside>
   );

@@ -15,7 +15,7 @@ export async function streamAssistantQuestion(
     token,
     tier,
     category,
-  }: { question: string; token: string; tier?: string; category?: string },
+  }: { question: string; token?: string; tier?: string; category?: string },
   onEvent: (event: StreamEvent) => void,
   onStatus?: (status: 'streaming' | 'reconnecting') => void
 ): Promise<void> {
@@ -26,12 +26,13 @@ export async function streamAssistantQuestion(
     else onStatus?.('streaming');
 
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers.Authorization = `Bearer ${token}`;
+
       const response = await fetch('/api/ops?resource=assistant', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers,
+        credentials: 'same-origin',
         body: JSON.stringify({ question, tier, category }),
       });
 

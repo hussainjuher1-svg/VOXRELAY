@@ -31,7 +31,15 @@ export function Select({
         </SelectPrimitive.Icon>
       </SelectPrimitive.Trigger>
       <SelectPrimitive.Portal>
-        <SelectPrimitive.Content className="ui-select-content" position="popper" sideOffset={6}>
+        <SelectPrimitive.Content
+          className="ui-select-content"
+          position="popper"
+          side="bottom"
+          align="start"
+          sideOffset={6}
+          collisionPadding={12}
+          avoidCollisions
+        >
           <SelectPrimitive.Viewport className="ui-select-viewport">
             {options.map((opt) => (
               <SelectPrimitive.Item key={opt.value} value={opt.value} className="ui-select-item">

@@ -1,8 +1,9 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 
+const require = createRequire(import.meta.url);
 let dbInstance = null;
 
 export function isLocalDbAllowed() {
@@ -14,6 +15,13 @@ export function getLocalDb() {
   const dataDir = path.join(process.cwd(), '.data');
   const dbPath = path.join(dataDir, 'voxrelay.sqlite');
   if (dbInstance && fs.existsSync(dbPath)) return dbInstance;
+
+  let DatabaseSync;
+  try {
+    ({ DatabaseSync } = require('node:sqlite'));
+  } catch {
+    return null;
+  }
 
   fs.mkdirSync(dataDir, { recursive: true });
   const db = new DatabaseSync(dbPath);
@@ -55,6 +63,9 @@ export function getLocalDb() {
       role TEXT NOT NULL DEFAULT 'interpreter',
       password_hash TEXT NOT NULL,
       locale TEXT NOT NULL DEFAULT 'en',
+      time_zone TEXT NOT NULL DEFAULT 'UTC',
+      language_pairs TEXT NOT NULL DEFAULT '',
+      weekly_hours INTEGER NOT NULL DEFAULT 30,
       failed_attempts INTEGER NOT NULL DEFAULT 0,
       locked_until TEXT,
       created_at TEXT NOT NULL
@@ -80,6 +91,7 @@ export function getLocalDb() {
       modality TEXT NOT NULL DEFAULT 'video_remote',
       category TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL DEFAULT 'scheduled',
+      exception_category TEXT,
       checklist_json TEXT NOT NULL DEFAULT '[]',
       personal_note TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
@@ -117,6 +129,55 @@ export function getLocalDb() {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS device_checks (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      result TEXT NOT NULL,
+      latency_ms INTEGER,
+      peak_level INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS billing_records (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      assignment_ref TEXT,
+      minutes INTEGER NOT NULL,
+      rate_cents INTEGER NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'USD',
+      amount_cents INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'invoiced',
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS session_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      assignment_id TEXT NOT NULL,
+      actor_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS availability_overrides (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      date TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'unavailable',
+      window_label TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      UNIQUE (user_id, date)
+    );
+
+    CREATE TABLE IF NOT EXISTS diagnostics_runs (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      profile TEXT NOT NULL DEFAULT 'video',
+      score INTEGER NOT NULL DEFAULT 0,
+      verdict TEXT NOT NULL DEFAULT 'warn',
+      payload_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS audit_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       actor_id TEXT,
@@ -141,6 +202,21 @@ export function getLocalDb() {
       created_at TEXT NOT NULL
     );
   `);
+
+  // Safe schema evolution for existing .data/voxrelay.sqlite files
+  const safeAlters = [
+    'ALTER TABLE assignments ADD COLUMN exception_category TEXT',
+    "ALTER TABLE local_users ADD COLUMN time_zone TEXT NOT NULL DEFAULT 'UTC'",
+    "ALTER TABLE local_users ADD COLUMN language_pairs TEXT NOT NULL DEFAULT ''",
+    'ALTER TABLE local_users ADD COLUMN weekly_hours INTEGER NOT NULL DEFAULT 30',
+  ];
+  for (const stmt of safeAlters) {
+    try {
+      db.exec(stmt);
+    } catch {
+      // column already exists
+    }
+  }
 
   dbInstance = db;
   return dbInstance;
