@@ -49,6 +49,7 @@ export async function authenticateRequest(req) {
     supabase,
     userId: data.user.id,
     email: data.user.email || '',
+    appRole: data.user.app_metadata?.role || 'interpreter',
     membership: membership || null,
   };
 }

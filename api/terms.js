@@ -88,6 +88,7 @@ export default async function handler(req, res) {
           source_lang: parsed.data.source_lang,
           target_lang: parsed.data.target_lang,
           target_term: parsed.data.target_term,
+          notes: parsed.data.notes,
         });
       }
       const { data: created, error } = await ctx.supabase.from('terms').insert(rowsToInsert).select('*');

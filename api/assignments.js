@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { resolveActor } from './_lib/auth-session.js';
 import { HttpError, requireCapability, serializeAssignment } from './_lib/authz.js';
 import { readJsonBody, sendJson } from './_lib/core.js';
-import { writeLocalAudit } from './_lib/local-db.js';
+import { getLocalDb, writeLocalAudit } from './_lib/local-db.js';
 import { computeReadiness } from './_lib/readiness.js';
 import { authenticateRequest } from './_lib/supabase.js';
 import { assignmentCreateSchema, assignmentPatchSchema } from './_lib/validate.js';
@@ -38,8 +38,7 @@ async function handleLocal(req, res, actor) {
     const parsed = assignmentCreateSchema.safeParse(body);
     if (!parsed.success) return sendJson(res, 400, { error: parsed.error.issues[0].message });
     const d = parsed.data;
-    const count = db.prepare('SELECT COUNT(*) AS c FROM assignments').get()?.c || 0;
-    const ref = `VR-${String(count + 1).padStart(4, '0')}`;
+    const ref = `VR-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
     const newId = crypto.randomUUID();
     const now = new Date().toISOString();
     db.prepare(
@@ -132,6 +131,9 @@ export default async function handler(req, res) {
     if (actor?.mode === 'local') {
       return await handleLocal(req, res, actor);
     }
+    if (!actor && getLocalDb()) {
+      return sendJson(res, 401, { error: 'Sign in required.' });
+    }
 
     const ctx = await authenticateRequest(req);
     const url = new URL(req.url, 'http://localhost');
@@ -180,8 +182,7 @@ export default async function handler(req, res) {
         }
       }
 
-      const { count } = await ctx.supabase.from('assignments').select('id', { count: 'exact', head: true });
-      const ref = `VR-${String((count || 0) + 1).padStart(4, '0')}`;
+      const ref = `VR-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
 
       const { data: created, error } = await ctx.supabase
         .from('assignments')

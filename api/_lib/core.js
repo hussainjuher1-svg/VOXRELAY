@@ -42,20 +42,28 @@ export async function enforceRateLimit(supabase, bucketKey, { maxRequests = 15, 
   const keyHash = hashKey(bucketKey);
   const since = new Date(Date.now() - windowMs).toISOString();
 
-  const { count } = await supabase
+  const { count, error: countError } = await supabase
     .from('rate_events')
     .select('id', { count: 'exact', head: true })
     .eq('key_hash', keyHash)
     .gte('created_at', since);
 
+  if (countError) {
+    throw new HttpError(503, 'Rate limit verification unavailable.');
+  }
+
   if ((count || 0) >= maxRequests) {
     throw new HttpError(429, 'Too many requests. Please wait a moment and try again.');
   }
 
-  await supabase.from('rate_events').insert({ key_hash: keyHash });
+  const { error: insertError } = await supabase.from('rate_events').insert({ key_hash: keyHash });
+  if (insertError) {
+    throw new HttpError(503, 'Rate limit verification unavailable.');
+  }
 }
 
 export function streamRoute(res, handler) {
+  applySecurityHeaders(res);
   res.statusCode = 200;
   res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -70,7 +78,8 @@ export function streamRoute(res, handler) {
       res.end();
     })
     .catch((err) => {
-      emit({ type: 'error', message: err?.message || 'Stream interrupted.' });
+      const safeMessage = err instanceof HttpError ? err.message : 'Assistant stream failed. Please try again.';
+      emit({ type: 'error', message: safeMessage });
       res.end();
     });
 }

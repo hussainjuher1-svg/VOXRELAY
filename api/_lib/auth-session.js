@@ -43,31 +43,10 @@ export function createLocalSession(db, userId, userAgent = '') {
   return { rawToken, sessionId: id, expiresAt };
 }
 
-function decodeDevSupabaseJwt(token, expectedUrl) {
-  if (process.env.VERCEL === '1' || !expectedUrl) return null;
-  const parts = String(token).split('.');
-  if (parts.length !== 3) return null;
-  try {
-    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
-    const normalizedBase = expectedUrl.replace(/\/+$/, '');
-    if (payload.iss !== `${normalizedBase}/auth/v1`) return null;
-    if (payload.aud !== 'authenticated' || !payload.sub) return null;
-    if (typeof payload.exp === 'number' && payload.exp * 1000 <= Date.now()) return null;
-    return {
-      id: payload.sub,
-      email: payload.email || '',
-      full_name: payload.user_metadata?.full_name || '',
-      role: payload.user_metadata?.role || 'interpreter',
-    };
-  } catch {
-    return null;
-  }
-}
-
 export async function resolveActor(req) {
   const db = getLocalDb();
 
-  // 1. Check Bearer token against Supabase if configured
+  // 1. Check Bearer token against Supabase Auth (signature verified server-side; never decode unverified JWTs)
   const authHeader = req.headers?.authorization || req.headers?.Authorization || '';
   if (authHeader.startsWith('Bearer ')) {
     const token = authHeader.slice(7).trim();
@@ -81,7 +60,7 @@ export async function resolveActor(req) {
         : null);
 
     let verifiedUser = null;
-    if (verifier) {
+    if (verifier && token) {
       try {
         const { data, error } = await verifier.auth.getUser(token);
         if (!error && data?.user) {
@@ -89,24 +68,27 @@ export async function resolveActor(req) {
             id: data.user.id,
             email: data.user.email || '',
             full_name: data.user.user_metadata?.full_name || '',
-            role: data.user.user_metadata?.role || 'interpreter',
+            role: data.user.app_metadata?.role || 'interpreter',
+            app_metadata: data.user.app_metadata || {},
           };
         }
       } catch {
-        // Fallback below only in non-Vercel local dev when outbound network is restricted
+        verifiedUser = null;
       }
-    }
-
-    if (!verifiedUser && process.env.VERCEL !== '1') {
-      verifiedUser = decodeDevSupabaseJwt(token, url);
     }
 
     if (verifiedUser) {
       if (service) {
-        return { mode: 'supabase', user: verifiedUser, supabase: service };
+        const { data: membership } = await service
+          .from('memberships')
+          .select('org_id, role, status')
+          .eq('user_id', verifiedUser.id)
+          .eq('status', 'active')
+          .maybeSingle();
+        return { mode: 'supabase', user: verifiedUser, appRole: verifiedUser.role, membership: membership || null, supabase: service };
       }
       if (db) {
-        return { mode: 'local', user: verifiedUser, db };
+        return { mode: 'local', user: verifiedUser, appRole: verifiedUser.role, db };
       }
     }
   }

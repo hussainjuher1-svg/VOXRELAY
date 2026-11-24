@@ -37,6 +37,14 @@ export function requireCapability(ctx, capability) {
   }
 }
 
+export function isAdminActor(actorOrCtx) {
+  if (!actorOrCtx) return false;
+  const appRole = actorOrCtx.appRole || actorOrCtx.user?.app_metadata?.role || actorOrCtx.user?.role;
+  if (appRole === 'platform_admin' || appRole === 'org_admin') return true;
+  const orgRole = actorOrCtx.membership?.role;
+  return Boolean(orgRole && ['owner', 'admin'].includes(orgRole));
+}
+
 export function serializeAssignment(row, viewerUserId) {
   if (!row) return null;
   if (row.owner_id === viewerUserId) return { ...row };

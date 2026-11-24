@@ -1,9 +1,9 @@
 import crypto from 'node:crypto';
 import { resolveActor } from './_lib/auth-session.js';
 import { evaluateAssistantRequest, matchTopic } from './_lib/assistant.js';
-import { can, canReadDoc, canReviewDoc, HttpError, requireCapability } from './_lib/authz.js';
+import { can, canReadDoc, canReviewDoc, HttpError, isAdminActor, requireCapability } from './_lib/authz.js';
 import { enforceRateLimit, readJsonBody, sendJson, streamRoute } from './_lib/core.js';
-import { writeLocalAudit } from './_lib/local-db.js';
+import { getLocalDb, writeLocalAudit } from './_lib/local-db.js';
 import { computeBillingAmountCents, computeQualityIndicators, summarizeReports } from './_lib/ops-metrics.js';
 import { authenticateRequest } from './_lib/supabase.js';
 import {
@@ -234,8 +234,7 @@ async function handleLocalOps(req, res, actor, resource) {
   }
 
   if (resource === 'audit' && req.method === 'GET') {
-    const isAdmin = actor.user.role === 'platform_admin' || actor.user.role === 'org_admin';
-    const rows = isAdmin
+    const rows = isAdminActor(actor)
       ? db.prepare('SELECT * FROM audit_events ORDER BY id DESC LIMIT 100').all()
       : db.prepare('SELECT * FROM audit_events WHERE actor_id = ? ORDER BY id DESC LIMIT 100').all(userId);
     return sendJson(res, 200, { data: rows });
@@ -340,6 +339,9 @@ export default async function handler(req, res) {
     const actor = await resolveActor(req);
     if (actor?.mode === 'local') {
       return await handleLocalOps(req, res, actor, resource);
+    }
+    if (!actor && getLocalDb()) {
+      return sendJson(res, 401, { error: 'Sign in required.' });
     }
 
     const ctx = await authenticateRequest(req);
@@ -669,6 +671,18 @@ export default async function handler(req, res) {
           },
         });
       }
+    }
+
+    if (resource === 'audit' && req.method === 'GET') {
+      let query = ctx.supabase.from('audit_events').select('*').order('id', { ascending: false }).limit(100);
+      if (ctx.membership && can(ctx.membership.role, 'org.audit.view')) {
+        query = query.eq('org_id', ctx.membership.org_id);
+      } else if (!isAdminActor(ctx)) {
+        query = query.eq('actor_id', ctx.userId);
+      }
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      return sendJson(res, 200, { data: data || [] });
     }
 
     if (resource === 'documentation' && req.method === 'POST') {
