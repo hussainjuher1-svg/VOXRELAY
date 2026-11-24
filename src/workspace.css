@@ -597,35 +597,44 @@
 
 .vx-ledger {
   background: var(--vr-card, #ffffff);
-  border: 1px solid var(--vr-hairline, #dfd8ca);
+  border: 1px solid #dfd8ca;
   border-radius: 18px;
+  box-shadow: 0 2px 10px rgba(17, 42, 36, 0.04);
   overflow: hidden;
   margin-bottom: 24px;
 }
 
 .vx-ledger-head {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 20px;
-  background: #f8f4ec;
-  border-bottom: 1px solid var(--vr-hairline, #dfd8ca);
+  gap: 8px 16px;
+  padding: 16px 22px;
+  background: #f4eee2;
+  border-bottom: 1px solid #dfd8ca;
 }
 
 .vx-ledger-head h2 {
   font-family: var(--vr-font-serif);
   font-size: 22px;
   font-weight: 400;
+  color: var(--vr-ink, #162e2a);
   margin: 0;
 }
 
 .vx-ledger-row {
   display: grid;
-  grid-template-columns: 100px minmax(0, 1.3fr) minmax(0, 1fr) auto;
-  gap: 14px;
+  grid-template-columns: 92px minmax(0, 1.35fr) minmax(0, 1fr) auto;
+  gap: 16px;
   align-items: center;
-  padding: 14px 20px;
-  border-bottom: 1px solid var(--vr-hairline, #dfd8ca);
+  padding: 15px 22px;
+  border-bottom: 1px solid #ebe4d7;
+  transition: background 120ms ease;
+}
+
+.vx-ledger-row:hover {
+  background: #fcfaf5;
 }
 
 .vx-ledger-row:last-child {
@@ -633,32 +642,62 @@
 }
 
 .vx-ledger-cat {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #f5f0e5;
+  border: 1px solid #e4dccd;
   font-family: var(--vr-font-mono);
   font-size: 10px;
-  letter-spacing: 0.1em;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--vr-ink-3, #60726e);
+  color: #4b615b;
+  white-space: nowrap;
 }
 
 .vx-ledger-title {
   display: grid;
-  gap: 2px;
+  gap: 3px;
+  min-width: 0;
 }
 
 .vx-ledger-title strong {
   font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
   color: var(--vr-ink, #162e2a);
 }
 
 .vx-ledger-title span {
   font-size: 12px;
+  line-height: 1.4;
   color: var(--vr-ink-2, #435652);
 }
 
 .vx-ledger-val {
   font-family: var(--vr-font-mono);
-  font-size: 12px;
+  font-size: 12.5px;
+  font-weight: 500;
   color: var(--vr-ink, #162e2a);
+  font-variant-numeric: tabular-nums;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.vx-ledger .ui-badge {
+  width: fit-content;
+  justify-self: end;
+  flex-shrink: 0;
+  white-space: nowrap;
+  padding: 4px 11px;
+  font-family: var(--vr-font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid rgba(17, 42, 36, 0.08);
 }
 
 /* Filter chips, Toast & ICS Dropzone */
@@ -1003,12 +1042,34 @@
     padding: 20px;
   }
   .vx-ledger-row {
-    grid-template-columns: 1fr;
-    gap: 6px;
+    grid-template-columns: 82px minmax(0, 1.25fr) minmax(0, 0.9fr) auto;
+    gap: 10px 12px;
+    padding: 14px 16px;
   }
 }
 
 @media (max-width: 640px) {
+  .vx-ledger-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 12px;
+    padding: 14px 16px;
+    align-items: center;
+  }
+  .vx-ledger-cat {
+    grid-column: 1;
+  }
+  .vx-ledger-title {
+    grid-column: 1;
+  }
+  .vx-ledger-val {
+    grid-column: 1;
+  }
+  .vx-ledger .ui-badge {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+    align-self: center;
+    justify-self: end;
+  }
   .assistant-drawer {
     inset-inline: 12px;
     inset-block-start: 66px;

@@ -1175,15 +1175,15 @@ export function DeviceCheckPage() {
           <h1>Live hardware, audio &amp; network telemetry</h1>
         </div>
         <div className="hero-actions">
-          <Button variant="secondary" onClick={exportReportJson}>
+          <Button variant="secondary" size="sm" onClick={exportReportJson}>
             <Download size={14} />
-            <span>JSON</span>
+            <span>Export JSON</span>
           </Button>
-          <Button variant="secondary" onClick={exportReportCsv}>
+          <Button variant="secondary" size="sm" onClick={exportReportCsv}>
             <Download size={14} />
-            <span>CSV</span>
+            <span>Export CSV</span>
           </Button>
-          <Button variant="secondary" onClick={() => window.print()}>
+          <Button variant="secondary" size="sm" onClick={() => window.print()}>
             <span>Print PDF</span>
           </Button>
         </div>
