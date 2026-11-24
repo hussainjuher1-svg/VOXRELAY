@@ -108,6 +108,38 @@ describe('Assistant Eval (40+ golden, adversarial, and research cases)', () => {
     expect(vri.proposedTerms.length).toBeGreaterThan(0);
   });
 
+  it('replies warmly to greetings with quick chips and no tier-rule dump', async () => {
+    for (const greet of ['hi', 'hello!', 'hey']) {
+      const events = [];
+      await runAssistantStream({
+        mode: 'ask',
+        question: greet,
+        locale: 'en',
+        db: null,
+        userId: null,
+        emit: (ev) => events.push(ev),
+      });
+      const text = events.filter((e) => e.type === 'delta').map((e) => e.text).join('');
+      const hasQuickChips = events.some((e) => e.type === 'quick_chips' && e.show);
+      expect(text.toLowerCase()).toContain('hello');
+      expect(text).not.toContain('T3');
+      expect(hasQuickChips).toBe(true);
+    }
+  });
+
+  it('answers all 4 canonical FAQ chip questions with exact citations', async () => {
+    const pairs = [
+      ['How does scheduling & .ics import work?', 'KB-04'],
+      ['How does zero recording & privacy work?', 'KB-01'],
+      ['What are T0–T3 operational tiers?', 'KB-05'],
+      ['How do I run a device check?', 'KB-07'],
+    ];
+    for (const [question, expectedId] of pairs) {
+      const out = await runEval({ mode: 'ask', question });
+      expect(out.citations.some((c) => c.id === expectedId)).toBe(true);
+    }
+  });
+
   it('redacts emails, phones, and SSNs before processing', () => {
     const cleaned = redactPii('Contact john@example.com or 555-234-5678, SSN 123-45-6789');
     expect(cleaned).not.toContain('john@example.com');

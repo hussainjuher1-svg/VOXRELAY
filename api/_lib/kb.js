@@ -11,7 +11,7 @@ export const KNOWLEDGE_BASE = [
       en: 'VOXRELAY manages the operational workflow around remote interpreting sessions: schedules, preparation checklists, personal terminology glossaries, device checks, billing logs, and human support queues. It never interprets, translates, records audio, transcribes sessions, or stores patient or client identities.',
       ar: 'يدير VOXRELAY سير العمل التشغيلي حول جلسات الترجمة عن بُعد: الجداول وقوائم التحضير ومسارد المصطلحات وفحص الأجهزة وسجلات الفوترة وطوابير الدعم البشري. لا يترجم ولا يسجل الصوت ولا يفرغ الجلسات ولا يحفظ بيانات المرضى أو العملاء.',
     },
-    keywords: ['privacy', 'record', 'recording', 'transcript', 'translate', 'interpret', 'patient', 'phi', 'pii', 'never', 'boundary', 'boundaries', 'خصوصية', 'تسجيل', 'ترجمة', 'تفريغ'],
+    keywords: ['privacy', 'record', 'recording', 'zero', 'transcript', 'translate', 'interpret', 'patient', 'phi', 'pii', 'never', 'boundary', 'boundaries', 'خصوصية', 'تسجيل', 'ترجمة', 'تفريغ'],
   },
   {
     id: 'KB-02',
@@ -53,7 +53,7 @@ export const KNOWLEDGE_BASE = [
       en: 'When importing an .ics file, VOXRELAY reads only DTSTART and DTEND to calculate start timestamps and duration in minutes. Event titles, summaries, attendee emails, and descriptions are deliberately ignored so client details never enter your workspace.',
       ar: 'عند استيراد ملف .ics، يقرأ VOXRELAY فقط DTSTART وDTEND لحساب وقت البدء والمدة بالدقائق، ويتجاهل العناوين والوصف وأسماء الحضور لحماية سرية العملاء.',
     },
-    keywords: ['ics', 'calendar', 'import', 'dtstart', 'dtend', 'timezone', 'time zone', 'utc', 'تقويم', 'استيراد', 'توقيت'],
+    keywords: ['ics', 'calendar', 'import', 'scheduling', 'schedule', 'dtstart', 'dtend', 'timezone', 'time zone', 'utc', 'تقويم', 'استيراد', 'توقيت'],
   },
   {
     id: 'KB-05',
@@ -67,7 +67,7 @@ export const KNOWLEDGE_BASE = [
       en: 'VOXRELAY classifies operational actions into four tiers: T0–T2 are disabled by default unless an organization admin enables versioned policies, while T3 (clinical/legal judgment, live interpreting, quality grading, and dispute resolution) is permanently sealed as human-only and cannot be automated.',
       ar: 'يصنف VOXRELAY الإجراءات إلى أربعة مستويات: T0–T2 معطلة افتراضياً ما لم يفعلها مسؤول المنظمة، أما T3 (القرارات البشرية والترجمة الحية والنزاعات) فمغلقة دائماً للإنسان فقط.',
     },
-    keywords: ['t0', 't1', 't2', 't3', 'policy', 'human', 'tier', 'tiers', 'rbac', 'role', 'admin', 'coordinator', 'سياسة', 'بشري', 'صلاحيات'],
+    keywords: ['t0', 't1', 't2', 't3', 'operational', 'policy', 'human', 'tier', 'tiers', 'rbac', 'role', 'admin', 'coordinator', 'سياسة', 'بشري', 'صلاحيات'],
   },
   {
     id: 'KB-06',
@@ -81,7 +81,7 @@ export const KNOWLEDGE_BASE = [
       en: 'The Billing log calculates billable minutes by applying your minimum-minute floor first, then rounding up to your chosen increment (such as 15 minutes), and tracks invoiced vs. paid status cleanly.',
       ar: 'يحسب سجل الفواتير الدقائق القابلة للفوترة بتطبيق الحد الأدنى أولاً ثم التقريب لأعلى إلى أقرب فاصل زمني محدد مع تتبع حالة الفاتورة والدفع.',
     },
-    keywords: ['billing', 'invoice', 'paid', 'rate', 'minutes', 'rounding', 'minimum', 'pay', 'فواتير', 'سعر', 'دقائق'],
+    keywords: ['billing', 'invoice', 'paid', 'payout', 'payouts', 'rate', 'minutes', 'rounding', 'minimum', 'pay', 'فواتير', 'سعر', 'دقائق'],
   },
   {
     id: 'KB-07',
@@ -95,7 +95,7 @@ export const KNOWLEDGE_BASE = [
       en: 'Device check verifies browser microphone permission and live input signal levels locally using Web Audio API without recording, buffering, or uploading any audio stream.',
       ar: 'يتحقق فحص الجهاز من إذن الميكروفون ومستوى الإشارة محلياً في المتصفح دون تسجيل أو تخزين أو رفع أي صوت.',
     },
-    keywords: ['device', 'microphone', 'mic', 'audio', 'check', 'readiness', 'browser', 'ميكروفون', 'صوت', 'جهاز'],
+    keywords: ['device', 'microphone', 'mic', 'audio', 'check', 'readiness', 'latency', 'network', 'browser', 'ميكروفون', 'صوت', 'جهاز'],
   },
   {
     id: 'KB-08',

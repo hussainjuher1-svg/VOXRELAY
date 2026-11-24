@@ -10,6 +10,7 @@ export function redactPii(text) {
 
 const LIVE_INTERPRET_RE = /\b(translate|interpret|transcribe|record\s+session|patient\s+said|doctor\s+said|diagnose|prescribe|legal\s+advice|medical\s+advice|verdict|lawsuit)\b/i;
 const HUMAN_ESCALATE_RE = /\b(human|person|agent|staff|coordinator|escalate|ticket|support\s+team|talk\s+to\s+someone|بشر|دعم|تذكرة)\b/i;
+const GREETING_RE = /^(hi|hello|hey|good\s+(morning|afternoon|evening)|greetings|salam|assalamu\s+alaikum|hola|مرحبا|أهلا|السلام\s+عليكم|হ্যালো|হাই)[\s!.,?]*$/i;
 
 const DOMAIN_RESEARCH_BRIEFS = [
   {
@@ -111,6 +112,16 @@ export async function runAssistantStream({ mode = 'ask', question, locale = 'en'
 
   if (!sanitized) {
     emit({ type: 'error', message: lang === 'ar' ? 'الرجاء إدخال سؤال.' : 'Please enter a question.' });
+    return;
+  }
+
+  if (GREETING_RE.test(sanitized)) {
+    const greetingText =
+      lang === 'ar'
+        ? 'مرحباً! أنا مساعد عمل VOXRELAY. كيف يمكنني مساعدتك اليوم؟ يمكنك سؤالي عن الجدولة واستيراد .ics، الخصوصية وعدم التسجيل، فحص الجهاز، أو مستويات T0–T3 — أو اختيار موضوع سريع أدناه.'
+        : "Hello! I'm the VOXRELAY Work Assistant. How can I help you today? Pick a quick topic below or ask about scheduling, privacy, device readiness, or billing.";
+    emit({ type: 'delta', text: greetingText });
+    emit({ type: 'quick_chips', show: true });
     return;
   }
 
