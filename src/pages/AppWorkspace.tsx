@@ -152,7 +152,7 @@ export function OverviewPage() {
       ) : (
         <>
           <div className="vx-kpi-grid">
-            <article className={`vx-kpi-card${assignments.length > 0 ? ' is-live-beam' : ''}`}>
+            <article className="vx-kpi-card is-live-beam">
               <span className="vox-border-beam-glow" aria-hidden="true" />
               <span className="vox-border-beam" aria-hidden="true" />
               <span className="eyebrow">Scheduled</span>

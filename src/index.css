@@ -2485,6 +2485,8 @@ p {
 
 .panel-form {
   position: relative;
+  overflow: hidden;
+  isolation: isolate;
   display: grid;
   gap: 16px;
   width: 100%;
@@ -2740,6 +2742,8 @@ p {
 /* Editorial Readiness Instrument Panel & Ruled Ledgers */
 .vx-diag-hero {
   position: relative;
+  overflow: hidden;
+  isolation: isolate;
   background: #112a24;
   color: #f8f4ec;
   border-radius: 22px;
@@ -3023,6 +3027,8 @@ p {
 
 .vx-kpi-card {
   position: relative;
+  overflow: hidden;
+  isolation: isolate;
   background: var(--vr-card);
   border: 1px solid #e6e1d6;
   border-radius: 16px;
@@ -3030,6 +3036,14 @@ p {
   display: grid;
   gap: 6px;
   transition: transform 150ms ease, box-shadow 180ms ease, border-color 150ms ease;
+}
+
+.vx-kpi-card > *:not(.vox-border-beam):not(.vox-border-beam-glow),
+.vx-diag-hero > *:not(.vox-border-beam):not(.vox-border-beam-glow),
+.panel-form > *:not(.vox-border-beam):not(.vox-border-beam-glow),
+.vx-ics-dropzone > *:not(.vox-border-beam):not(.vox-border-beam-glow) {
+  position: relative;
+  z-index: 2;
 }
 
 .vx-kpi-card:hover {
@@ -3062,6 +3076,8 @@ p {
 .vox-border-beam-glow {
   pointer-events: none;
   position: absolute;
+  inset: 0;
+  z-index: 1;
   border-radius: inherit;
   overflow: hidden;
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -3073,40 +3089,39 @@ p {
 }
 
 .vox-border-beam {
-  inset: 0;
   padding: 2px;
 }
 
 .vox-border-beam-glow {
-  inset: -2px;
   padding: 3px;
-  filter: blur(10px);
+  filter: blur(8px);
 }
 
 .vox-border-beam::before,
 .vox-border-beam-glow::before {
   content: '';
   position: absolute;
-  width: 160px;
-  height: 32px;
-  background: linear-gradient(90deg, transparent, #064e3b, #0d2b22, #10b981, #e0522a, #f59e0b, #fef3c7);
+  width: 112px;
+  height: 28px;
+  background: linear-gradient(90deg, transparent 0%, #064e3b 22%, #10b981 48%, #e0522a 72%, #f59e0b 88%, #fef3c7 100%);
   offset-path: rect(0 auto auto 0 round 16px);
   offset-anchor: center;
+  offset-rotate: auto;
   offset-distance: 0%;
-  animation: vox-beam-orbit 4.5s linear infinite;
+  animation: vox-beam-orbit 5s linear infinite;
 }
 
 .vox-border-beam--pill::before,
 .vox-border-beam-glow--pill::before {
-  width: 84px;
-  height: 22px;
+  width: 64px;
+  height: 18px;
   offset-path: rect(0 auto auto 0 round 9999px);
 }
 
 .vox-border-beam--hero::before,
 .vox-border-beam-glow--hero::before {
-  width: 210px;
-  height: 36px;
+  width: 160px;
+  height: 32px;
   offset-path: rect(0 auto auto 0 round 22px);
 }
 
@@ -3215,6 +3230,8 @@ p {
 
 .vx-ics-dropzone {
   position: relative;
+  overflow: hidden;
+  isolation: isolate;
   border-radius: 16px;
 }
 

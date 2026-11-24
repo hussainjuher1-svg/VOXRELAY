@@ -52,6 +52,11 @@ const devApiPlugin = () => ({
   name: 'voxrelay-dev-api',
   apply: 'serve' as const,
   configureServer(server: ViteDevServer) {
+    server.middlewares.use((_req, res, next) => {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      next();
+    });
     const env = loadEnv(server.config.mode || 'development', process.cwd(), '');
     for (const [key, value] of Object.entries(env)) {
       if (process.env[key] === undefined) {
