@@ -10,7 +10,6 @@ import {
   CheckCircle2,
   Copy,
   Download,
-  ExternalLink,
   Headset,
   Inbox,
   Mic,
@@ -358,7 +357,13 @@ export function AssignmentsPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     file.text().then((txt) => {
-      setIcsSlots(parseIcsTimingOnly(txt));
+      const parsed = parseIcsTimingOnly(txt);
+      setIcsSlots(parsed);
+      if (parsed.length === 0) {
+        setFeedback({ kind: 'error', text: 'No valid VEVENT timing slots (DTSTART/DTEND) found in that .ics file.' });
+      } else {
+        setFeedback(null);
+      }
     });
   }
 
@@ -494,7 +499,18 @@ export function AssignmentsPage() {
             setIcsDragOver(false);
             const file = e.dataTransfer.files?.[0];
             if (file) {
-              void file.text().then((txt) => setIcsSlots(parseIcsTimingOnly(txt)));
+              void file.text().then((txt) => {
+                const parsed = parseIcsTimingOnly(txt);
+                setIcsSlots(parsed);
+                if (parsed.length === 0) {
+                  setFeedback({
+                    kind: 'error',
+                    text: 'No valid VEVENT timing slots (DTSTART/DTEND) found in that .ics file.',
+                  });
+                } else {
+                  setFeedback(null);
+                }
+              });
             }
           }}
         >
@@ -529,14 +545,21 @@ export function AssignmentsPage() {
         {items.length > 0 && (
           <div className="vx-filter-row">
             <div className="vx-filter-chips" role="group" aria-label="Filter assignments by status">
-              {['all', 'scheduled', 'preparing', 'ready', 'in_session', 'completed'].map((st) => (
+              {[
+                { key: 'all', label: `All (${items.length})` },
+                { key: 'scheduled', label: 'Scheduled' },
+                { key: 'preparation_required', label: 'Preparing' },
+                { key: 'ready', label: 'Ready' },
+                { key: 'in_progress', label: 'In session' },
+                { key: 'completed', label: 'Completed' },
+              ].map((st) => (
                 <button
-                  key={st}
+                  key={st.key}
                   type="button"
-                  className={`vx-filter-chip${statusFilter === st ? ' is-active' : ''}`}
-                  onClick={() => setStatusFilter(st)}
+                  className={`vx-filter-chip${statusFilter === st.key ? ' is-active' : ''}`}
+                  onClick={() => setStatusFilter(st.key)}
                 >
-                  {st === 'all' ? `All (${items.length})` : st.replace(/_/g, ' ')}
+                  {st.label}
                 </button>
               ))}
             </div>
@@ -690,158 +713,147 @@ export function SessionFocusPage() {
   );
 }
 
+const STARTER_BY_LANG: Record<string, Array<{ label: string; target_term: string }>> = {
+  es: [
+    { label: 'Informed consent', target_term: 'Consentimiento informado' },
+    { label: 'Shortness of breath', target_term: 'Dificultad para respirar' },
+    { label: 'Sworn affirmation', target_term: 'Declaración bajo juramento' },
+    { label: 'Repeat slowly', target_term: 'Por favor repita más despacio' },
+  ],
+  ar: [
+    { label: 'Informed consent', target_term: 'الموافقة المستنيرة' },
+    { label: 'Shortness of breath', target_term: 'ضيق في التنفس' },
+    { label: 'Sworn affirmation', target_term: 'إقرار تحت القسم' },
+    { label: 'Clarification pause', target_term: 'وقفة استيضاح' },
+  ],
+  bn: [
+    { label: 'Informed consent', target_term: 'অবহিত সম্মতি' },
+    { label: 'Shortness of breath', target_term: 'শ্বাসকষ্ট' },
+    { label: 'Sworn affirmation', target_term: 'শপথবদ্ধ ঘোষণা' },
+    { label: 'Repeat slowly', target_term: 'অনুগ্রহ করে ধীরে বলুন' },
+  ],
+  fr: [
+    { label: 'Informed consent', target_term: 'Consentement éclairé' },
+    { label: 'Shortness of breath', target_term: 'Essoufflement' },
+    { label: 'Sworn affirmation', target_term: 'Déclaration sous serment' },
+    { label: 'Repeat slowly', target_term: 'Veuillez répéter lentement' },
+  ],
+  hi: [
+    { label: 'Informed consent', target_term: 'सूचित सहमति' },
+    { label: 'Shortness of breath', target_term: 'सांस लेने में तकलीफ' },
+    { label: 'Sworn affirmation', target_term: 'शपथपूर्वक कथन' },
+    { label: 'Repeat slowly', target_term: 'कृपया धीरे बोलें' },
+  ],
+  he: [
+    { label: 'Informed consent', target_term: 'הסכמה מדעת' },
+    { label: 'Shortness of breath', target_term: 'קוצר נשימה' },
+    { label: 'Sworn affirmation', target_term: 'הצהרה בשבועה' },
+    { label: 'Repeat slowly', target_term: 'נא לחזור לאט' },
+  ],
+  ur: [
+    { label: 'Informed consent', target_term: 'باخبر رضامندی' },
+    { label: 'Shortness of breath', target_term: 'سانس لینے میں دشواری' },
+    { label: 'Sworn affirmation', target_term: 'حلفیہ بیان' },
+    { label: 'Repeat slowly', target_term: 'براہِ کرم آہستہ دہرائیں' },
+  ],
+  pt: [
+    { label: 'Informed consent', target_term: 'Consentimento informado' },
+    { label: 'Shortness of breath', target_term: 'Falta de ar' },
+    { label: 'Sworn affirmation', target_term: 'Declaração sob juramento' },
+    { label: 'Repeat slowly', target_term: 'Por favor repita devagar' },
+  ],
+  zh: [
+    { label: 'Informed consent', target_term: '知情同意书' },
+    { label: 'Shortness of breath', target_term: '呼吸困难' },
+    { label: 'Sworn affirmation', target_term: '宣誓声明' },
+    { label: 'Repeat slowly', target_term: '请慢一点重复一遍' },
+  ],
+  de: [
+    { label: 'Informed consent', target_term: 'Aufgeklärte Einwilligung' },
+    { label: 'Shortness of breath', target_term: 'Atemnot' },
+    { label: 'Sworn affirmation', target_term: 'Eidesstattliche Versicherung' },
+    { label: 'Repeat slowly', target_term: 'Bitte langsam wiederholen' },
+  ],
+  ja: [
+    { label: 'Informed consent', target_term: 'インフォームド・コンセント' },
+    { label: 'Shortness of breath', target_term: '息切れ' },
+    { label: 'Sworn affirmation', target_term: '宣誓供述' },
+    { label: 'Repeat slowly', target_term: 'ゆっくり繰り返してください' },
+  ],
+  ko: [
+    { label: 'Informed consent', target_term: '사전 동의' },
+    { label: 'Shortness of breath', target_term: '호흡 곤란' },
+    { label: 'Sworn affirmation', target_term: '선서 진술' },
+    { label: 'Repeat slowly', target_term: '천천히 다시 말씀해 주세요' },
+  ],
+  it: [
+    { label: 'Informed consent', target_term: 'Consenso informato' },
+    { label: 'Shortness of breath', target_term: 'Mancanza di respiro' },
+    { label: 'Sworn affirmation', target_term: 'Dichiarazione giurata' },
+    { label: 'Repeat slowly', target_term: 'Per favore ripeta lentamente' },
+  ],
+  ru: [
+    { label: 'Informed consent', target_term: 'Информированное согласие' },
+    { label: 'Shortness of breath', target_term: 'Одышка' },
+    { label: 'Sworn affirmation', target_term: 'Заявление под присягой' },
+    { label: 'Repeat slowly', target_term: 'Пожалуйста, повторите медленнее' },
+  ],
+  tr: [
+    { label: 'Informed consent', target_term: 'Aydınlatılmış onam' },
+    { label: 'Shortness of breath', target_term: 'Nefes darlığı' },
+    { label: 'Sworn affirmation', target_term: 'Yeminli beyan' },
+    { label: 'Repeat slowly', target_term: 'Lütfen daha yavaş tekrarlayın' },
+  ],
+  vi: [
+    { label: 'Informed consent', target_term: 'Đồng thuận sau giải thích' },
+    { label: 'Shortness of breath', target_term: 'Khó thở' },
+    { label: 'Sworn affirmation', target_term: 'Lời cam đoan tuyên thệ' },
+    { label: 'Repeat slowly', target_term: 'Xin vui lòng nói chậm lại' },
+  ],
+  so: [
+    { label: 'Informed consent', target_term: 'Ogolaansho xog-ogaal ah' },
+    { label: 'Shortness of breath', target_term: 'Neef-qabatin' },
+    { label: 'Sworn affirmation', target_term: 'Dhaar sharci ah' },
+    { label: 'Repeat slowly', target_term: 'Fadlan si tartiib ah ugu celi' },
+  ],
+};
+
+const WORLD_LANGUAGE_CODES = [
+  'ar', 'bn', 'es', 'fr', 'hi', 'he', 'ur', 'pt', 'zh', 'de', 'ja', 'ko', 'it', 'ru', 'tr',
+  'fa', 'uk', 'pl', 'nl', 'vi', 'so', 'sw', 'ta', 'te', 'gu', 'pa', 'ne', 'mr', 'ml', 'kn',
+  'si', 'th', 'id', 'ms', 'tl', 'el', 'sv', 'no', 'da', 'fi', 'cs', 'ro', 'hu', 'am', 'ps',
+  'my', 'km', 'lo', 'ha', 'yo', 'ig', 'zu', 'ca', 'eu', 'gl', 'cy', 'ga', 'is', 'lv', 'lt',
+  'et', 'sk', 'sl', 'hr', 'sr', 'bg', 'ka', 'hy', 'mn', 'kk', 'uz', 'az', 'sq', 'bs', 'mk',
+];
+
 const LANGUAGE_CATALOG: Array<{
   code: string;
   name: string;
   nativeName: string;
-  aliases: string[];
   starterTerms: Array<{ label: string; target_term: string }>;
-}> = [
-  {
-    code: 'es',
-    name: 'Spanish',
-    nativeName: 'Español',
-    aliases: ['spanish', 'espanol', 'español', 'es', 'castellano'],
-    starterTerms: [
-      { label: 'Informed consent', target_term: 'Consentimiento informado' },
-      { label: 'Shortness of breath', target_term: 'Dificultad para respirar' },
-      { label: 'Sworn affirmation', target_term: 'Declaración bajo juramento' },
-      { label: 'Repeat slowly', target_term: 'Por favor repita más despacio' },
-    ],
-  },
-  {
-    code: 'ar',
-    name: 'Arabic',
-    nativeName: 'العربية',
-    aliases: ['arabic', 'ar', 'العربية', 'عربي'],
-    starterTerms: [
-      { label: 'Informed consent', target_term: 'الموافقة المستنيرة' },
-      { label: 'Shortness of breath', target_term: 'ضيق في التنفس' },
-      { label: 'Sworn affirmation', target_term: 'إقرار تحت القسم' },
-      { label: 'Clarification pause', target_term: 'وقفة استيضاح' },
-    ],
-  },
-  {
-    code: 'bn',
-    name: 'Bengali',
-    nativeName: 'বাংলা',
-    aliases: ['bengali', 'bangla', 'bn', 'বাংলা'],
-    starterTerms: [
-      { label: 'Informed consent', target_term: 'অবহিত সম্মতি' },
-      { label: 'Shortness of breath', target_term: 'শ্বাসকষ্ট' },
-      { label: 'Sworn affirmation', target_term: 'শপথবদ্ধ ঘোষণা' },
-      { label: 'Repeat slowly', target_term: 'অনুগ্রহ করে ধীরে বলুন' },
-    ],
-  },
-  {
-    code: 'fr',
-    name: 'French',
-    nativeName: 'Français',
-    aliases: ['french', 'francais', 'français', 'fr'],
-    starterTerms: [
-      { label: 'Informed consent', target_term: 'Consentement éclairé' },
-      { label: 'Shortness of breath', target_term: 'Essoufflement' },
-      { label: 'Sworn affirmation', target_term: 'Déclaration sous serment' },
-      { label: 'Repeat slowly', target_term: 'Veuillez répéter lentement' },
-    ],
-  },
-  {
-    code: 'hi',
-    name: 'Hindi',
-    nativeName: 'हिन्दी',
-    aliases: ['hindi', 'hi', 'हिन्दी', 'हिंदी'],
-    starterTerms: [
-      { label: 'Informed consent', target_term: 'सूचित सहमति' },
-      { label: 'Shortness of breath', target_term: 'सांस लेने में तकलीफ' },
-      { label: 'Sworn affirmation', target_term: 'शपथपूर्वक कथन' },
-      { label: 'Repeat slowly', target_term: 'कृपया धीरे बोलें' },
-    ],
-  },
-  {
-    code: 'he',
-    name: 'Hebrew',
-    nativeName: 'עברית',
-    aliases: ['hebrew', 'he', 'עברית'],
-    starterTerms: [
-      { label: 'Informed consent', target_term: 'הסכמה מדעת' },
-      { label: 'Shortness of breath', target_term: 'קוצר נשימה' },
-      { label: 'Sworn affirmation', target_term: 'הצהרה בשבועה' },
-      { label: 'Repeat slowly', target_term: 'נא לחזור לאט' },
-    ],
-  },
-  {
-    code: 'ur',
-    name: 'Urdu',
-    nativeName: 'اردو',
-    aliases: ['urdu', 'ur', 'اردو'],
-    starterTerms: [
-      { label: 'Informed consent', target_term: 'باخبر رضامندی' },
-      { label: 'Shortness of breath', target_term: 'سانس لینے میں دشواری' },
-      { label: 'Sworn affirmation', target_term: 'حلفیہ بیان' },
-      { label: 'Repeat slowly', target_term: 'براہِ کرم آہستہ دہرائیں' },
-    ],
-  },
-  {
-    code: 'pt',
-    name: 'Portuguese',
-    nativeName: 'Português',
-    aliases: ['portuguese', 'portugues', 'português', 'pt'],
-    starterTerms: [
-      { label: 'Informed consent', target_term: 'Consentimento informado' },
-      { label: 'Shortness of breath', target_term: 'Falta de ar' },
-      { label: 'Sworn affirmation', target_term: 'Declaração sob juramento' },
-      { label: 'Repeat slowly', target_term: 'Por favor repita devagar' },
-    ],
-  },
-  {
-    code: 'zh',
-    name: 'Mandarin Chinese',
-    nativeName: '中文',
-    aliases: ['mandarin', 'chinese', 'zh', '中文', '普通话'],
-    starterTerms: [
-      { label: 'Informed consent', target_term: '知情同意书' },
-      { label: 'Shortness of breath', target_term: '呼吸困难' },
-      { label: 'Sworn affirmation', target_term: '宣誓声明' },
-      { label: 'Repeat slowly', target_term: '请慢一点重复一遍' },
-    ],
-  },
-  {
-    code: 'de',
-    name: 'German',
-    nativeName: 'Deutsch',
-    aliases: ['german', 'deutsch', 'de'],
-    starterTerms: [
-      { label: 'Informed consent', target_term: 'Aufgeklärte Einwilligung' },
-      { label: 'Shortness of breath', target_term: 'Atemnot' },
-      { label: 'Sworn affirmation', target_term: 'Eidesstattliche Versicherung' },
-      { label: 'Repeat slowly', target_term: 'Bitte langsam wiederholen' },
-    ],
-  },
-  {
-    code: 'vi',
-    name: 'Vietnamese',
-    nativeName: 'Tiếng Việt',
-    aliases: ['vietnamese', 'tieng viet', 'tiếng việt', 'vi'],
-    starterTerms: [
-      { label: 'Informed consent', target_term: 'Đồng thuận sau giải thích' },
-      { label: 'Shortness of breath', target_term: 'Khó thở' },
-      { label: 'Sworn affirmation', target_term: 'Lời cam đoan tuyên thệ' },
-      { label: 'Repeat slowly', target_term: 'Xin vui lòng nói chậm lại' },
-    ],
-  },
-  {
-    code: 'so',
-    name: 'Somali',
-    nativeName: 'Soomaali',
-    aliases: ['somali', 'soomaali', 'so'],
-    starterTerms: [
-      { label: 'Informed consent', target_term: 'Ogolaansho xog-ogaal ah' },
-      { label: 'Shortness of breath', target_term: 'Neef-qabatin' },
-      { label: 'Sworn affirmation', target_term: 'Dhaar sharci ah' },
-      { label: 'Repeat slowly', target_term: 'Fadlan si tartiib ah ugu celi' },
-    ],
-  },
-];
+}> = (() => {
+  const enDisplay =
+    typeof Intl !== 'undefined' && typeof Intl.DisplayNames === 'function'
+      ? new Intl.DisplayNames(['en'], { type: 'language' })
+      : null;
+
+  return WORLD_LANGUAGE_CODES.map((code) => {
+    const name = enDisplay?.of(code) || code.toUpperCase();
+    let nativeName = name;
+    try {
+      const nativeDisplay = new Intl.DisplayNames([code], { type: 'language' });
+      nativeName = nativeDisplay.of(code) || name;
+    } catch {
+      nativeName = name;
+    }
+    return {
+      code,
+      name,
+      nativeName,
+      starterTerms: STARTER_BY_LANG[code] || [],
+    };
+  }).sort((a, b) => a.name.localeCompare(b.name));
+})();
 
 export function TerminologyPage() {
   const { user, session } = useAuth();
@@ -879,44 +891,26 @@ export function TerminologyPage() {
   const matchedLanguages =
     trimmedQuery.length >= 2
       ? LANGUAGE_CATALOG.filter((lang) =>
-          matchesSearch(`${lang.name} ${lang.nativeName} ${lang.code} ${lang.aliases.join(' ')}`, trimmedQuery)
-        )
+          matchesSearch(`${lang.name} ${lang.nativeName} ${lang.code}`, trimmedQuery)
+        ).slice(0, 8)
       : [];
 
-  const visible =
-    trimmedQuery.length >= 2
-      ? terms.filter((item) => {
-          const langEntry = LANGUAGE_CATALOG.find((l) => l.code === (item.target_lang || '').toLowerCase());
-          return matchesSearch(
-            `${item.label} ${item.target_term} ${item.source_lang || ''} ${item.target_lang || ''} ${langEntry?.name || ''} ${langEntry?.nativeName || ''}`,
-            trimmedQuery
-          );
-        })
-      : terms;
+  const visible = trimmedQuery
+    ? terms.filter((item) => {
+        const langEntry = LANGUAGE_CATALOG.find((l) => l.code === (item.target_lang || '').toLowerCase());
+        return matchesSearch(
+          `${item.label} ${item.target_term} ${item.source_lang || ''} ${item.target_lang || ''} ${langEntry?.name || ''} ${langEntry?.nativeName || ''}`,
+          trimmedQuery
+        );
+      })
+    : terms;
 
-  const STARTER_PACKS: Record<string, Array<{ label: string; target_term: string }>> = {
-    Medical: [
-      { label: 'Informed consent', target_term: 'الموافقة المستنيرة' },
-      { label: 'Shortness of breath', target_term: 'ضيق في التنفس' },
-      { label: 'Medication reconciliation', target_term: 'مراجعة الأدوية الحالية' },
-      { label: 'Vital signs', target_term: 'العلامات الحيوية' },
-    ],
-    Legal: [
-      { label: 'Sworn affirmation', target_term: 'إقرار تحت القسم' },
-      { label: 'Continuance request', target_term: 'طلب تأجيل الجلسة' },
-      { label: 'Stipulation', target_term: 'اتفاق إجرائي' },
-    ],
-    VRI: [
-      { label: 'Clarification pause', target_term: 'وقفة استيضاح' },
-      { label: 'Audio latency', target_term: 'زمن تأخر الصوت' },
-      { label: 'Repeat slowly', target_term: 'يرجى التكرار ببطء' },
-    ],
-  };
-
-  async function loadLanguagePack(langCode: string) {
+  async function selectOrLoadLanguage(langCode: string) {
     const lang = LANGUAGE_CATALOG.find((l) => l.code === langCode);
     if (!lang) return;
     setTargetLang(lang.code);
+    if (lang.starterTerms.length === 0) return;
+
     const existing = new Set(
       terms.map((t) => `${t.label.toLowerCase()}::${(t.target_lang || '').toLowerCase()}`)
     );
@@ -924,35 +918,7 @@ export function TerminologyPage() {
       .filter((p) => !existing.has(`${p.label.toLowerCase()}::${lang.code}`))
       .map((p) => ({ ...p, source_lang: 'en', target_lang: lang.code }));
     if (fresh.length === 0) return;
-    setBusy(true);
-    try {
-      if (user || session?.access_token) {
-        const res = await fetch('/api/terms', {
-          method: 'POST',
-          headers: buildHeaders(session?.access_token, true),
-          credentials: 'same-origin',
-          body: JSON.stringify({ terms: fresh }),
-        });
-        if (res.ok) {
-          const json = await res.json();
-          const added = Array.isArray(json.data) ? json.data : [json.data];
-          setTerms((prev) => [...added, ...prev]);
-          return;
-        }
-      }
-      setTerms((prev) => [...fresh.map((p) => ({ id: crypto.randomUUID(), ...p })), ...prev]);
-    } finally {
-      setBusy(false);
-    }
-  }
 
-  async function loadStarterPack(packName: keyof typeof STARTER_PACKS) {
-    const pack = STARTER_PACKS[packName];
-    const existing = new Set(terms.map((t) => t.label.toLowerCase()));
-    const fresh = pack
-      .filter((p) => !existing.has(p.label.toLowerCase()))
-      .map((p) => ({ ...p, source_lang: 'en', target_lang: 'ar' }));
-    if (fresh.length === 0) return;
     setBusy(true);
     try {
       if (user || session?.access_token) {
@@ -1098,60 +1064,45 @@ export function TerminologyPage() {
           <Field label="Term" htmlFor="term-label">
             <Input id="term-label" dir="auto" value={label} onChange={(e) => setLabel(e.target.value)} required />
           </Field>
-          <div className="form-row-2">
-            <Field label="Target language" htmlFor="term-lang">
-              <Select
-                id="term-lang"
-                value={targetLang}
-                onValueChange={setTargetLang}
-                ariaLabel="Target language"
-                options={LANGUAGE_CATALOG.map((l) => ({
-                  value: l.code,
-                  label: `${l.name} (${l.code.toUpperCase()})`,
-                }))}
-              />
-            </Field>
-            <Field label="Target equivalent" htmlFor="term-target">
-              <Input
-                id="term-target"
-                dir="auto"
-                value={translation}
-                onChange={(e) => setTranslation(e.target.value)}
-              />
-            </Field>
-          </div>
+          <Field label="Target language" htmlFor="term-lang">
+            <Select
+              id="term-lang"
+              value={targetLang}
+              onValueChange={setTargetLang}
+              ariaLabel="Target language"
+              options={LANGUAGE_CATALOG.map((l) => ({
+                value: l.code,
+                label: `${l.name} (${l.code.toUpperCase()})`,
+              }))}
+            />
+          </Field>
+          <Field label="Target equivalent" htmlFor="term-target">
+            <Input
+              id="term-target"
+              dir="auto"
+              value={translation}
+              onChange={(e) => setTranslation(e.target.value)}
+            />
+          </Field>
           <Button type="submit" loading={busy}>
             Save term
           </Button>
         </form>
 
         <div className="subpage-card">
-          <Field
-            label="Search terms or languages"
-            htmlFor="term-search"
-            hint={
-              trimmedQuery.length === 1
-                ? 'Type at least 2 characters to find matching languages or saved terms.'
-                : trimmedQuery.length >= 2
-                  ? `${matchedLanguages.length} language match(es) · ${visible.length} saved term(s)`
-                  : 'Type 2+ chars (e.g. Sp for Spanish, Ar for Arabic, Bn for Bengali, or a term).'
-            }
-          >
+          <Field label="Search terms or languages" htmlFor="term-search">
             <Input
               id="term-search"
               type="search"
               dir="auto"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search languages (Sp, Ar, Bn) or terms..."
+              placeholder="Search any language or saved term..."
             />
           </Field>
 
           {matchedLanguages.length > 0 && (
             <div className="vx-lang-matches" role="region" aria-label="Related languages">
-              <span className="ui-field-label" style={{ display: 'block', marginBottom: 6 }}>
-                Related languages — click to load starter terms
-              </span>
               <div className="vx-preset-strip">
                 {matchedLanguages.map((lang) => (
                   <button
@@ -1159,33 +1110,17 @@ export function TerminologyPage() {
                     type="button"
                     className="vx-preset-chip vx-preset-chip--lang"
                     disabled={busy}
-                    onClick={() => void loadLanguagePack(lang.code)}
+                    onClick={() => void selectOrLoadLanguage(lang.code)}
                   >
-                    + {lang.name} ({lang.nativeName} · {lang.code.toUpperCase()})
+                    {lang.starterTerms.length > 0
+                      ? `+ ${lang.name} (${lang.nativeName})`
+                      : `Use ${lang.name} (${lang.code.toUpperCase()})`}
                   </button>
                 ))}
               </div>
             </div>
           )}
 
-          <div>
-            <span className="ui-field-label" style={{ display: 'block', marginBottom: 6 }}>
-              1-click starter packs
-            </span>
-            <div className="vx-preset-strip">
-              {(['Medical', 'Legal', 'VRI'] as const).map((pack) => (
-                <button
-                  key={pack}
-                  type="button"
-                  className="vx-preset-chip"
-                  disabled={busy}
-                  onClick={() => void loadStarterPack(pack)}
-                >
-                  + {pack} terms
-                </button>
-              ))}
-            </div>
-          </div>
           <Field label="Import UTF-8 / UTF-16 CSV" htmlFor="term-csv">
             <Input id="term-csv" type="file" accept=".csv,text/csv" onChange={importCsv} />
           </Field>
@@ -1202,18 +1137,22 @@ export function TerminologyPage() {
             icon={<BookOpen size={20} />}
             title={
               matchedLanguages.length > 0
-                ? `Found ${matchedLanguages.map((l) => l.name).join(', ')} — no saved terms yet`
+                ? `${matchedLanguages[0].name} selected — no saved terms yet`
                 : 'No matching glossary terms'
             }
             description={
               matchedLanguages.length > 0
-                ? `Click "+ ${matchedLanguages[0].name}" above to load starter terms, or add your own.`
-                : 'Save terms manually, click a language pack above, or import a CSV file.'
+                ? matchedLanguages[0].starterTerms.length > 0
+                  ? `Load starter ${matchedLanguages[0].name} terms or save your own term on the left.`
+                  : `Target language can be set to ${matchedLanguages[0].name} on the left to save terms.`
+                : 'Save terms manually or import a UTF-8 / UTF-16 CSV file.'
             }
             action={
               matchedLanguages.length > 0 ? (
-                <Button size="sm" onClick={() => void loadLanguagePack(matchedLanguages[0].code)} loading={busy}>
-                  Load {matchedLanguages[0].name} starter terms
+                <Button size="sm" onClick={() => void selectOrLoadLanguage(matchedLanguages[0].code)} loading={busy}>
+                  {matchedLanguages[0].starterTerms.length > 0
+                    ? `Load ${matchedLanguages[0].name} starter terms`
+                    : `Select ${matchedLanguages[0].name}`}
                 </Button>
               ) : undefined
             }
@@ -1431,7 +1370,7 @@ export function DeviceCheckPage() {
         return {
           permission: 'denied' as const,
           title: `${kind} blocked by preview frame`,
-          detail: `This embedded preview frame restricts ${kind.toLowerCase()} prompts. Open in a full browser tab to grant real device permission, or enable ${kind} in browser site settings.`,
+          detail: `This embedded preview frame blocks ${kind.toLowerCase()} prompts and new-tab popups. Click Copy link and open it in a browser tab, or allow ${kind} in site settings.`,
           canOpenNewTab: true,
         };
       }
@@ -2223,30 +2162,19 @@ export function DeviceCheckPage() {
               </button>
             )}
             {deviceAlert.canOpenNewTab && (
-              <>
-                <a
-                  href={typeof window !== 'undefined' ? window.location.href : '/app/device-check'}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="vx-device-alert-close"
-                >
-                  <span>{dc.openFullTab}</span>
-                  <ExternalLink size={12} aria-hidden="true" />
-                </a>
-                <button
-                  type="button"
-                  className="vx-device-alert-close"
-                  onClick={() => {
-                    void navigator.clipboard?.writeText(window.location.href).then(() => {
-                      setCopiedUrl(true);
-                      window.setTimeout(() => setCopiedUrl(false), 2000);
-                    });
-                  }}
-                >
-                  <Copy size={12} aria-hidden="true" />
-                  <span>{copiedUrl ? 'Copied ✓' : 'Copy link'}</span>
-                </button>
-              </>
+              <button
+                type="button"
+                className="vx-device-alert-close"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(window.location.href).then(() => {
+                    setCopiedUrl(true);
+                    window.setTimeout(() => setCopiedUrl(false), 2000);
+                  });
+                }}
+              >
+                <Copy size={12} aria-hidden="true" />
+                <span>{copiedUrl ? 'Copied ✓' : 'Copy link'}</span>
+              </button>
             )}
             <button
               type="button"
@@ -2441,7 +2369,7 @@ export function BillingPage() {
   const [minimumMinutes, setMinimumMinutes] = useState(30);
   const [roundTo, setRoundTo] = useState(15);
   const [records, setRecords] = useState<Array<{ id: string; minutes: number; amount_cents: number; status: 'invoiced' | 'paid' }>>([]);
-  const [billingNotice, setBillingNotice] = useState<string | null>(null);
+  const [billingNotice, setBillingNotice] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -2478,19 +2406,19 @@ export function BillingPage() {
         const json = await res.json();
         if (json.data) {
           setRecords((prev) => [json.data, ...prev]);
-          setBillingNotice('Billing entry saved.');
+          setBillingNotice({ kind: 'success', text: 'Billing entry saved.' });
           return;
         }
       }
       const err = res ? await res.json().catch(() => ({})) : {};
-      setBillingNotice(err.error || 'Could not save billing entry to the server.');
+      setBillingNotice({ kind: 'error', text: err.error || 'Could not save billing entry to the server.' });
       return;
     }
     const floored = Math.max(minutes, minimumMinutes);
     const billable = Math.ceil(floored / Math.max(1, roundTo)) * Math.max(1, roundTo);
     const amount_cents = Math.round((billable / 60) * rateDollars * 100);
     setRecords((prev) => [{ id: crypto.randomUUID(), minutes: billable, amount_cents, status: 'invoiced' }, ...prev]);
-    setBillingNotice('Calculated locally (sign in to persist billing entries).');
+    setBillingNotice({ kind: 'success', text: 'Calculated locally (sign in to persist billing entries).' });
   }
 
   async function markPaid(id: string) {
@@ -2504,7 +2432,7 @@ export function BillingPage() {
       }).catch(() => null);
       if (!res?.ok) {
         const err = res ? await res.json().catch(() => ({})) : {};
-        setBillingNotice(err.error || 'Could not update billing status on the server.');
+        setBillingNotice({ kind: 'error', text: err.error || 'Could not update billing status on the server.' });
         return;
       }
     }
@@ -2537,7 +2465,11 @@ export function BillingPage() {
           </Field>
         </div>
         <Button type="submit">Add billing record</Button>
-        {billingNotice && <p className="form-success">{billingNotice}</p>}
+        {billingNotice && (
+          <p className={billingNotice.kind === 'error' ? 'form-error' : 'form-success'} role="status">
+            {billingNotice.text}
+          </p>
+        )}
       </form>
       <div className="workspace-grid">
         {records.map((r) => (
@@ -2567,7 +2499,7 @@ export function SupportPage() {
   const [category, setCategory] = useState('general');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
 
   const loadTickets = useCallback(async () => {
     const res = await fetch('/api/support', {
@@ -2613,11 +2545,11 @@ export function SupportPage() {
     if (res.ok) {
       setSubject('');
       setBody('');
-      setNotice('Ticket queued for human support and confirmation logged in email outbox.');
+      setNotice({ kind: 'success', text: 'Ticket queued for human support and confirmation logged in email outbox.' });
       await loadTickets();
     } else {
       const err = await res.json().catch(() => ({}));
-      setNotice(err.error || 'Unable to create ticket.');
+      setNotice({ kind: 'error', text: err.error || 'Unable to create ticket.' });
     }
   }
 
@@ -2653,7 +2585,11 @@ export function SupportPage() {
             <Textarea id="sup-body" rows={4} value={body} onChange={(e) => setBody(e.target.value)} required minLength={3} />
           </Field>
           <Button type="submit">Open support ticket</Button>
-          {notice && <p className="form-success">{notice}</p>}
+          {notice && (
+            <p className={notice.kind === 'error' ? 'form-error' : 'form-success'} role="status">
+              {notice.text}
+            </p>
+          )}
         </form>
 
         <div>
@@ -2906,7 +2842,7 @@ export function SettingsPage() {
   const [sessionsList, setSessionsList] = useState<
     Array<{ id: string; user_agent: string; created_at: string; expires_at: string; isCurrent?: boolean }>
   >([]);
-  const [savedNotice, setSavedNotice] = useState<string | null>(null);
+  const [savedNotice, setSavedNotice] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
 
   const loadSessions = useCallback(async () => {
     const res = await fetch('/api/auth', { credentials: 'same-origin' });
@@ -2995,9 +2931,9 @@ export function SettingsPage() {
       }),
     });
     if (res.ok) {
-      setSavedNotice('Settings saved.');
+      setSavedNotice({ kind: 'success', text: 'Settings saved.' });
     } else {
-      setSavedNotice('Sign in first to save profile settings.');
+      setSavedNotice({ kind: 'error', text: 'Sign in first to save profile settings.' });
     }
   }
 
@@ -3052,7 +2988,11 @@ export function SettingsPage() {
             <Input id="set-pairs" value={languagePairs} onChange={(e) => setLanguagePairs(e.target.value)} />
           </Field>
           <Button type="submit">Save settings</Button>
-          {savedNotice && <p className="form-success">{savedNotice}</p>}
+          {savedNotice && (
+            <p className={savedNotice.kind === 'error' ? 'form-error' : 'form-success'} role="status">
+              {savedNotice.text}
+            </p>
+          )}
         </form>
 
         <article className="subpage-card">
@@ -3179,7 +3119,7 @@ export function ReportsPage() {
 }
 
 export function RecordsAssistantPage() {
-  const { session } = useAuth();
+  const { user, session } = useAuth();
   const { tr } = useLocale();
   const [question, setQuestion] = useState('');
   const [events, setEvents] = useState<StreamEvent[]>([]);
@@ -3187,13 +3127,13 @@ export function RecordsAssistantPage() {
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (!session?.access_token) {
+    if (!user && !session?.access_token) {
       setEvents([{ type: 'error', message: 'Use the Work Assistant button in the sidebar or sign in first.' }]);
       return;
     }
     setEvents([]);
     await streamAssistantQuestion(
-      { question, token: session.access_token },
+      { question, token: session?.access_token },
       (ev) => setEvents((prev) => [...prev, ev]),
       (s) => setStatus(s)
     );
@@ -3309,7 +3249,7 @@ export function AvailabilityPage() {
   const [kind, setKind] = useState<'unavailable' | 'custom'>('unavailable');
   const [windowLabel, setWindowLabel] = useState('09:00–13:00');
   const [overrides, setOverrides] = useState<Array<{ id: string; date: string; kind: string; window_label: string }>>([]);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
 
   const loadAvailability = useCallback(async () => {
     const res = await fetch('/api/ops?resource=availability', {
@@ -3342,7 +3282,7 @@ export function AvailabilityPage() {
     e.preventDefault();
     setNotice(null);
     if (!user && !session?.access_token) {
-      setNotice('Sign in first to save availability overrides.');
+      setNotice({ kind: 'error', text: 'Sign in first to save availability overrides.' });
       return;
     }
     const res = await fetch('/api/ops?resource=availability', {
@@ -3352,11 +3292,11 @@ export function AvailabilityPage() {
       body: JSON.stringify({ date, kind, window_label: kind === 'custom' ? windowLabel : '' }),
     });
     if (res.ok) {
-      setNotice(`Saved override for ${date}.`);
+      setNotice({ kind: 'success', text: `Saved override for ${date}.` });
       await loadAvailability();
     } else {
       const err = await res.json().catch(() => ({}));
-      setNotice(err.error || 'Unable to save override.');
+      setNotice({ kind: 'error', text: err.error || 'Unable to save override.' });
     }
   }
 
@@ -3400,7 +3340,11 @@ export function AvailabilityPage() {
             </Field>
           )}
           <Button type="submit">Save availability override</Button>
-          {notice && <p className="form-success">{notice}</p>}
+          {notice && (
+            <p className={notice.kind === 'error' ? 'form-error' : 'form-success'} role="status">
+              {notice.text}
+            </p>
+          )}
         </form>
 
         <div>

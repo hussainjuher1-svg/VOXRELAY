@@ -135,7 +135,7 @@ async function handleLocalOps(req, res, actor, resource) {
           'UPDATE local_users SET full_name = ?, locale = ?, time_zone = ?, language_pairs = ?, weekly_hours = ? WHERE id = ?'
         ).run(
           String(body.full_name ?? row.full_name).slice(0, 120),
-          body.locale === 'ar' ? 'ar' : 'en',
+          ['en', 'bn', 'ar'].includes(body.locale) ? body.locale : 'en',
           String(body.time_zone ?? row.time_zone).slice(0, 64),
           String(body.language_pairs ?? row.language_pairs).slice(0, 160),
           Math.min(100, Math.max(1, Math.round(Number(body.weekly_hours ?? row.weekly_hours)))),
@@ -247,6 +247,51 @@ async function handleLocalOps(req, res, actor, resource) {
       availability,
       tickets,
       audit,
+    });
+  }
+
+  if (resource === 'assistant' && req.method === 'POST') {
+    const body = await readJsonBody(req);
+    const parsed = assistantRequestSchema.safeParse(body);
+    if (!parsed.success) return sendJson(res, 400, { error: parsed.error.issues[0].message });
+
+    const role = actor.user.role || 'interpreter';
+    const topic = matchTopic(parsed.data.question);
+
+    return streamRoute(res, async (emit) => {
+      emit({ type: 'meta', topic });
+      emit({ type: 'step', step: 'records', status: 'run' });
+
+      const assignments = db.prepare('SELECT id, ref, status, start_at FROM assignments WHERE owner_id = ? LIMIT 50').all(userId);
+      const billing = db.prepare('SELECT id, status, amount_cents FROM billing_records WHERE user_id = ? LIMIT 50').all(userId);
+      const terms = db.prepare('SELECT id, label FROM terms WHERE owner_id = ? LIMIT 20').all(userId);
+
+      emit({ type: 'step', step: 'records', status: 'done', count: assignments.length });
+
+      const decision = evaluateAssistantRequest({
+        ...parsed.data,
+        role,
+        records: { assignments, followups: [], billing, terms },
+      });
+
+      if (decision.auditType) {
+        writeLocalAudit(db, {
+          actorId: userId,
+          area: 'assistant',
+          type: decision.auditType,
+          result: decision.refused ? 'denied' : 'ok',
+        });
+      }
+
+      for (const block of decision.blocks) {
+        emit({ type: 'block', key: block.key, vars: block.vars });
+      }
+      emit({
+        type: 'sources',
+        reads: decision.reads,
+        at: new Date().toISOString(),
+      });
+      emit({ type: 'suggest', topics: decision.suggestions });
     });
   }
 
