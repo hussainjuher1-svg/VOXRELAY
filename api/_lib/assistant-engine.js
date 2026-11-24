@@ -169,9 +169,13 @@ export async function runAssistantStream({ mode = 'ask', question, locale = 'en'
     await new Promise((r) => setTimeout(r, 60));
 
     if (domain) {
+      const bulletSteps = domain.proposedTerms
+        .slice(0, 3)
+        .map((t) => `- **${t.label}** — ${t.target_term}${t.notes ? ` (${t.notes})` : ''}`)
+        .join('\n');
       emit({
         type: 'delta',
-        text: `### ${domain.title}\n\n${domain.summary}\n\n**Confidence:** ${domain.confidence} · Review any suggested terms below before saving them to your glossary.`,
+        text: `### ${domain.title}\n\n${domain.summary}\n\n- **Confidence:** ${domain.confidence}\n${bulletSteps}\n- Review and click **Save** below to add terms to your glossary.`,
       });
       emit({ type: 'citations', items: domain.sources });
       emit({ type: 'proposed_terms', terms: domain.proposedTerms });
@@ -180,8 +184,11 @@ export async function runAssistantStream({ mode = 'ask', question, locale = 'en'
 
     const fallbackSummary =
       kbMatches.length > 0
-        ? `### Subject & Workspace Preparation Brief\n\n${kbMatches.map((m) => `- **${m.title[lang] || m.title.en}:** ${m.summary[lang] || m.summary.en}`).join('\n')}\n\n**Confidence:** medium · Add custom terms below or escalate to human support for domain-specific references.`
-        : `### Research Brief\n\nNo domain pack matched **"${sanitized}"** directly in the offline reference set. You can add custom terms in Terminology or escalate to human support for coordinator review.`;
+        ? `### Subject & Workspace Preparation Brief\n\n${kbMatches
+            .slice(0, 2)
+            .map((m) => `- **${m.title[lang] || m.title.en}:** ${m.summary[lang] || m.summary.en}`)
+            .join('\n')}\n\n- **Confidence:** medium — add custom terms in Terminology or escalate to human support.`
+        : `### Research Brief\n\n- No domain pack matched **"${sanitized}"** in the offline reference set.\n- Add custom terms in Terminology or open a support ticket for coordinator guidance.`;
 
     emit({ type: 'delta', text: fallbackSummary });
     emit({
@@ -193,7 +200,7 @@ export async function runAssistantStream({ mode = 'ask', question, locale = 'en'
   }
 
   // Ask mode: grounded KB + workspace records + optional Anthropic provider
-  const kbMatches = searchKnowledgeBase(sanitized, lang, 3);
+  const kbMatches = searchKnowledgeBase(sanitized, lang, 2);
   const snapshot = buildWorkspaceSnapshot({ db, userId });
 
   if (kbMatches.length === 0) {
@@ -208,24 +215,33 @@ export async function runAssistantStream({ mode = 'ask', question, locale = 'en'
   }
 
   const contextBlock = kbMatches
-    .map((m) => `[${m.id}] ${m.title[lang] || m.title.en}: ${m.summary[lang] || m.summary.en}`)
-    .join('\n');
+    .map((m) => {
+      const bullets = (m.bullets?.[lang] || m.bullets?.en || []).map((b) => `- ${b}`).join('\n');
+      return `[${m.id}] ${m.title[lang] || m.title.en}\n${bullets || m.summary[lang] || m.summary.en}`;
+    })
+    .join('\n\n');
 
   const anthropicText = await callAnthropicIfConfigured({
-    systemPrompt: `You are the VOXRELAY Workspace Assistant. Answer strictly using ONLY the provided knowledge-base excerpts and workspace counts (assignments=${snapshot.assignments}, terms=${snapshot.terms}, openTickets=${snapshot.openTickets}). Cite sources inline like [KB-01]. Never interpret or translate live dialogue, never record/transcribe, never give medical or legal advice. Keep answers concise (under 120 words). Language: ${lang}.`,
+    systemPrompt: `You are the VOXRELAY Workspace Assistant. Answer strictly using ONLY the provided knowledge-base excerpts and workspace counts (assignments=${snapshot.assignments}, terms=${snapshot.terms}, openTickets=${snapshot.openTickets}). Format EVERY answer as: a short bold heading (with [KB-xx] citation) followed by 2–4 concise bullet points ("- ..."). Never write long paragraphs or dump unrelated rules. Never interpret/translate live dialogue, never record/transcribe, never give medical/legal advice. Keep total length under 95 words. Language: ${lang}.`,
     userMessage: `Question: ${sanitized}\n\nKnowledge base:\n${contextBlock}`,
   });
 
-  const answerText =
-    anthropicText ||
-    kbMatches
-      .map((m) => `${m.summary[lang] || m.summary.en} [${m.id}]`)
-      .join('\n\n') +
-      (userId
-        ? lang === 'ar'
-          ? `\n\nحالة مساحتك الحالية: ${snapshot.assignments} مهام · ${snapshot.terms} مصطلحات · ${snapshot.openTickets} تذاكر مفتوحة.`
-          : `\n\nYour current workspace: ${snapshot.assignments} assignments · ${snapshot.terms} saved terms · ${snapshot.openTickets} open support tickets.`
-        : '');
+  const top = kbMatches[0];
+  const topTitle = top.title[lang] || top.title.en;
+  const topBullets = (top.bullets?.[lang] || top.bullets?.en || [top.summary[lang] || top.summary.en])
+    .slice(0, 4)
+    .map((b) => `- ${b}`)
+    .join('\n');
+
+  const structuredFallback =
+    `### ${topTitle} [${top.id}]\n${topBullets}` +
+    (userId
+      ? lang === 'ar'
+        ? `\n\n- **مساحتك الحالية:** ${snapshot.assignments} مهام · ${snapshot.terms} مصطلحات · ${snapshot.openTickets} تذاكر`
+        : `\n\n- **Your workspace:** ${snapshot.assignments} assignments · ${snapshot.terms} terms · ${snapshot.openTickets} open tickets`
+      : '');
+
+  const answerText = anthropicText || structuredFallback;
 
   emit({ type: 'delta', text: answerText });
   emit({

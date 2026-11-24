@@ -19,6 +19,75 @@ interface ProposedTerm {
   notes?: string;
 }
 
+function renderInlineFormatted(text: string) {
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
+  return parts.map((part, idx) => {
+    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+      return <strong key={idx}>{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
+      return (
+        <code key={idx} className="assistant-inline-code">
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+    return part;
+  });
+}
+
+function AssistantFormattedBody({ text }: { text: string }) {
+  const lines = text.split('\n');
+  const blocks: Array<
+    | { type: 'heading'; text: string }
+    | { type: 'list'; items: string[] }
+    | { type: 'para'; text: string }
+  > = [];
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.startsWith('### ')) {
+      blocks.push({ type: 'heading', text: line.slice(4) });
+    } else if (/^[-•*]\s+/.test(line)) {
+      const content = line.replace(/^[-•*]\s+/, '');
+      const prev = blocks[blocks.length - 1];
+      if (prev && prev.type === 'list') prev.items.push(content);
+      else blocks.push({ type: 'list', items: [content] });
+    } else {
+      blocks.push({ type: 'para', text: line });
+    }
+  }
+
+  return (
+    <div className="assistant-msg-rich">
+      {blocks.map((b, i) => {
+        if (b.type === 'heading') {
+          return (
+            <h4 key={i} className="assistant-msg-heading">
+              {renderInlineFormatted(b.text)}
+            </h4>
+          );
+        }
+        if (b.type === 'list') {
+          return (
+            <ul key={i} className="assistant-msg-list">
+              {b.items.map((item, j) => (
+                <li key={j}>{renderInlineFormatted(item)}</li>
+              ))}
+            </ul>
+          );
+        }
+        return (
+          <p key={i} className="assistant-msg-text">
+            {renderInlineFormatted(b.text)}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
 interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -441,7 +510,7 @@ export function AssistantDock({
                     <span />
                   </div>
                 ) : (
-                  <p className="assistant-msg-text">{msg.text}</p>
+                  <AssistantFormattedBody text={msg.text} />
                 )}
 
                 {msg.showFaqChips && (

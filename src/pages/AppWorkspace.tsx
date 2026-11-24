@@ -903,6 +903,7 @@ export function DeviceCheckPage() {
   const [level, setLevel] = useState(0);
   const [liveDb, setLiveDb] = useState<number | null>(null);
   const [busyStep, setBusyStep] = useState<string | null>(null);
+  const [deviceAlert, setDeviceAlert] = useState<{ tone: 'error' | 'warn'; title: string; detail: string } | null>(null);
   const [message, setMessage] = useState<string>(
     'Every number below is measured live in your browser or against the server. Zero fake values.'
   );
@@ -913,6 +914,50 @@ export function DeviceCheckPage() {
   const rafRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const ctxRef = useRef<AudioContext | null>(null);
+
+  function explainMediaError(kind: 'Microphone' | 'Camera' | 'Screen share', err: unknown) {
+    const name = err && typeof err === 'object' && 'name' in err ? String((err as { name: string }).name) : '';
+    if (!window.isSecureContext) {
+      return {
+        permission: 'unsupported' as const,
+        title: `${kind} blocked — insecure context`,
+        detail: `Browser security requires HTTPS or localhost to access ${kind.toLowerCase()}. Open the preview over HTTPS to test.`,
+      };
+    }
+    if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError') {
+      return {
+        permission: 'denied' as const,
+        title: `${kind} permission denied`,
+        detail: `Your browser or OS blocked ${kind.toLowerCase()} access. Click the site-permissions (lock) icon in the address bar, set ${kind} to Allow, then try again.`,
+      };
+    }
+    if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+      return {
+        permission: 'unavailable' as const,
+        title: `No ${kind.toLowerCase()} detected`,
+        detail: `No ${kind.toLowerCase()} hardware was reported by this device. Connect or enable one in OS settings and retry.`,
+      };
+    }
+    if (name === 'NotReadableError' || name === 'TrackStartError') {
+      return {
+        permission: 'denied' as const,
+        title: `${kind} is busy or locked`,
+        detail: `Another app or OS privacy setting is holding the ${kind.toLowerCase()}. Close other video/call apps and retry.`,
+      };
+    }
+    if (name === 'AbortError') {
+      return {
+        permission: 'denied' as const,
+        title: `${kind} prompt dismissed`,
+        detail: `The ${kind.toLowerCase()} selection was cancelled before completion. Click the button again and choose a source.`,
+      };
+    }
+    return {
+      permission: 'unavailable' as const,
+      title: `${kind} check failed`,
+      detail: `Your browser could not start ${kind.toLowerCase()} capture (${name || 'device unavailable'}).`,
+    };
+  }
 
   const stopStream = useCallback(() => {
     if (rafRef.current !== null) {
@@ -956,8 +1001,10 @@ export function DeviceCheckPage() {
 
   const readiness = scoreReadiness(envReport, netReport, periph, profile);
 
-  async function persistDiagnostics(scoreVal: number, verdictVal: string, payloadObj: unknown) {
-    if (!user && !session?.access_token) return;
+  async function persistDiagnostics(scoreVal: number, verdictVal: string, payloadObj: unknown): Promise<{ saved: boolean; note?: string }> {
+    if (!user && !session?.access_token) {
+      return { saved: false, note: 'Measured locally — sign in to save runs to diagnostic history.' };
+    }
     const res = await fetch('/api/ops?resource=diagnostics', {
       method: 'POST',
       headers: buildHeaders(session?.access_token, true),
@@ -974,7 +1021,10 @@ export function DeviceCheckPage() {
       if (json.data) {
         setHistory((prev) => [json.data, ...prev]);
       }
+      return { saved: true };
     }
+    const err = res ? await res.json().catch(() => ({})) : {};
+    return { saved: false, note: err.error || 'Could not save diagnostic run to server.' };
   }
 
   async function runNetworkProbe() {
@@ -983,22 +1033,70 @@ export function DeviceCheckPage() {
     const net = await probeNetworkDiagnostics(12);
     setNetReport(net);
     setBusyStep(null);
-    setMessage(
-      `Network measured: median ${net.medianMs ?? '—'} ms, p95 ${net.p95Ms ?? '—'} ms, jitter ${net.jitterMs ?? '—'} ms, loss ${net.lossPct}%.`
-    );
+    if (net.probesSucceeded === 0) {
+      setDeviceAlert({
+        tone: 'error',
+        title: 'Network probes could not reach server',
+        detail: 'All 12 latency requests failed or were blocked. Check your connection and retry.',
+      });
+      setMessage('Network unreachable — 0 of 12 probes succeeded.');
+    } else {
+      setMessage(
+        `Network measured: median ${net.medianMs ?? '—'} ms, p95 ${net.p95Ms ?? '—'} ms, jitter ${net.jitterMs ?? '—'} ms, loss ${net.lossPct}%.`
+      );
+    }
     return net;
   }
 
-  async function runMicProbe() {
+  async function runMicProbe(): Promise<PeripheralReport> {
     stopStream();
     setBusyStep('mic');
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setPeriph((p) => ({ ...p, micTested: true, micPermission: 'unavailable' }));
-      setMessage('Microphone API unavailable in this browser.');
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      const next: PeripheralReport = {
+        ...periph,
+        micTested: true,
+        micPermission: !window.isSecureContext ? 'unsupported' : 'unavailable',
+        micRmsDb: null,
+        micPeakPct: 0,
+        micSampleRate: null,
+      };
+      setPeriph(next);
+      setDeviceAlert({
+        tone: 'error',
+        title: !window.isSecureContext ? 'Microphone blocked — insecure context' : 'Microphone API unavailable',
+        detail: !window.isSecureContext
+          ? 'Browser security requires HTTPS or localhost to access microphone hardware.'
+          : 'This browser does not expose navigator.mediaDevices.getUserMedia.',
+      });
+      setMessage('Microphone unavailable in this browser.');
       setBusyStep(null);
-      return;
+      return next;
     }
+
     try {
+      if (navigator.permissions?.query) {
+        const perm = await navigator.permissions.query({ name: 'microphone' as PermissionName }).catch(() => null);
+        if (perm?.state === 'denied') {
+          const next: PeripheralReport = {
+            ...periph,
+            micTested: true,
+            micPermission: 'denied',
+            micRmsDb: null,
+            micPeakPct: 0,
+            micSampleRate: null,
+          };
+          setPeriph(next);
+          setDeviceAlert({
+            tone: 'error',
+            title: 'Microphone permission denied',
+            detail: 'Site permissions show Microphone is blocked. Click the lock icon in your address bar, allow Microphone, and click Test mic again.',
+          });
+          setMessage('Microphone permission denied by browser settings.');
+          setBusyStep(null);
+          return next;
+        }
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const AudioCtx =
         window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -1009,6 +1107,9 @@ export function DeviceCheckPage() {
 
       if (AudioCtx) {
         const ctx = new AudioCtx();
+        if (ctx.state === 'suspended') {
+          await ctx.resume().catch(() => {});
+        }
         sampleRate = ctx.sampleRate;
         const src = ctx.createMediaStreamSource(stream);
         const analyser = ctx.createAnalyser();
@@ -1051,30 +1152,58 @@ export function DeviceCheckPage() {
         stream.getTracks().forEach((t) => t.stop());
       }
 
-      setPeriph((p) => ({
-        ...p,
+      const next: PeripheralReport = {
+        ...periph,
         micTested: true,
         micPermission: 'granted',
         micRmsDb: lastDb,
         micPeakPct: peakPct,
         micClipping: clipping,
         micSampleRate: sampleRate,
-      }));
+      };
+      setPeriph(next);
+      setDeviceAlert(null);
       setMessage(`Microphone checked (${sampleRate ?? '—'} Hz · ${lastDb ?? '—'} dBFS · peak ${peakPct}%).`);
-    } catch {
-      setPeriph((p) => ({ ...p, micTested: true, micPermission: 'denied' }));
-      setMessage('Microphone permission denied or unavailable.');
+      return next;
+    } catch (err) {
+      const info = explainMediaError('Microphone', err);
+      const next: PeripheralReport = {
+        ...periph,
+        micTested: true,
+        micPermission: info.permission,
+        micRmsDb: null,
+        micPeakPct: 0,
+        micSampleRate: null,
+      };
+      setPeriph(next);
+      setDeviceAlert({ tone: 'error', title: info.title, detail: info.detail });
+      setMessage(info.title);
+      return next;
     } finally {
       setBusyStep(null);
     }
   }
 
-  async function runCameraProbe() {
+  async function runCameraProbe(): Promise<PeripheralReport> {
     setBusyStep('camera');
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setPeriph((p) => ({ ...p, cameraTested: true, cameraPermission: 'unavailable' }));
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      const next: PeripheralReport = {
+        ...periph,
+        cameraTested: true,
+        cameraPermission: !window.isSecureContext ? 'unsupported' : 'unavailable',
+        cameraResolution: null,
+        cameraFps: null,
+      };
+      setPeriph(next);
+      setDeviceAlert({
+        tone: 'error',
+        title: !window.isSecureContext ? 'Camera blocked — insecure context' : 'Camera API unavailable',
+        detail: !window.isSecureContext
+          ? 'Browser security requires HTTPS or localhost to access camera hardware.'
+          : 'This browser does not expose camera capture APIs.',
+      });
       setBusyStep(null);
-      return;
+      return next;
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 } } });
@@ -1083,27 +1212,86 @@ export function DeviceCheckPage() {
       const resLabel = settings.width && settings.height ? `${settings.width}×${settings.height}` : 'Active';
       const fps = settings.frameRate ? Math.round(settings.frameRate) : null;
       stream.getTracks().forEach((t) => t.stop());
-      setPeriph((p) => ({
-        ...p,
+      const next: PeripheralReport = {
+        ...periph,
         cameraTested: true,
         cameraPermission: 'granted',
         cameraResolution: resLabel,
         cameraFps: fps,
-      }));
+      };
+      setPeriph(next);
+      setDeviceAlert(null);
       setMessage(`Camera active: ${resLabel}${fps ? ` @ ${fps} fps` : ''}.`);
-    } catch {
-      setPeriph((p) => ({ ...p, cameraTested: true, cameraPermission: 'denied', cameraResolution: 'Denied' }));
-      setMessage('Camera access denied or no camera connected.');
+      return next;
+    } catch (err) {
+      const info = explainMediaError('Camera', err);
+      const next: PeripheralReport = {
+        ...periph,
+        cameraTested: true,
+        cameraPermission: info.permission,
+        cameraResolution: info.permission === 'denied' ? 'Denied' : 'Unavailable',
+        cameraFps: null,
+      };
+      setPeriph(next);
+      setDeviceAlert({ tone: 'error', title: info.title, detail: info.detail });
+      setMessage(info.title);
+      return next;
     } finally {
       setBusyStep(null);
     }
   }
 
-  function playSpeakerTone() {
+  async function runScreenShareProbe() {
+    setBusyStep('screen');
+    if (!window.isSecureContext || !navigator.mediaDevices?.getDisplayMedia) {
+      setDeviceAlert({
+        tone: 'warn',
+        title: 'Screen share unsupported here',
+        detail: 'Your browser or embedded context does not allow getDisplayMedia screen sharing.',
+      });
+      setBusyStep(null);
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      stream.getTracks().forEach((t) => t.stop());
+      setPeriph((p) => ({ ...p, screenShareTested: true, screenShareSupported: true }));
+      setDeviceAlert(null);
+      setMessage('Screen share permission verified (zero frames recorded).');
+    } catch (err) {
+      const info = explainMediaError('Screen share', err);
+      setDeviceAlert({ tone: 'warn', title: info.title, detail: info.detail });
+      setMessage(info.title);
+    } finally {
+      setBusyStep(null);
+    }
+  }
+
+  async function playSpeakerTone() {
     try {
       const AudioCtx =
         window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (!AudioCtx) {
+        setDeviceAlert({
+          tone: 'error',
+          title: 'Web Audio output unavailable',
+          detail: 'This browser does not support Web Audio API playback.',
+        });
+        return;
+      }
       const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') {
+        await ctx.resume().catch(() => {});
+      }
+      if (ctx.state !== 'running') {
+        void ctx.close().catch(() => {});
+        setDeviceAlert({
+          tone: 'warn',
+          title: 'Audio output blocked by browser autoplay policy',
+          detail: 'Click Play 440Hz tone directly or unmute this browser tab, then retry.',
+        });
+        return;
+      }
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'sine';
@@ -1116,8 +1304,14 @@ export function DeviceCheckPage() {
         osc.stop();
         void ctx.close().catch(() => {});
       }, 650);
-      setMessage('Played 440 Hz test tone — confirm below whether you heard it.');
+      setDeviceAlert(null);
+      setMessage('Playing 440 Hz tone — click Confirm audible if you heard it.');
     } catch {
+      setDeviceAlert({
+        tone: 'error',
+        title: 'Audio output failed',
+        detail: 'Your browser or OS audio device blocked tone playback.',
+      });
       setMessage('Audio output tone could not be played in this browser.');
     }
   }
@@ -1133,10 +1327,11 @@ export function DeviceCheckPage() {
     }
   }
 
-  function triggerRowAction(kind: 'mic' | 'tone' | 'camera' | 'network' | 'env') {
+  function triggerRowAction(kind: 'mic' | 'tone' | 'camera' | 'screen' | 'network' | 'env') {
     if (kind === 'mic') void runMicProbe();
-    else if (kind === 'tone') playSpeakerTone();
+    else if (kind === 'tone') void playSpeakerTone();
     else if (kind === 'camera') void runCameraProbe();
+    else if (kind === 'screen') void runScreenShareProbe();
     else if (kind === 'network') void runNetworkProbe();
     else void runEnvRescan();
   }
@@ -1146,9 +1341,19 @@ export function DeviceCheckPage() {
     const [env, net] = await Promise.all([detectEnvironment(), probeNetworkDiagnostics(12)]);
     setEnvReport(env);
     setNetReport(net);
-    await runMicProbe();
-    const finalScore = scoreReadiness(env, net, periph, profile);
-    await persistDiagnostics(finalScore.score, finalScore.verdict, { env, net, periph, checks: finalScore.checks });
+    const freshPeriph = await runMicProbe();
+    const finalScore = scoreReadiness(env, net, freshPeriph, profile);
+    const saved = await persistDiagnostics(finalScore.score, finalScore.verdict, {
+      env,
+      net,
+      periph: freshPeriph,
+      checks: finalScore.checks,
+    });
+    if (saved.note) {
+      setMessage((prev) => `${prev} · ${saved.note}`);
+    } else {
+      setMessage(`Suite complete: ${finalScore.score}/100 (${finalScore.verdict}) saved to history.`);
+    }
     setBusyStep(null);
   }
 
@@ -1326,14 +1531,17 @@ export function DeviceCheckPage() {
               <Mic size={14} />
               <span>Test mic</span>
             </Button>
-            <Button size="sm" variant="secondary" onClick={playSpeakerTone}>
+            <Button size="sm" variant="secondary" onClick={() => void playSpeakerTone()}>
               <Volume2 size={14} />
               <span>Play 440Hz tone</span>
             </Button>
             <Button
               size="sm"
               variant={periph.speakerConfirmed === true ? 'primary' : 'secondary'}
-              onClick={() => setPeriph((p) => ({ ...p, speakerConfirmed: true }))}
+              onClick={() => {
+                setPeriph((p) => ({ ...p, speakerConfirmed: true }));
+                setMessage('Speaker output confirmed audible.');
+              }}
             >
               {periph.speakerConfirmed ? 'Audible ✓' : 'Confirm audible'}
             </Button>
@@ -1397,8 +1605,14 @@ export function DeviceCheckPage() {
             </Button>
             <Button size="sm" variant="secondary" onClick={() => void runCameraProbe()} loading={busyStep === 'camera'}>
               <Camera size={14} />
-              <span>{periph.cameraResolution ? `Cam ${periph.cameraResolution}` : 'Test camera'}</span>
+              <span>{periph.cameraPermission === 'granted' && periph.cameraResolution ? `Cam ${periph.cameraResolution}` : 'Test camera'}</span>
             </Button>
+            {profile === 'full' && (
+              <Button size="sm" variant="secondary" onClick={() => void runScreenShareProbe()} loading={busyStep === 'screen'}>
+                <Monitor size={14} />
+                <span>{periph.screenShareTested ? 'Screen OK ✓' : 'Test screen'}</span>
+              </Button>
+            )}
             <Button size="sm" variant="secondary" onClick={() => void runEnvRescan()} loading={busyStep === 'env'}>
               <Monitor size={14} />
               <span>Re-scan</span>
@@ -1406,6 +1620,23 @@ export function DeviceCheckPage() {
           </div>
         </article>
       </div>
+
+      {deviceAlert && (
+        <div className={`vx-device-alert vx-device-alert--${deviceAlert.tone}`} role="alert">
+          <div>
+            <strong>{deviceAlert.title}</strong>
+            <p>{deviceAlert.detail}</p>
+          </div>
+          <button
+            type="button"
+            className="vx-device-alert-close"
+            onClick={() => setDeviceAlert(null)}
+            aria-label="Dismiss device alert"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       <section className="vx-ledger" aria-label="Readiness score breakdown">
         <div className="vx-ledger-head">
@@ -1435,7 +1666,7 @@ export function DeviceCheckPage() {
                   : 'warn';
 
             let actionLabel: string | null = null;
-            let actionKind: 'mic' | 'tone' | 'camera' | 'network' | 'env' | null = null;
+            let actionKind: 'mic' | 'tone' | 'camera' | 'screen' | 'network' | 'env' | null = null;
             if (isMic && c.impactPoints < c.maxPoints) {
               actionLabel = busyStep === 'mic' ? 'Testing…' : 'Test mic';
               actionKind = 'mic';
@@ -1443,6 +1674,9 @@ export function DeviceCheckPage() {
               if (profile === 'voice') {
                 actionLabel = 'Play tone';
                 actionKind = 'tone';
+              } else if (profile === 'full' && periph.cameraPermission === 'granted' && !periph.screenShareTested) {
+                actionLabel = busyStep === 'screen' ? 'Testing…' : 'Test screen';
+                actionKind = 'screen';
               } else {
                 actionLabel = busyStep === 'camera' ? 'Testing…' : 'Test camera';
                 actionKind = 'camera';
@@ -1468,7 +1702,10 @@ export function DeviceCheckPage() {
                   <strong>{c.label}</strong>
                   <span>Target: {c.threshold}</span>
                 </div>
-                <span className="vx-ledger-val">{c.measured}</span>
+                <div className="vx-ledger-val-stack">
+                  <span className="vx-ledger-val">{c.measured}</span>
+                  {c.measuredDetail && <span className="vx-ledger-val-sub">{c.measuredDetail}</span>}
+                </div>
                 <div className="vx-ledger-end">
                   {actionLabel && actionKind && (
                     <button
@@ -1529,6 +1766,7 @@ export function BillingPage() {
   const [minimumMinutes, setMinimumMinutes] = useState(30);
   const [roundTo, setRoundTo] = useState(15);
   const [records, setRecords] = useState<Array<{ id: string; minutes: number; amount_cents: number; status: 'invoiced' | 'paid' }>>([]);
+  const [billingNotice, setBillingNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -1548,6 +1786,7 @@ export function BillingPage() {
 
   async function addRecord(e: FormEvent) {
     e.preventDefault();
+    setBillingNotice(null);
     if (user || session?.access_token) {
       const res = await fetch('/api/ops?resource=billing', {
         method: 'POST',
@@ -1559,29 +1798,40 @@ export function BillingPage() {
           minimum_minutes: minimumMinutes,
           round_to_minutes: roundTo,
         }),
-      });
-      if (res.ok) {
+      }).catch(() => null);
+      if (res?.ok) {
         const json = await res.json();
         if (json.data) {
           setRecords((prev) => [json.data, ...prev]);
+          setBillingNotice('Billing entry saved.');
           return;
         }
       }
+      const err = res ? await res.json().catch(() => ({})) : {};
+      setBillingNotice(err.error || 'Could not save billing entry to the server.');
+      return;
     }
     const floored = Math.max(minutes, minimumMinutes);
     const billable = Math.ceil(floored / Math.max(1, roundTo)) * Math.max(1, roundTo);
     const amount_cents = Math.round((billable / 60) * rateDollars * 100);
     setRecords((prev) => [{ id: crypto.randomUUID(), minutes: billable, amount_cents, status: 'invoiced' }, ...prev]);
+    setBillingNotice('Calculated locally (sign in to persist billing entries).');
   }
 
   async function markPaid(id: string) {
+    setBillingNotice(null);
     if (user || session?.access_token) {
-      await fetch('/api/ops?resource=billing', {
+      const res = await fetch('/api/ops?resource=billing', {
         method: 'PATCH',
         headers: buildHeaders(session?.access_token, true),
         credentials: 'same-origin',
         body: JSON.stringify({ id }),
-      }).catch(() => {});
+      }).catch(() => null);
+      if (!res?.ok) {
+        const err = res ? await res.json().catch(() => ({})) : {};
+        setBillingNotice(err.error || 'Could not update billing status on the server.');
+        return;
+      }
     }
     setRecords((prev) => prev.map((x) => (x.id === id ? { ...x, status: 'paid' } : x)));
   }
@@ -1612,6 +1862,7 @@ export function BillingPage() {
           </Field>
         </div>
         <Button type="submit">Add billing record</Button>
+        {billingNotice && <p className="form-success">{billingNotice}</p>}
       </form>
       <div className="workspace-grid">
         {records.map((r) => (

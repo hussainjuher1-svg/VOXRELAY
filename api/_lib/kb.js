@@ -8,8 +8,20 @@ export const KNOWLEDGE_BASE = [
       ar: 'ما يفعله VOXRELAY وما لا يفعله أبداً',
     },
     summary: {
-      en: 'VOXRELAY manages the operational workflow around remote interpreting sessions: schedules, preparation checklists, personal terminology glossaries, device checks, billing logs, and human support queues. It never interprets, translates, records audio, transcribes sessions, or stores patient or client identities.',
-      ar: 'يدير VOXRELAY سير العمل التشغيلي حول جلسات الترجمة عن بُعد: الجداول وقوائم التحضير ومسارد المصطلحات وفحص الأجهزة وسجلات الفوترة وطوابير الدعم البشري. لا يترجم ولا يسجل الصوت ولا يفرغ الجلسات ولا يحفظ بيانات المرضى أو العملاء.',
+      en: 'VOXRELAY manages the operational workflow around remote interpreting sessions and never interprets, records audio, or stores client identities.',
+      ar: 'يدير VOXRELAY سير العمل التشغيلي حول جلسات الترجمة عن بُعد ولا يترجم ولا يسجل الصوت ولا يحفظ بيانات العملاء.',
+    },
+    bullets: {
+      en: [
+        'Manages schedules, prep checklists, personal glossaries, device checks, billing logs, and human support.',
+        'Never interprets, translates live dialogue, records audio, or transcribes sessions.',
+        'Never stores patient, client, or caller identities (PHI/PII).',
+      ],
+      ar: [
+        'يدير الجداول وقوائم التحضير ومسارد المصطلحات وفحص الأجهزة وسجلات الفوترة والدعم البشري.',
+        'لا يترجم المحادثات الحية ولا يسجل الصوت ولا يفرغ الجلسات.',
+        'لا يحفظ بيانات المرضى أو العملاء أو هوياتهم.',
+      ],
     },
     keywords: ['privacy', 'record', 'recording', 'zero', 'transcript', 'translate', 'interpret', 'patient', 'phi', 'pii', 'never', 'boundary', 'boundaries', 'خصوصية', 'تسجيل', 'ترجمة', 'تفريغ'],
   },
@@ -22,8 +34,20 @@ export const KNOWLEDGE_BASE = [
       ar: 'دورة حياة المهمة من العرض حتى الإغلاق',
     },
     summary: {
-      en: 'Assignments follow strict state transitions: offered → scheduled → preparation_required → ready → in_progress → completed (or rescheduled / cancelled). During an active session, VOXRELAY switches to Session Focus mode so you can log operational timestamps such as clarification or technical pauses without distraction.',
-      ar: 'تتبع المهام انتقالات حالة دقيقة: معروضة ← مجدولة ← تحتاج تحضيراً ← جاهزة ← قيد التنفيذ ← مكتملة. أثناء الجلسة النشطة يتحول VOXRELAY إلى وضع التركيز لتسجيل التوقيتات التشغيلية فقط دون تشتيت.',
+      en: 'Assignments follow strict state transitions from offered through close-out, with a distraction-free Session Focus mode during live calls.',
+      ar: 'تتبع المهام انتقالات حالة دقيقة من العرض حتى الإغلاق مع وضع التركيز أثناء الجلسة.',
+    },
+    bullets: {
+      en: [
+        'Workflow states: offered → scheduled → preparation_required → ready → in_progress → completed.',
+        'Reschedule or cancel transitions are tracked with timestamps and audit events.',
+        'Session Focus hides secondary UI during an active call and logs operational pauses only.',
+      ],
+      ar: [
+        'مراحل المهمة: معروضة ← مجدولة ← تحتاج تحضيراً ← جاهزة ← قيد التنفيذ ← مكتملة.',
+        'يتتبع النظام إعادة الجدولة والإلغاء بتوقيتات وسجل تدقيق.',
+        'وضع التركيز يخفي التشتيت أثناء الجلسة ويسجل التوقفات التشغيلية فقط.',
+      ],
     },
     keywords: ['assignment', 'assignments', 'schedule', 'workflow', 'offer', 'ready', 'session', 'close-out', 'status', 'lifecycle', 'مهمة', 'مهام', 'جدول', 'إغلاق'],
   },
@@ -36,8 +60,20 @@ export const KNOWLEDGE_BASE = [
       ar: 'المسرد متعدد اللغات والبحث واستيراد وتصدير CSV',
     },
     summary: {
-      en: 'The Terminology workspace normalizes Latin diacritics, Arabic alef/teh/harakat variants, Hebrew nikud, and Devanagari scripts using NFKC/NFD normalization so searches match reliably. You can import UTF-8 and UTF-16 CSV files (with BOM detection) and export UTF-8 BOM CSV files safely for Excel.',
-      ar: 'يوحد قسم المصطلحات علامات التشكيل والهمزات والحركات باستخدام معيار NFKC/NFD ليطابق البحث بدقة عبر العربية والإنجليزية والعبرية والديفاناغاري، مع دعم استيراد UTF-8/UTF-16 وتصدير CSV.',
+      en: 'Terminology normalizes diacritics across scripts for instant search and supports UTF-8 / UTF-16 CSV import and Excel-safe BOM export.',
+      ar: 'يوحد قسم المصطلحات علامات التشكيل عبر اللغات لبحث دقيق ويدعم استيراد وتصدير CSV بأمان.',
+    },
+    bullets: {
+      en: [
+        'Normalizes Latin accents, Arabic alef/teh/harakat, Hebrew nikud, and Devanagari (NFKC/NFD).',
+        'Imports UTF-8 and UTF-16 CSV files with automatic BOM detection.',
+        'Exports UTF-8 BOM CSV files so Arabic and multilingual characters open cleanly in Excel.',
+      ],
+      ar: [
+        'يوحد التشكيل والهمزات والحركات عبر العربية والإنجليزية والعبرية والديفاناغاري.',
+        'يدعم استيراد ملفات CSV بترميز UTF-8 وUTF-16 مع اكتشاف BOM تلقائياً.',
+        'يصدر ملفات UTF-8 BOM لتفتح بشكل سليم في Excel.',
+      ],
     },
     keywords: ['glossary', 'terminology', 'term', 'terms', 'csv', 'utf-8', 'utf-16', 'bom', 'arabic', 'search', 'excel', 'مصطلحات', 'مسرد', 'بحث'],
   },
@@ -50,8 +86,20 @@ export const KNOWLEDGE_BASE = [
       ar: 'استيراد تقويم .ics للتوقيت فقط والمناطق الزمنية',
     },
     summary: {
-      en: 'When importing an .ics file, VOXRELAY reads only DTSTART and DTEND to calculate start timestamps and duration in minutes. Event titles, summaries, attendee emails, and descriptions are deliberately ignored so client details never enter your workspace.',
-      ar: 'عند استيراد ملف .ics، يقرأ VOXRELAY فقط DTSTART وDTEND لحساب وقت البدء والمدة بالدقائق، ويتجاهل العناوين والوصف وأسماء الحضور لحماية سرية العملاء.',
+      en: 'Calendar .ics import reads start and end timestamps only while stripping titles, descriptions, and attendee data.',
+      ar: 'يقرأ استيراد .ics أوقات البدء والانتهاء فقط ويتجاهل العناوين والوصف والحضور.',
+    },
+    bullets: {
+      en: [
+        'Drop or select an .ics file in Assignments to parse DTSTART and DTEND timestamps.',
+        'Computes session start time and duration in minutes in your chosen time zone.',
+        'Event summaries, attendee emails, and descriptions are discarded so client details never enter VOXRELAY.',
+      ],
+      ar: [
+        'اسحب أو اختر ملف .ics في صفحة المهام لقراءة DTSTART وDTEND فقط.',
+        'يحسب وقت البدء والمدة بالدقائق وفق منطقتك الزمنية.',
+        'يتجاهل العناوين والوصف وبريد الحضور لحماية سرية العملاء.',
+      ],
     },
     keywords: ['ics', 'calendar', 'import', 'scheduling', 'schedule', 'dtstart', 'dtend', 'timezone', 'time zone', 'utc', 'تقويم', 'استيراد', 'توقيت'],
   },
@@ -64,8 +112,20 @@ export const KNOWLEDGE_BASE = [
       ar: 'سياسة المساعدة T0–T3 والقرارات البشرية فقط',
     },
     summary: {
-      en: 'VOXRELAY classifies operational actions into four tiers: T0–T2 are disabled by default unless an organization admin enables versioned policies, while T3 (clinical/legal judgment, live interpreting, quality grading, and dispute resolution) is permanently sealed as human-only and cannot be automated.',
-      ar: 'يصنف VOXRELAY الإجراءات إلى أربعة مستويات: T0–T2 معطلة افتراضياً ما لم يفعلها مسؤول المنظمة، أما T3 (القرارات البشرية والترجمة الحية والنزاعات) فمغلقة دائماً للإنسان فقط.',
+      en: 'T0–T2 are optional admin-enabled operational assists, while T3 human judgment and live interpreting remain permanently locked.',
+      ar: 'مستويات T0–T2 اختيارية وبموافقة المسؤول، بينما يبقى T3 مغلقاً للقرار البشري فقط.',
+    },
+    bullets: {
+      en: [
+        'T0–T2 cover non-clinical operational prep and reminders and are off until enabled by an org admin.',
+        'T3 is permanently sealed as human-only: live interpreting, clinical/legal judgment, QA grading, and disputes.',
+        'Every policy change is versioned and recorded in the audit log.',
+      ],
+      ar: [
+        'تشمل T0–T2 التحضير والتنبيهات التشغيلية وتكون معطلة حتى يفعلها مسؤول المنظمة.',
+        'T3 مغلق دائماً للإنسان فقط: الترجمة الحية، القرارات الطبية والقانونية، وتقييم الجودة والنزاعات.',
+        'يُحفظ كل تعديل في السياسة برقم إصدار وسجل تدقيق.',
+      ],
     },
     keywords: ['t0', 't1', 't2', 't3', 'operational', 'policy', 'human', 'tier', 'tiers', 'rbac', 'role', 'admin', 'coordinator', 'سياسة', 'بشري', 'صلاحيات'],
   },
@@ -78,8 +138,20 @@ export const KNOWLEDGE_BASE = [
       ar: 'حساب الفواتير والحد الأدنى للدقائق وقواعد التقريب',
     },
     summary: {
-      en: 'The Billing log calculates billable minutes by applying your minimum-minute floor first, then rounding up to your chosen increment (such as 15 minutes), and tracks invoiced vs. paid status cleanly.',
-      ar: 'يحسب سجل الفواتير الدقائق القابلة للفوترة بتطبيق الحد الأدنى أولاً ثم التقريب لأعلى إلى أقرب فاصل زمني محدد مع تتبع حالة الفاتورة والدفع.',
+      en: 'Billing applies your minimum-minute floor first, rounds up to your increment, and tracks invoiced vs. paid records.',
+      ar: 'تطبق الفوترة الحد الأدنى أولاً ثم التقريب لأعلى مع تتبع حالة الفاتورة والدفع.',
+    },
+    bullets: {
+      en: [
+        'Applies your minimum-minute floor (e.g., 30 min) before calculating billable time.',
+        'Rounds up to your selected increment (e.g., 15 min) and multiplies by your hourly rate.',
+        'Tracks each logged entry as invoiced or paid.',
+      ],
+      ar: [
+        'يطبق الحد الأدنى للدقائق أولاً (مثل 30 دقيقة) قبل الحساب.',
+        'يقرب لأعلى إلى أقرب فاصل محدد (مثل 15 دقيقة) ويحسب القيمة بالساعة.',
+        'يتتبع كل سجل بين حالة المفوتر والمدفوع.',
+      ],
     },
     keywords: ['billing', 'invoice', 'paid', 'payout', 'payouts', 'rate', 'minutes', 'rounding', 'minimum', 'pay', 'فواتير', 'سعر', 'دقائق'],
   },
@@ -88,14 +160,28 @@ export const KNOWLEDGE_BASE = [
     category: 'device',
     href: '/app/device-check',
     title: {
-      en: 'Pre-session audio readiness check',
-      ar: 'فحص جاهزية الصوت قبل الجلسة',
+      en: 'Pre-session audio & readiness check',
+      ar: 'فحص جاهزية الصوت والجهاز قبل الجلسة',
     },
     summary: {
-      en: 'Device check verifies browser microphone permission and live input signal levels locally using Web Audio API without recording, buffering, or uploading any audio stream.',
-      ar: 'يتحقق فحص الجهاز من إذن الميكروفون ومستوى الإشارة محلياً في المتصفح دون تسجيل أو تخزين أو رفع أي صوت.',
+      en: 'Device check measures browser microphone, speaker, camera, and network RTT locally without recording or uploading audio.',
+      ar: 'يقيس فحص الجهاز الميكروفون والسماعة والكاميرا والشبكة محلياً دون تسجيل أو رفع أي صوت.',
     },
-    keywords: ['device', 'microphone', 'mic', 'audio', 'check', 'readiness', 'latency', 'network', 'browser', 'ميكروفون', 'صوت', 'جهاز'],
+    bullets: {
+      en: [
+        'Open **Device check** and pick your session profile (`Voice-only`, `Voice + Video`, or `Full`).',
+        'Click **Test mic** to measure live signal dBFS, peak %, and sample rate locally via Web Audio API.',
+        'Click **Play 440Hz tone** and **Confirm audible** to verify speaker output, then run **Test camera** if needed.',
+        'Network RTT, jitter, packet loss, and WebRTC/Opus readiness are measured live — zero audio is ever recorded or uploaded.',
+      ],
+      ar: [
+        'افتح **فحص الجهاز** واختر نوع الجلسة (`صوت فقط`، `صوت + فيديو`، أو `كامل`).',
+        'اضغط **فحص الميكروفون** لقياس الإشارة محلياً عبر Web Audio API.',
+        'اضغط **تشغيل نغمة 440Hz** ثم **تأكيد السماع**، وافحص الكاميرا عند الحاجة.',
+        'تُقاس استجابة الشبكة والفقد وWebRTC مباشرة دون أي تسجيل أو رفع للصوت.',
+      ],
+    },
+    keywords: ['device', 'microphone', 'mic', 'audio', 'check', 'readiness', 'latency', 'network', 'browser', 'speaker', 'camera', 'ميكروفون', 'صوت', 'جهاز'],
   },
   {
     id: 'KB-08',
@@ -106,8 +192,20 @@ export const KNOWLEDGE_BASE = [
       ar: 'طلب الوصول والدعوات والدعم البشري',
     },
     summary: {
-      en: 'Submit a request on the Request Access / Contact page with your role and languages. Platform or organization admins review requests in the review queue and issue one-time invite links, or you can open a support ticket directly from the Workspace Assistant.',
-      ar: 'قدّم طلباً عبر صفحة طلب الوصول مع دورك ولغاتك، ويقوم المسؤول بمراجعته وإرسال رابط دعوة لمرة واحدة، أو افتح تذكرة دعم مباشر من المساعد.',
+      en: 'Request access with your role and languages for admin invite approval, or open a human support ticket directly.',
+      ar: 'قدّم طلب وصول مع دورك ولغاتك، أو افتح تذكرة دعم بشري مباشرة.',
+    },
+    bullets: {
+      en: [
+        'Submit your role, languages, and work email on the **Request Access** page.',
+        'Organization or platform admins review requests and issue one-time invite links.',
+        'Need human help anytime? Open a ticket in **Support** or click **Human support** in this drawer.',
+      ],
+      ar: [
+        'قدّم دورك ولغاتك وبريدك في صفحة **طلب الوصول**.',
+        'يراجع المسؤولون الطلب ويرسلون رابط دعوة لمرة واحدة.',
+        'يمكنك فتح تذكرة في **الدعم** أو مباشرة من هذا المساعد في أي وقت.',
+      ],
     },
     keywords: ['access', 'request', 'invite', 'login', 'account', 'support', 'ticket', 'contact', 'help', 'دعم', 'وصول', 'دعوة', 'حساب'],
   },

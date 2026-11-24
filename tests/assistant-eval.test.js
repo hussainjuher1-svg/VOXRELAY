@@ -127,7 +127,7 @@ describe('Assistant Eval (40+ golden, adversarial, and research cases)', () => {
     }
   });
 
-  it('answers all 4 canonical FAQ chip questions with exact citations', async () => {
+  it('answers all 4 canonical FAQ chip questions with exact citations and concise bullet structure', async () => {
     const pairs = [
       ['How does scheduling & .ics import work?', 'KB-04'],
       ['How does zero recording & privacy work?', 'KB-01'],
@@ -137,6 +137,7 @@ describe('Assistant Eval (40+ golden, adversarial, and research cases)', () => {
     for (const [question, expectedId] of pairs) {
       const out = await runEval({ mode: 'ask', question });
       expect(out.citations.some((c) => c.id === expectedId)).toBe(true);
+      expect(out.text).toContain('\n- ');
     }
   });
 

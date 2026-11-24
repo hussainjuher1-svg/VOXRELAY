@@ -63,5 +63,15 @@ describe('Diagnostics & Readiness Scoring', () => {
     expect(failResult.score).toBeLessThan(80);
     expect(failResult.verdict).toBe('fail');
     expect(failResult.deductions.length).toBeGreaterThan(0);
+
+    const deniedCam = scoreReadiness(
+      env,
+      goodNet,
+      { ...periph, cameraPermission: 'denied', cameraResolution: 'Denied' },
+      'video'
+    );
+    const avCheck = deniedCam.checks.find((c) => c.id === 'periph_av');
+    expect(avCheck?.status).toBe('fail');
+    expect(avCheck?.impactPoints).toBe(0);
   });
 });

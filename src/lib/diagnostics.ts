@@ -6,6 +6,7 @@ export interface CheckItem {
   category: 'browser' | 'device' | 'peripherals' | 'network';
   label: string;
   measured: string;
+  measuredDetail?: string;
   threshold: string;
   status: CheckStatus;
   impactPoints: number;
@@ -486,7 +487,8 @@ export function scoreReadiness(
     id: 'net_latency',
     category: 'network',
     label: 'Median RTT & jitter',
-    measured: net && rtt !== null ? `${rtt} ms · jitter ${net.jitterMs ?? '—'} ms` : 'Not probed',
+    measured: net && rtt !== null ? `${rtt} ms` : 'Not probed',
+    measuredDetail: net && rtt !== null ? `Jitter ${net.jitterMs ?? '—'} ms` : undefined,
     threshold: `≤ ${thresholds.maxMedianMs} ms / jitter ≤ ${thresholds.maxJitterMs} ms`,
     status: rttStatus,
     impactPoints: rtt === null ? 0 : rttStatus === 'pass' ? 20 : rttStatus === 'warn' ? 12 : 4,
@@ -508,7 +510,8 @@ export function scoreReadiness(
     id: 'net_loss_bw',
     category: 'network',
     label: 'Packet loss & throughput',
-    measured: net ? `${net.lossPct}% loss · ${down ?? '—'} Mbps down` : 'Not probed',
+    measured: net ? `${net.lossPct}% loss · ${down ?? '—'} Mbps` : 'Not probed',
+    measuredDetail: net ? 'Downlink measured' : undefined,
     threshold: `≤ ${thresholds.maxLossPct}% loss · ≥ ${thresholds.minDownMbps} Mbps`,
     status: netThroughputStatus,
     impactPoints: !net ? 0 : netThroughputStatus === 'pass' ? 15 : netThroughputStatus === 'warn' ? 8 : 2,
@@ -517,9 +520,11 @@ export function scoreReadiness(
   });
 
   // 4. Peripherals (max 20)
+  const micDeniedOrBlocked =
+    periph.micPermission === 'denied' || periph.micPermission === 'unavailable' || periph.micPermission === 'unsupported';
   const micStatus: CheckStatus = !periph.micTested
     ? 'warn'
-    : periph.micPermission === 'denied'
+    : micDeniedOrBlocked
       ? 'fail'
       : periph.micClipping
         ? 'warn'
@@ -528,16 +533,29 @@ export function scoreReadiness(
     id: 'periph_mic',
     category: 'peripherals',
     label: 'Microphone signal & clipping',
-    measured: periph.micTested
-      ? `${periph.micRmsDb ?? '—'} dBFS · peak ${periph.micPeakPct}%${periph.micClipping ? ' (clipping)' : ''}`
-      : 'Not tested',
+    measured: !periph.micTested
+      ? 'Not tested'
+      : micDeniedOrBlocked
+        ? periph.micPermission === 'denied'
+          ? 'Permission denied'
+          : 'No microphone'
+        : `${periph.micRmsDb ?? '—'} dBFS · peak ${periph.micPeakPct}%`,
+    measuredDetail: periph.micTested && !micDeniedOrBlocked && periph.micClipping ? 'Clipping detected' : undefined,
     threshold: 'Active mic, no clipping',
     status: micStatus,
     impactPoints: !periph.micTested ? 0 : micStatus === 'pass' ? 10 : micStatus === 'warn' ? 6 : 0,
     maxPoints: 10,
-    reason: !periph.micTested ? 'Run live microphone check' : micStatus === 'pass' ? undefined : 'Microphone denied or clipping detected.',
+    reason: !periph.micTested
+      ? 'Run live microphone check'
+      : micDeniedOrBlocked
+        ? 'Microphone permission denied or device unavailable.'
+        : micStatus === 'pass'
+          ? undefined
+          : 'Microphone clipping detected.',
   });
 
+  const cameraDenied =
+    periph.cameraPermission === 'denied' || periph.cameraPermission === 'unavailable' || periph.cameraPermission === 'unsupported';
   const extraNeedMet =
     (!thresholds.needCamera || (periph.cameraTested && periph.cameraPermission === 'granted')) &&
     (!thresholds.needScreen || periph.screenShareSupported);
@@ -546,25 +564,41 @@ export function scoreReadiness(
       ? periph.speakerConfirmed === false
         ? 'fail'
         : 'pass'
-      : extraNeedMet
-        ? 'pass'
-        : 'warn';
+      : (thresholds.needCamera && cameraDenied) || periph.speakerConfirmed === false
+        ? 'fail'
+        : extraNeedMet
+          ? 'pass'
+          : 'warn';
+  const avMeasured = thresholds.needCamera
+    ? periph.cameraPermission === 'denied'
+      ? 'Camera denied'
+      : periph.cameraPermission === 'unavailable'
+        ? 'No camera found'
+        : periph.cameraResolution || 'Camera not tested'
+    : periph.speakerConfirmed === true
+      ? 'Audible confirmed'
+      : periph.speakerConfirmed === false
+        ? 'Not audible'
+        : 'Tone not confirmed';
+  const avDetail = thresholds.needCamera
+    ? `${periph.speakerConfirmed ? 'Speaker OK' : 'Speaker unconfirmed'}${thresholds.needScreen ? ` · Screen ${periph.screenShareTested ? 'OK' : periph.screenShareSupported ? 'Ready' : 'Blocked'}` : ''}`
+    : undefined;
   checks.push({
     id: 'periph_av',
     category: 'peripherals',
     label: thresholds.needScreen ? 'Camera + screen share + speaker' : thresholds.needCamera ? 'Camera + speaker' : 'Speaker confirmation',
-    measured: thresholds.needCamera
-      ? `${periph.cameraResolution || 'Camera not tested'}${thresholds.needScreen ? ` · Screen ${periph.screenShareSupported ? 'OK' : 'N/A'}` : ''}`
-      : periph.speakerConfirmed === true
-        ? 'Audible confirmed'
-        : periph.speakerConfirmed === false
-          ? 'Not audible'
-          : 'Tone not confirmed',
+    measured: avMeasured,
+    measuredDetail: avDetail,
     threshold: thresholds.needScreen ? 'Camera + DisplayMedia' : thresholds.needCamera ? 'Camera active' : 'Speaker audible',
     status: extraStatus,
     impactPoints: extraStatus === 'pass' ? 10 : extraStatus === 'warn' ? 5 : 0,
     maxPoints: 10,
-    reason: extraStatus === 'pass' ? undefined : 'Complete camera / speaker verification for this profile.',
+    reason:
+      extraStatus === 'pass'
+        ? undefined
+        : cameraDenied
+          ? 'Camera permission denied or no camera available.'
+          : 'Complete camera / speaker verification for this profile.',
   });
 
   const sumBy = (cat: CheckItem['category']) => {
