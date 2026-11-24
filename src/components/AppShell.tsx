@@ -269,9 +269,24 @@ export function AppShell({
         </div>
       </aside>
 
-      <main id="main-content" className="app-main">
-        {children}
-      </main>
+      <div className="app-main-wrap">
+        <nav className="app-mobile-ribbon" aria-label={isAr ? 'تنقل سريع' : 'Quick workspace links'}>
+          {allItems.map((link) => (
+            <NavLink
+              key={link.to}
+              to={link.to}
+              end={link.end}
+              className={({ isActive }) => `app-ribbon-pill${isActive ? ' is-active' : ''}`}
+            >
+              {link.label}
+            </NavLink>
+          ))}
+        </nav>
+
+        <main id="main-content" className="app-main">
+          {children}
+        </main>
+      </div>
 
       {!onOpenCommandPalette && (
         <CommandPalette

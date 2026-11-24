@@ -868,6 +868,9 @@ export function DeviceCheckPage() {
     void detectEnvironment().then((r) => {
       if (active) setEnvReport(r);
     });
+    void probeNetworkDiagnostics(6).then((net) => {
+      if (active) setNetReport(net);
+    });
     if (user || session?.access_token) {
       fetch('/api/ops?resource=diagnostics', {
         headers: buildHeaders(session?.access_token),
@@ -1090,29 +1093,22 @@ export function DeviceCheckPage() {
     URL.revokeObjectURL(url);
   }
 
+  const ringCircumference = 2 * Math.PI * 54;
+  const ringOffset = ringCircumference * (1 - readiness.score / 100);
+  const ringColor = readiness.verdict === 'pass' ? '#96b5aa' : readiness.verdict === 'warn' ? '#f2b632' : '#de4e26';
+  const waveBars = Array.from({ length: 18 }, (_, i) => {
+    const base = Math.max(8, level * (0.45 + 0.55 * Math.abs(Math.sin((i + 1) * 0.7))));
+    return Math.min(100, Math.round(level === 0 ? 10 : base));
+  });
+
   return (
     <AppShell>
       <div className="workspace-header">
         <div>
           <span className="eyebrow">DEVICE &amp; NETWORK READINESS LAB</span>
-          <h1>Live browser, hardware &amp; network diagnostics</h1>
+          <h1>Live hardware, audio &amp; network telemetry</h1>
         </div>
         <div className="hero-actions">
-          <Select
-            id="diag-profile"
-            ariaLabel="Readiness threshold profile"
-            value={profile}
-            onValueChange={(v) => setProfile((v as ReadinessProfile) || 'video')}
-            options={[
-              { value: 'voice', label: 'Profile: Voice-only' },
-              { value: 'video', label: 'Profile: Voice + Video' },
-              { value: 'full', label: 'Profile: Full (Screen share)' },
-            ]}
-          />
-          <Button onClick={() => void runFullSuite()} loading={busyStep === 'all'}>
-            <Activity size={15} />
-            <span>Run full readiness suite</span>
-          </Button>
           <Button variant="secondary" onClick={exportReportJson}>
             <Download size={14} />
             <span>JSON</span>
@@ -1121,60 +1117,115 @@ export function DeviceCheckPage() {
             <Download size={14} />
             <span>CSV</span>
           </Button>
+          <Button variant="secondary" onClick={() => window.print()}>
+            <span>Print PDF</span>
+          </Button>
         </div>
       </div>
 
-      <p style={{ color: 'var(--vr-ink-2)', marginBottom: 18 }}>{message}</p>
-
-      <div className="vx-kpi-grid">
-        <article className="vx-kpi-card vx-kpi-card--terracotta">
-          <span className="eyebrow">Readiness score ({profile})</span>
-          <span className="vx-kpi-value">{readiness.score} / 100</span>
-          <Badge tone={readiness.verdict === 'pass' ? 'success' : readiness.verdict === 'warn' ? 'warning' : 'danger'}>
-            {readiness.verdict.toUpperCase()}
-          </Badge>
-        </article>
-        <article className="vx-kpi-card vx-kpi-card--forest">
-          <span className="eyebrow">Network RTT / jitter</span>
-          <span className="vx-kpi-value" style={{ fontSize: 28 }}>
-            {netReport?.medianMs !== null && netReport?.medianMs !== undefined ? `${netReport.medianMs} ms` : '—'}
-          </span>
-          <span className="mono-ltr" style={{ fontSize: 12, color: 'var(--vr-ink-2)' }}>
-            {netReport
-              ? `p95 ${netReport.p95Ms ?? '—'} ms · jitter ${netReport.jitterMs ?? '—'} ms · ${netReport.lossPct}% loss`
-              : 'Click Run network probes below'}
-          </span>
-        </article>
-        <article className="vx-kpi-card vx-kpi-card--gold">
-          <span className="eyebrow">Throughput (down / up)</span>
-          <span className="vx-kpi-value" style={{ fontSize: 28 }}>
-            {netReport?.downMbps !== null && netReport?.downMbps !== undefined ? `${netReport.downMbps} Mbps` : '—'}
-          </span>
-          <span className="mono-ltr" style={{ fontSize: 12, color: 'var(--vr-ink-2)' }}>
-            {netReport ? `Up: ${netReport.upMbps ?? '—'} Mbps · DNS: ${netReport.dnsEstimateMs ?? '—'} ms` : '3-run median probe'}
-          </span>
-        </article>
-        <article className="vx-kpi-card vx-kpi-card--sage">
-          <span className="eyebrow">Browser &amp; OS</span>
-          <span className="vx-kpi-value" style={{ fontSize: 22, paddingTop: 4 }}>
-            {envReport ? `${envReport.browserName} ${envReport.browserVersion.split('.')[0]}` : 'Probing...'}
-          </span>
-          <span className="mono-ltr" style={{ fontSize: 12, color: 'var(--vr-ink-2)' }}>
-            {envReport ? `${envReport.osName} · ${envReport.hardware.cpuCores ?? '—'} cores` : ''}
-          </span>
-        </article>
-      </div>
-
-      <div className="workspace-grid" style={{ marginBottom: 24 }}>
-        <article className="subpage-card">
-          <h2>Microphone &amp; Speaker</h2>
-          <div className="meter-track" aria-label="Microphone signal level" style={{ margin: '10px 0' }}>
-            <div className="meter-fill" style={{ width: `${level}%` }} />
+      <section className="vx-diag-hero" aria-label="Readiness score summary">
+        <div className="vx-score-ring">
+          <svg viewBox="0 0 124 124" aria-hidden="true">
+            <circle cx="62" cy="62" r="54" fill="none" stroke="#1e4239" strokeWidth="10" />
+            <circle
+              cx="62"
+              cy="62"
+              r="54"
+              fill="none"
+              stroke={ringColor}
+              strokeWidth="10"
+              strokeLinecap="round"
+              strokeDasharray={ringCircumference}
+              strokeDashoffset={ringOffset}
+            />
+          </svg>
+          <div className="vx-score-ring-center">
+            <span className="vx-score-ring-num">{readiness.score}</span>
+            <span className="vx-score-ring-cap">{readiness.verdict} · /100</span>
           </div>
-          <p className="mono-ltr" style={{ fontSize: 12 }}>
-            Live dB: {liveDb ?? periph.micRmsDb ?? '—'} dBFS · Peak: {periph.micPeakPct}% · Sample rate: {periph.micSampleRate ?? '—'} Hz
+        </div>
+
+        <div className="vx-diag-hero-body">
+          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+            <div>
+              <span className="eyebrow" style={{ color: '#96b5aa' }}>READINESS PROFILE</span>
+              <h2>
+                {readiness.verdict === 'pass'
+                  ? `Ready for ${profile === 'voice' ? 'Voice' : profile === 'video' ? 'Voice + Video' : 'Full session'}`
+                  : `${readiness.deductions.length} check(s) remaining for ${profile}`}
+              </h2>
+            </div>
+            <Button onClick={() => void runFullSuite()} loading={busyStep === 'all'}>
+              <Activity size={15} />
+              <span>Run full diagnostic suite</span>
+            </Button>
+          </div>
+
+          <div className="vx-profile-pills" role="group" aria-label="Threshold profile">
+            {(['voice', 'video', 'full'] as const).map((p) => (
+              <button
+                key={p}
+                type="button"
+                className={`vx-profile-pill${profile === p ? ' is-active' : ''}`}
+                onClick={() => setProfile(p)}
+              >
+                {p === 'voice' ? 'Voice-only' : p === 'video' ? 'Voice + Video' : 'Full (Screen share)'}
+              </button>
+            ))}
+          </div>
+
+          <div className="vx-comp-bars">
+            {(Object.entries(readiness.components) as Array<[string, { score: number; max: number }]>).map(([k, val]) => {
+              const pct = val.max > 0 ? Math.round((val.score / val.max) * 100) : 0;
+              return (
+                <div key={k} className="vx-comp-item">
+                  <div className="vx-comp-head">
+                    <span>{k}</span>
+                    <span>{val.score}/{val.max}</span>
+                  </div>
+                  <div className="vx-comp-track">
+                    <div className="vx-comp-fill" style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <p style={{ margin: 0, fontSize: 13, color: '#b7ccc4' }}>{message}</p>
+        </div>
+      </section>
+
+      <div className="vx-studio-grid">
+        <article className="vx-studio-card vx-studio-card--cream">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <span className="eyebrow">AUDIO &amp; SPEAKER STUDIO</span>
+              <h2 style={{ margin: '4px 0 0', fontFamily: 'var(--vr-font-serif)', fontSize: 22, fontWeight: 400 }}>
+                Live microphone &amp; output tone
+              </h2>
+            </div>
+            <Badge tone={periph.micPermission === 'granted' ? 'success' : periph.micPermission === 'denied' ? 'danger' : 'neutral'}>
+              {periph.micTested ? periph.micPermission : 'Ready'}
+            </Badge>
+          </div>
+
+          <div className="vx-wave-meter" role="progressbar" aria-label="Microphone signal level" aria-valuenow={level} aria-valuemin={0} aria-valuemax={100}>
+            {waveBars.map((h, i) => (
+              <span
+                key={i}
+                className="vx-wave-bar"
+                style={{
+                  height: `${h}%`,
+                  background: periph.micClipping ? '#f2b632' : level > 0 ? '#de4e26' : '#355f54',
+                }}
+              />
+            ))}
+          </div>
+
+          <p className="mono-ltr" style={{ fontSize: 12, margin: 0 }}>
+            Signal: {liveDb ?? periph.micRmsDb ?? '—'} dBFS · Peak: {periph.micPeakPct}% · Sample rate: {periph.micSampleRate ?? '—'} Hz
           </p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             <Button size="sm" onClick={() => void runMicProbe()} loading={busyStep === 'mic'}>
               <Mic size={14} />
               <span>Test mic</span>
@@ -1188,84 +1239,109 @@ export function DeviceCheckPage() {
               variant={periph.speakerConfirmed === true ? 'primary' : 'ghost'}
               onClick={() => setPeriph((p) => ({ ...p, speakerConfirmed: true }))}
             >
-              I heard it
+              {periph.speakerConfirmed ? 'Audible ✓' : 'Confirm audible'}
             </Button>
           </div>
         </article>
 
-        <article className="subpage-card">
-          <h2>Camera, Display &amp; Network</h2>
-          <p className="mono-ltr" style={{ fontSize: 12 }}>
-            Camera: {periph.cameraResolution || `${envReport?.devices.cameras ?? 0} detected`}
-            {periph.cameraFps ? ` @ ${periph.cameraFps} fps` : ''}
+        <article className="vx-studio-card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <span className="eyebrow">NETWORK &amp; HARDWARE TELEMETRY</span>
+              <h2 style={{ margin: '4px 0 0', fontFamily: 'var(--vr-font-serif)', fontSize: 22, fontWeight: 400 }}>
+                {envReport ? `${envReport.browserName} · ${envReport.osName}` : 'Detecting environment...'}
+              </h2>
+            </div>
+            <Badge tone={netReport ? 'success' : 'neutral'}>{netReport ? `${netReport.medianMs ?? '—'} ms RTT` : 'Probing'}</Badge>
+          </div>
+
+          <p className="mono-ltr" style={{ fontSize: 12, margin: 0 }}>
+            {netReport
+              ? `Median ${netReport.medianMs ?? '—'} ms · p95 ${netReport.p95Ms ?? '—'} ms · Jitter ${netReport.jitterMs ?? '—'} ms · Loss ${netReport.lossPct}% · Down ${netReport.downMbps ?? '—'} Mbps / Up ${netReport.upMbps ?? '—'} Mbps`
+              : 'Measuring RTT, jitter, packet loss & throughput...'}
           </p>
-          <p className="mono-ltr" style={{ fontSize: 12 }}>
-            Display: {envReport ? `${envReport.display.width}×${envReport.display.height} (${envReport.display.dpr}x @ ${envReport.display.refreshHz ?? '—'}Hz)` : '—'}
+
+          <p className="mono-ltr" style={{ fontSize: 12, margin: 0, color: 'var(--vr-ink-2)' }}>
+            {envReport
+              ? `${envReport.hardware.cpuCores ?? '—'} cores · Display ${envReport.display.width}×${envReport.display.height} @ ${envReport.display.refreshHz ?? '—'}Hz · ICE ${envReport.webrtc.iceCandidatesGathered} (${envReport.webrtc.gatheringMs ?? '—'} ms)`
+              : ''}
           </p>
-          <p className="mono-ltr" style={{ fontSize: 12 }}>
-            Storage: {envReport?.storage.quotaMb ? `${envReport.storage.usageMb ?? 0} / ${envReport.storage.quotaMb} MB` : '—'}
-          </p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+
+          {envReport && (
+            <div className="vx-codec-strip">
+              {[
+                ['Opus', envReport.codecs.opus],
+                ['VP8', envReport.codecs.vp8],
+                ['VP9', envReport.codecs.vp9],
+                ['H.264', envReport.codecs.h264],
+                ['AV1', envReport.codecs.av1],
+              ].map(([name, ok]) => (
+                <span key={String(name)} className={`vx-codec-chip${ok ? ' is-ok' : ''}`}>
+                  {String(name)} {ok ? '✓' : '—'}
+                </span>
+              ))}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             <Button size="sm" onClick={() => void runNetworkProbe()} loading={busyStep === 'network'}>
               <Wifi size={14} />
-              <span>Run network probes</span>
+              <span>Re-run network</span>
             </Button>
             <Button size="sm" variant="secondary" onClick={() => void runCameraProbe()} loading={busyStep === 'camera'}>
               <Camera size={14} />
-              <span>Test camera</span>
+              <span>{periph.cameraResolution ? `Cam ${periph.cameraResolution}` : 'Test camera'}</span>
             </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => void detectEnvironment().then(setEnvReport)}
-            >
+            <Button size="sm" variant="ghost" onClick={() => void detectEnvironment().then(setEnvReport)}>
               <Monitor size={14} />
-              <span>Re-scan device</span>
+              <span>Re-scan</span>
             </Button>
           </div>
         </article>
       </div>
 
-      <article className="subpage-card" style={{ marginBottom: 24 }}>
-        <h2>WebRTC, Codecs &amp; Score Breakdown</h2>
-        {envReport && (
-          <p className="mono-ltr" style={{ fontSize: 12, marginBottom: 12 }}>
-            Codecs: Opus {envReport.codecs.opus ? '✓' : '✗'} · VP8 {envReport.codecs.vp8 ? '✓' : '✗'} · VP9 {envReport.codecs.vp9 ? '✓' : '✗'} · H.264 {envReport.codecs.h264 ? '✓' : '✗'} · AV1 {envReport.codecs.av1 ? '✓' : '✗'} | ICE candidates: {envReport.webrtc.iceCandidatesGathered} ({envReport.webrtc.gatheringMs ?? '—'} ms) | GPU: {envReport.hardware.gpuRenderer || '—'}
-          </p>
-        )}
-        <div className="workspace-grid">
-          {readiness.checks.map((c) => (
-            <div key={c.id} className="subpage-card" style={{ padding: 14 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                <strong style={{ fontSize: 13 }}>{c.label}</strong>
-                <Badge tone={c.status === 'pass' ? 'success' : c.status === 'warn' ? 'warning' : 'danger'}>
-                  {c.impactPoints}/{c.maxPoints}
-                </Badge>
-              </div>
-              <p className="mono-ltr" style={{ fontSize: 12 }}>{c.measured}</p>
-              <p style={{ fontSize: 11, color: 'var(--vr-ink-2)' }}>Target: {c.threshold}</p>
-            </div>
-          ))}
+      <section className="vx-ledger" aria-label="Readiness score breakdown">
+        <div className="vx-ledger-head">
+          <h2>Diagnostic ledger &amp; thresholds</h2>
+          <span className="mono-ltr" style={{ fontSize: 12, color: 'var(--vr-ink-2)' }}>
+            Profile: {profile} · {readiness.checks.length} live probes
+          </span>
         </div>
-      </article>
+        {readiness.checks.map((c) => (
+          <div key={c.id} className="vx-ledger-row">
+            <span className="vx-ledger-cat">{c.category}</span>
+            <div className="vx-ledger-title">
+              <strong>{c.label}</strong>
+              <span>Target: {c.threshold}</span>
+            </div>
+            <span className="vx-ledger-val">{c.measured}</span>
+            <Badge tone={c.status === 'pass' ? 'success' : c.status === 'warn' ? 'warning' : 'danger'}>
+              {c.impactPoints}/{c.maxPoints}
+            </Badge>
+          </div>
+        ))}
+      </section>
 
       {history.length > 0 && (
-        <div>
-          <h2 style={{ marginBottom: 12 }}>Saved readiness history ({history.length})</h2>
-          <div className="workspace-grid">
-            {history.slice(0, 6).map((h) => (
-              <article key={h.id} className="subpage-card">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span className="eyebrow">{h.profile}</span>
-                  <Badge tone={h.verdict === 'pass' ? 'success' : h.verdict === 'warn' ? 'warning' : 'danger'}>
-                    {h.score}/100 · {h.verdict}
-                  </Badge>
-                </div>
-                <p className="mono-ltr" style={{ fontSize: 12, marginTop: 8 }}>{h.created_at}</p>
-              </article>
-            ))}
+        <section className="vx-ledger" aria-label="Saved readiness runs">
+          <div className="vx-ledger-head">
+            <h2>Saved diagnostic history</h2>
+            <span className="mono-ltr" style={{ fontSize: 12, color: 'var(--vr-ink-2)' }}>{history.length} saved run(s)</span>
           </div>
-        </div>
+          {history.slice(0, 8).map((h) => (
+            <div key={h.id} className="vx-ledger-row">
+              <span className="vx-ledger-cat">{h.profile}</span>
+              <div className="vx-ledger-title">
+                <strong>Readiness score: {h.score} / 100</strong>
+                <span className="mono-ltr">{h.created_at}</span>
+              </div>
+              <span className="vx-ledger-val">{h.id.slice(0, 8)}</span>
+              <Badge tone={h.verdict === 'pass' ? 'success' : h.verdict === 'warn' ? 'warning' : 'danger'}>
+                {h.verdict}
+              </Badge>
+            </div>
+          ))}
+        </section>
       )}
     </AppShell>
   );
@@ -1940,6 +2016,9 @@ export function ReportsPage() {
     };
   }, [session?.access_token]);
 
+  const pairsList = Object.entries(summary?.byPair || {});
+  const modalityList = Object.entries(summary?.byModality || {});
+
   return (
     <AppShell>
       <div className="workspace-header">
@@ -1948,16 +2027,52 @@ export function ReportsPage() {
           <h1>Interpreter &amp; organization totals</h1>
         </div>
       </div>
-      <div className="workspace-grid">
-        <article className="subpage-card">
-          <h2>Completed sessions</h2>
-          <p className="mono-ltr">{summary?.sessions ?? 0}</p>
+      <div className="vx-kpi-grid">
+        <article className="vx-kpi-card vx-kpi-card--terracotta">
+          <span className="eyebrow">Completed sessions</span>
+          <span className="vx-kpi-value">{summary?.sessions ?? 0}</span>
         </article>
-        <article className="subpage-card">
-          <h2>Total interpreted minutes</h2>
-          <p className="mono-ltr">{summary?.totalMinutes ?? 0} min</p>
+        <article className="vx-kpi-card vx-kpi-card--forest">
+          <span className="eyebrow">Interpreted minutes</span>
+          <span className="vx-kpi-value">{summary?.totalMinutes ?? 0} min</span>
         </article>
       </div>
+
+      <section className="vx-ledger">
+        <div className="vx-ledger-head">
+          <h2>Breakdown by language pair &amp; modality</h2>
+        </div>
+        {pairsList.length === 0 && modalityList.length === 0 ? (
+          <div className="vx-ledger-row">
+            <span className="vx-ledger-cat">EMPTY</span>
+            <div className="vx-ledger-title">
+              <strong>No completed sessions yet</strong>
+              <span>Close out an assignment to generate language-pair and modality totals.</span>
+            </div>
+            <span className="vx-ledger-val">—</span>
+            <Link className="inline-link" to="/app/assignments">Open assignments</Link>
+          </div>
+        ) : (
+          <>
+            {pairsList.map(([pair, val]) => (
+              <div key={pair} className="vx-ledger-row">
+                <span className="vx-ledger-cat">PAIR</span>
+                <div className="vx-ledger-title"><strong>{pair}</strong></div>
+                <span className="vx-ledger-val">{val.sessions} session(s)</span>
+                <Badge tone="accent">{val.minutes} min</Badge>
+              </div>
+            ))}
+            {modalityList.map(([mod, val]) => (
+              <div key={mod} className="vx-ledger-row">
+                <span className="vx-ledger-cat">MODALITY</span>
+                <div className="vx-ledger-title"><strong>{mod}</strong></div>
+                <span className="vx-ledger-val">{val.sessions} session(s)</span>
+                <Badge tone="neutral">{val.minutes} min</Badge>
+              </div>
+            ))}
+          </>
+        )}
+      </section>
     </AppShell>
   );
 }
