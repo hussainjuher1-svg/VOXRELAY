@@ -867,6 +867,24 @@
   transform: scale(0.98);
 }
 
+.vx-lang-matches {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+}
+
+.vx-preset-chip--lang {
+  background: #ffffff;
+  border-color: #16a34a;
+  color: #14532d;
+}
+
+.vx-preset-chip--lang:hover:not(:disabled) {
+  background: #dcfce7;
+  border-color: #15803d;
+}
+
 .vx-device-alert-close {
   display: inline-flex;
   align-items: center;

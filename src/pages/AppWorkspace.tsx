@@ -690,6 +690,159 @@ export function SessionFocusPage() {
   );
 }
 
+const LANGUAGE_CATALOG: Array<{
+  code: string;
+  name: string;
+  nativeName: string;
+  aliases: string[];
+  starterTerms: Array<{ label: string; target_term: string }>;
+}> = [
+  {
+    code: 'es',
+    name: 'Spanish',
+    nativeName: 'Español',
+    aliases: ['spanish', 'espanol', 'español', 'es', 'castellano'],
+    starterTerms: [
+      { label: 'Informed consent', target_term: 'Consentimiento informado' },
+      { label: 'Shortness of breath', target_term: 'Dificultad para respirar' },
+      { label: 'Sworn affirmation', target_term: 'Declaración bajo juramento' },
+      { label: 'Repeat slowly', target_term: 'Por favor repita más despacio' },
+    ],
+  },
+  {
+    code: 'ar',
+    name: 'Arabic',
+    nativeName: 'العربية',
+    aliases: ['arabic', 'ar', 'العربية', 'عربي'],
+    starterTerms: [
+      { label: 'Informed consent', target_term: 'الموافقة المستنيرة' },
+      { label: 'Shortness of breath', target_term: 'ضيق في التنفس' },
+      { label: 'Sworn affirmation', target_term: 'إقرار تحت القسم' },
+      { label: 'Clarification pause', target_term: 'وقفة استيضاح' },
+    ],
+  },
+  {
+    code: 'bn',
+    name: 'Bengali',
+    nativeName: 'বাংলা',
+    aliases: ['bengali', 'bangla', 'bn', 'বাংলা'],
+    starterTerms: [
+      { label: 'Informed consent', target_term: 'অবহিত সম্মতি' },
+      { label: 'Shortness of breath', target_term: 'শ্বাসকষ্ট' },
+      { label: 'Sworn affirmation', target_term: 'শপথবদ্ধ ঘোষণা' },
+      { label: 'Repeat slowly', target_term: 'অনুগ্রহ করে ধীরে বলুন' },
+    ],
+  },
+  {
+    code: 'fr',
+    name: 'French',
+    nativeName: 'Français',
+    aliases: ['french', 'francais', 'français', 'fr'],
+    starterTerms: [
+      { label: 'Informed consent', target_term: 'Consentement éclairé' },
+      { label: 'Shortness of breath', target_term: 'Essoufflement' },
+      { label: 'Sworn affirmation', target_term: 'Déclaration sous serment' },
+      { label: 'Repeat slowly', target_term: 'Veuillez répéter lentement' },
+    ],
+  },
+  {
+    code: 'hi',
+    name: 'Hindi',
+    nativeName: 'हिन्दी',
+    aliases: ['hindi', 'hi', 'हिन्दी', 'हिंदी'],
+    starterTerms: [
+      { label: 'Informed consent', target_term: 'सूचित सहमति' },
+      { label: 'Shortness of breath', target_term: 'सांस लेने में तकलीफ' },
+      { label: 'Sworn affirmation', target_term: 'शपथपूर्वक कथन' },
+      { label: 'Repeat slowly', target_term: 'कृपया धीरे बोलें' },
+    ],
+  },
+  {
+    code: 'he',
+    name: 'Hebrew',
+    nativeName: 'עברית',
+    aliases: ['hebrew', 'he', 'עברית'],
+    starterTerms: [
+      { label: 'Informed consent', target_term: 'הסכמה מדעת' },
+      { label: 'Shortness of breath', target_term: 'קוצר נשימה' },
+      { label: 'Sworn affirmation', target_term: 'הצהרה בשבועה' },
+      { label: 'Repeat slowly', target_term: 'נא לחזור לאט' },
+    ],
+  },
+  {
+    code: 'ur',
+    name: 'Urdu',
+    nativeName: 'اردو',
+    aliases: ['urdu', 'ur', 'اردو'],
+    starterTerms: [
+      { label: 'Informed consent', target_term: 'باخبر رضامندی' },
+      { label: 'Shortness of breath', target_term: 'سانس لینے میں دشواری' },
+      { label: 'Sworn affirmation', target_term: 'حلفیہ بیان' },
+      { label: 'Repeat slowly', target_term: 'براہِ کرم آہستہ دہرائیں' },
+    ],
+  },
+  {
+    code: 'pt',
+    name: 'Portuguese',
+    nativeName: 'Português',
+    aliases: ['portuguese', 'portugues', 'português', 'pt'],
+    starterTerms: [
+      { label: 'Informed consent', target_term: 'Consentimento informado' },
+      { label: 'Shortness of breath', target_term: 'Falta de ar' },
+      { label: 'Sworn affirmation', target_term: 'Declaração sob juramento' },
+      { label: 'Repeat slowly', target_term: 'Por favor repita devagar' },
+    ],
+  },
+  {
+    code: 'zh',
+    name: 'Mandarin Chinese',
+    nativeName: '中文',
+    aliases: ['mandarin', 'chinese', 'zh', '中文', '普通话'],
+    starterTerms: [
+      { label: 'Informed consent', target_term: '知情同意书' },
+      { label: 'Shortness of breath', target_term: '呼吸困难' },
+      { label: 'Sworn affirmation', target_term: '宣誓声明' },
+      { label: 'Repeat slowly', target_term: '请慢一点重复一遍' },
+    ],
+  },
+  {
+    code: 'de',
+    name: 'German',
+    nativeName: 'Deutsch',
+    aliases: ['german', 'deutsch', 'de'],
+    starterTerms: [
+      { label: 'Informed consent', target_term: 'Aufgeklärte Einwilligung' },
+      { label: 'Shortness of breath', target_term: 'Atemnot' },
+      { label: 'Sworn affirmation', target_term: 'Eidesstattliche Versicherung' },
+      { label: 'Repeat slowly', target_term: 'Bitte langsam wiederholen' },
+    ],
+  },
+  {
+    code: 'vi',
+    name: 'Vietnamese',
+    nativeName: 'Tiếng Việt',
+    aliases: ['vietnamese', 'tieng viet', 'tiếng việt', 'vi'],
+    starterTerms: [
+      { label: 'Informed consent', target_term: 'Đồng thuận sau giải thích' },
+      { label: 'Shortness of breath', target_term: 'Khó thở' },
+      { label: 'Sworn affirmation', target_term: 'Lời cam đoan tuyên thệ' },
+      { label: 'Repeat slowly', target_term: 'Xin vui lòng nói chậm lại' },
+    ],
+  },
+  {
+    code: 'so',
+    name: 'Somali',
+    nativeName: 'Soomaali',
+    aliases: ['somali', 'soomaali', 'so'],
+    starterTerms: [
+      { label: 'Informed consent', target_term: 'Ogolaansho xog-ogaal ah' },
+      { label: 'Shortness of breath', target_term: 'Neef-qabatin' },
+      { label: 'Sworn affirmation', target_term: 'Dhaar sharci ah' },
+      { label: 'Repeat slowly', target_term: 'Fadlan si tartiib ah ugu celi' },
+    ],
+  },
+];
+
 export function TerminologyPage() {
   const { user, session } = useAuth();
   const [terms, setTerms] = useState<TermItem[]>([]);
@@ -697,6 +850,7 @@ export function TerminologyPage() {
   const [query, setQuery] = useState('');
   const [label, setLabel] = useState('');
   const [translation, setTranslation] = useState('');
+  const [targetLang, setTargetLang] = useState('es');
   const [csvError, setCsvError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -722,9 +876,22 @@ export function TerminologyPage() {
   }, [session?.access_token]);
 
   const trimmedQuery = query.trim();
+  const matchedLanguages =
+    trimmedQuery.length >= 2
+      ? LANGUAGE_CATALOG.filter((lang) =>
+          matchesSearch(`${lang.name} ${lang.nativeName} ${lang.code} ${lang.aliases.join(' ')}`, trimmedQuery)
+        )
+      : [];
+
   const visible =
     trimmedQuery.length >= 2
-      ? terms.filter((item) => matchesSearch(`${item.label} ${item.target_term}`, trimmedQuery))
+      ? terms.filter((item) => {
+          const langEntry = LANGUAGE_CATALOG.find((l) => l.code === (item.target_lang || '').toLowerCase());
+          return matchesSearch(
+            `${item.label} ${item.target_term} ${item.source_lang || ''} ${item.target_lang || ''} ${langEntry?.name || ''} ${langEntry?.nativeName || ''}`,
+            trimmedQuery
+          );
+        })
       : terms;
 
   const STARTER_PACKS: Record<string, Array<{ label: string; target_term: string }>> = {
@@ -746,10 +913,45 @@ export function TerminologyPage() {
     ],
   };
 
+  async function loadLanguagePack(langCode: string) {
+    const lang = LANGUAGE_CATALOG.find((l) => l.code === langCode);
+    if (!lang) return;
+    setTargetLang(lang.code);
+    const existing = new Set(
+      terms.map((t) => `${t.label.toLowerCase()}::${(t.target_lang || '').toLowerCase()}`)
+    );
+    const fresh = lang.starterTerms
+      .filter((p) => !existing.has(`${p.label.toLowerCase()}::${lang.code}`))
+      .map((p) => ({ ...p, source_lang: 'en', target_lang: lang.code }));
+    if (fresh.length === 0) return;
+    setBusy(true);
+    try {
+      if (user || session?.access_token) {
+        const res = await fetch('/api/terms', {
+          method: 'POST',
+          headers: buildHeaders(session?.access_token, true),
+          credentials: 'same-origin',
+          body: JSON.stringify({ terms: fresh }),
+        });
+        if (res.ok) {
+          const json = await res.json();
+          const added = Array.isArray(json.data) ? json.data : [json.data];
+          setTerms((prev) => [...added, ...prev]);
+          return;
+        }
+      }
+      setTerms((prev) => [...fresh.map((p) => ({ id: crypto.randomUUID(), ...p })), ...prev]);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function loadStarterPack(packName: keyof typeof STARTER_PACKS) {
     const pack = STARTER_PACKS[packName];
     const existing = new Set(terms.map((t) => t.label.toLowerCase()));
-    const fresh = pack.filter((p) => !existing.has(p.label.toLowerCase()));
+    const fresh = pack
+      .filter((p) => !existing.has(p.label.toLowerCase()))
+      .map((p) => ({ ...p, source_lang: 'en', target_lang: 'ar' }));
     if (fresh.length === 0) return;
     setBusy(true);
     try {
@@ -783,7 +985,12 @@ export function TerminologyPage() {
           method: 'POST',
           headers: buildHeaders(session?.access_token, true),
           credentials: 'same-origin',
-          body: JSON.stringify({ label: label.trim(), target_term: translation.trim() }),
+          body: JSON.stringify({
+            label: label.trim(),
+            target_term: translation.trim(),
+            source_lang: 'en',
+            target_lang: targetLang,
+          }),
         });
         if (res.ok) {
           const json = await res.json();
@@ -794,7 +1001,13 @@ export function TerminologyPage() {
         }
       }
       setTerms((prev) => [
-        { id: crypto.randomUUID(), label: label.trim(), target_term: translation.trim() },
+        {
+          id: crypto.randomUUID(),
+          label: label.trim(),
+          target_term: translation.trim(),
+          source_lang: 'en',
+          target_lang: targetLang,
+        },
         ...prev,
       ]);
       setLabel('');
@@ -885,14 +1098,28 @@ export function TerminologyPage() {
           <Field label="Term" htmlFor="term-label">
             <Input id="term-label" dir="auto" value={label} onChange={(e) => setLabel(e.target.value)} required />
           </Field>
-          <Field label="Target equivalent" htmlFor="term-target">
-            <Input
-              id="term-target"
-              dir="auto"
-              value={translation}
-              onChange={(e) => setTranslation(e.target.value)}
-            />
-          </Field>
+          <div className="form-row-2">
+            <Field label="Target language" htmlFor="term-lang">
+              <Select
+                id="term-lang"
+                value={targetLang}
+                onValueChange={setTargetLang}
+                ariaLabel="Target language"
+                options={LANGUAGE_CATALOG.map((l) => ({
+                  value: l.code,
+                  label: `${l.name} (${l.code.toUpperCase()})`,
+                }))}
+              />
+            </Field>
+            <Field label="Target equivalent" htmlFor="term-target">
+              <Input
+                id="term-target"
+                dir="auto"
+                value={translation}
+                onChange={(e) => setTranslation(e.target.value)}
+              />
+            </Field>
+          </div>
           <Button type="submit" loading={busy}>
             Save term
           </Button>
@@ -900,14 +1127,14 @@ export function TerminologyPage() {
 
         <div className="subpage-card">
           <Field
-            label="Search saved terms"
+            label="Search terms or languages"
             htmlFor="term-search"
             hint={
               trimmedQuery.length === 1
-                ? 'Type at least 2 characters to filter matching terms across languages.'
+                ? 'Type at least 2 characters to find matching languages or saved terms.'
                 : trimmedQuery.length >= 2
-                  ? `${visible.length} matching term(s) · Accent, harakat & script normalized`
-                  : 'Write at least 2 characters to find terms across Latin, Arabic, Hebrew & Bengali.'
+                  ? `${matchedLanguages.length} language match(es) · ${visible.length} saved term(s)`
+                  : 'Type 2+ chars (e.g. Sp for Spanish, Ar for Arabic, Bn for Bengali, or a term).'
             }
           >
             <Input
@@ -916,9 +1143,31 @@ export function TerminologyPage() {
               dir="auto"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Write at least 2 characters to search languages..."
+              placeholder="Search languages (Sp, Ar, Bn) or terms..."
             />
           </Field>
+
+          {matchedLanguages.length > 0 && (
+            <div className="vx-lang-matches" role="region" aria-label="Related languages">
+              <span className="ui-field-label" style={{ display: 'block', marginBottom: 6 }}>
+                Related languages — click to load starter terms
+              </span>
+              <div className="vx-preset-strip">
+                {matchedLanguages.map((lang) => (
+                  <button
+                    key={lang.code}
+                    type="button"
+                    className="vx-preset-chip vx-preset-chip--lang"
+                    disabled={busy}
+                    onClick={() => void loadLanguagePack(lang.code)}
+                  >
+                    + {lang.name} ({lang.nativeName} · {lang.code.toUpperCase()})
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div>
             <span className="ui-field-label" style={{ display: 'block', marginBottom: 6 }}>
               1-click starter packs
@@ -951,17 +1200,39 @@ export function TerminologyPage() {
           <EmptyState
             illustration={<EmptyTerminologyIllustration />}
             icon={<BookOpen size={20} />}
-            title="No matching glossary terms"
-            description="Save terms manually, import a CSV file, or use Research Prep in the Workspace Assistant."
+            title={
+              matchedLanguages.length > 0
+                ? `Found ${matchedLanguages.map((l) => l.name).join(', ')} — no saved terms yet`
+                : 'No matching glossary terms'
+            }
+            description={
+              matchedLanguages.length > 0
+                ? `Click "+ ${matchedLanguages[0].name}" above to load starter terms, or add your own.`
+                : 'Save terms manually, click a language pack above, or import a CSV file.'
+            }
+            action={
+              matchedLanguages.length > 0 ? (
+                <Button size="sm" onClick={() => void loadLanguagePack(matchedLanguages[0].code)} loading={busy}>
+                  Load {matchedLanguages[0].name} starter terms
+                </Button>
+              ) : undefined
+            }
           />
         ) : (
           <div className="workspace-grid">
             {visible.map((item) => (
               <article key={item.id} className="subpage-card">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                  <h2>
-                    <bdi dir="auto">{item.label}</bdi>
-                  </h2>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <h2>
+                      <bdi dir="auto">{item.label}</bdi>
+                    </h2>
+                    {item.target_lang && (
+                      <Badge tone="teal">
+                        {(item.source_lang || 'en').toUpperCase()} → {item.target_lang.toUpperCase()}
+                      </Badge>
+                    )}
+                  </div>
                   <Button
                     size="sm"
                     variant="ghost"
