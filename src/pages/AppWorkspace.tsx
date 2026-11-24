@@ -2,11 +2,15 @@ import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEv
 import { Link, useParams } from 'react-router-dom';
 import {
   Activity,
+  AlertTriangle,
   BookOpen,
   CalendarDays,
   Camera,
   Check,
+  CheckCircle2,
+  Copy,
   Download,
+  ExternalLink,
   Headset,
   Inbox,
   Mic,
@@ -15,6 +19,7 @@ import {
   Trash2,
   Volume2,
   Wifi,
+  XCircle,
 } from 'lucide-react';
 import { AppShell } from '../components/AppShell';
 import { EmptyAssignmentsIllustration, EmptyTerminologyIllustration } from '../components/EditorialIllustrations';
@@ -404,9 +409,42 @@ export function AssignmentsPage() {
         <form className="panel-form vx-beam-focus-card" onSubmit={createAssignment}>
           <span className="vox-border-beam-glow" aria-hidden="true" />
           <span className="vox-border-beam" aria-hidden="true" />
-          <Field label="Language pair" htmlFor="assign-pair">
-            <Input id="assign-pair" value={pair} onChange={(e) => setPair(e.target.value)} required />
-          </Field>
+          <div className="vx-preset-strip" role="group" aria-label="Quick session presets">
+            {[
+              { label: '30m Medical VRI', pair: 'EN-AR', modality: 'video_remote', duration: 30 },
+              { label: '60m Legal Consecutive', pair: 'EN-AR', modality: 'onsite', duration: 60 },
+              { label: '45m Phone OPI', pair: 'EN-BN', modality: 'over_the_phone', duration: 45 },
+            ].map((preset) => (
+              <button
+                key={preset.label}
+                type="button"
+                className="vx-preset-chip"
+                onClick={() => {
+                  setPair(preset.pair);
+                  setModality(preset.modality);
+                  setDuration(preset.duration);
+                }}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="form-row-2">
+            <Field label="Language pair" htmlFor="assign-pair">
+              <Input id="assign-pair" value={pair} onChange={(e) => setPair(e.target.value)} required />
+            </Field>
+            <Field label="Duration (min)" htmlFor="assign-duration">
+              <Input
+                id="assign-duration"
+                type="number"
+                min={5}
+                max={720}
+                value={duration}
+                onChange={(e) => setDuration(Number(e.target.value))}
+              />
+            </Field>
+          </div>
 
           <Field label="Modality" htmlFor="assign-modality">
             <Select
@@ -424,27 +462,15 @@ export function AssignmentsPage() {
             />
           </Field>
 
-          <div className="form-row-2">
-            <Field label="Start (local time)" htmlFor="assign-start">
-              <Input
-                id="assign-start"
-                type="datetime-local"
-                value={startLocal}
-                onChange={(e) => setStartLocal(e.target.value)}
-                required
-              />
-            </Field>
-            <Field label="Duration (min)" htmlFor="assign-duration">
-              <Input
-                id="assign-duration"
-                type="number"
-                min={5}
-                max={720}
-                value={duration}
-                onChange={(e) => setDuration(Number(e.target.value))}
-              />
-            </Field>
-          </div>
+          <Field label="Start (local time)" htmlFor="assign-start">
+            <Input
+              id="assign-start"
+              type="datetime-local"
+              value={startLocal}
+              onChange={(e) => setStartLocal(e.target.value)}
+              required
+            />
+          </Field>
 
           <Button type="submit" loading={busy}>
             Create assignment
@@ -695,7 +721,57 @@ export function TerminologyPage() {
     };
   }, [session?.access_token]);
 
-  const visible = terms.filter((item) => matchesSearch(`${item.label} ${item.target_term}`, query));
+  const trimmedQuery = query.trim();
+  const visible =
+    trimmedQuery.length >= 2
+      ? terms.filter((item) => matchesSearch(`${item.label} ${item.target_term}`, trimmedQuery))
+      : terms;
+
+  const STARTER_PACKS: Record<string, Array<{ label: string; target_term: string }>> = {
+    Medical: [
+      { label: 'Informed consent', target_term: 'الموافقة المستنيرة' },
+      { label: 'Shortness of breath', target_term: 'ضيق في التنفس' },
+      { label: 'Medication reconciliation', target_term: 'مراجعة الأدوية الحالية' },
+      { label: 'Vital signs', target_term: 'العلامات الحيوية' },
+    ],
+    Legal: [
+      { label: 'Sworn affirmation', target_term: 'إقرار تحت القسم' },
+      { label: 'Continuance request', target_term: 'طلب تأجيل الجلسة' },
+      { label: 'Stipulation', target_term: 'اتفاق إجرائي' },
+    ],
+    VRI: [
+      { label: 'Clarification pause', target_term: 'وقفة استيضاح' },
+      { label: 'Audio latency', target_term: 'زمن تأخر الصوت' },
+      { label: 'Repeat slowly', target_term: 'يرجى التكرار ببطء' },
+    ],
+  };
+
+  async function loadStarterPack(packName: keyof typeof STARTER_PACKS) {
+    const pack = STARTER_PACKS[packName];
+    const existing = new Set(terms.map((t) => t.label.toLowerCase()));
+    const fresh = pack.filter((p) => !existing.has(p.label.toLowerCase()));
+    if (fresh.length === 0) return;
+    setBusy(true);
+    try {
+      if (user || session?.access_token) {
+        const res = await fetch('/api/terms', {
+          method: 'POST',
+          headers: buildHeaders(session?.access_token, true),
+          credentials: 'same-origin',
+          body: JSON.stringify({ terms: fresh }),
+        });
+        if (res.ok) {
+          const json = await res.json();
+          const added = Array.isArray(json.data) ? json.data : [json.data];
+          setTerms((prev) => [...added, ...prev]);
+          return;
+        }
+      }
+      setTerms((prev) => [...fresh.map((p) => ({ id: crypto.randomUUID(), ...p })), ...prev]);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function addTerm(e: FormEvent) {
     e.preventDefault();
@@ -823,16 +899,44 @@ export function TerminologyPage() {
         </form>
 
         <div className="subpage-card">
-          <Field label="Search saved terms" htmlFor="term-search" hint="Accent, harakat, nikud & script normalized">
+          <Field
+            label="Search saved terms"
+            htmlFor="term-search"
+            hint={
+              trimmedQuery.length === 1
+                ? 'Type at least 2 characters to filter matching terms across languages.'
+                : trimmedQuery.length >= 2
+                  ? `${visible.length} matching term(s) · Accent, harakat & script normalized`
+                  : 'Write at least 2 characters to find terms across Latin, Arabic, Hebrew & Bengali.'
+            }
+          >
             <Input
               id="term-search"
               type="search"
               dir="auto"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search Latin, Arabic, Hebrew..."
+              placeholder="Write at least 2 characters to search languages..."
             />
           </Field>
+          <div>
+            <span className="ui-field-label" style={{ display: 'block', marginBottom: 6 }}>
+              1-click starter packs
+            </span>
+            <div className="vx-preset-strip">
+              {(['Medical', 'Legal', 'VRI'] as const).map((pack) => (
+                <button
+                  key={pack}
+                  type="button"
+                  className="vx-preset-chip"
+                  disabled={busy}
+                  onClick={() => void loadStarterPack(pack)}
+                >
+                  + {pack} terms
+                </button>
+              ))}
+            </div>
+          </div>
           <Field label="Import UTF-8 / UTF-16 CSV" htmlFor="term-csv">
             <Input id="term-csv" type="file" accept=".csv,text/csv" onChange={importCsv} />
           </Field>
@@ -1021,6 +1125,9 @@ export function DeviceCheckPage() {
   const [level, setLevel] = useState(0);
   const [liveDb, setLiveDb] = useState<number | null>(null);
   const [busyStep, setBusyStep] = useState<string | null>(null);
+  const [copiedUrl, setCopiedUrl] = useState(false);
+  const [nextAssignment, setNextAssignment] = useState<AssignmentItem | null>(null);
+  const [markingReady, setMarkingReady] = useState(false);
   const [deviceAlert, setDeviceAlert] = useState<{
     tone: 'error' | 'warn';
     title: string;
@@ -1127,6 +1234,20 @@ export function DeviceCheckPage() {
         .then((r) => (r.ok ? r.json() : null))
         .then((json) => {
           if (active && Array.isArray(json?.data)) setHistory(json.data);
+        })
+        .catch(() => {});
+
+      fetch('/api/assignments', {
+        headers: buildHeaders(session?.access_token),
+        credentials: 'same-origin',
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((json) => {
+          if (!active || !Array.isArray(json?.data)) return;
+          const upcoming = (json.data as AssignmentItem[]).find(
+            (a) => a.status === 'scheduled' || a.status === 'preparation_required' || a.status === 'rescheduled'
+          );
+          setNextAssignment(upcoming || null);
         })
         .catch(() => {});
     }
@@ -1831,13 +1952,30 @@ export function DeviceCheckPage() {
               </button>
             )}
             {deviceAlert.canOpenNewTab && (
-              <button
-                type="button"
-                className="vx-device-alert-close"
-                onClick={() => window.open(window.location.href, '_blank', 'noopener,noreferrer')}
-              >
-                {dc.openFullTab} ↗
-              </button>
+              <>
+                <a
+                  href={typeof window !== 'undefined' ? window.location.href : '/app/device-check'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="vx-device-alert-close"
+                >
+                  <span>{dc.openFullTab}</span>
+                  <ExternalLink size={12} aria-hidden="true" />
+                </a>
+                <button
+                  type="button"
+                  className="vx-device-alert-close"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(window.location.href).then(() => {
+                      setCopiedUrl(true);
+                      window.setTimeout(() => setCopiedUrl(false), 2000);
+                    });
+                  }}
+                >
+                  <Copy size={12} aria-hidden="true" />
+                  <span>{copiedUrl ? 'Copied ✓' : 'Copy link'}</span>
+                </button>
+              </>
             )}
             <button
               type="button"
@@ -1853,10 +1991,50 @@ export function DeviceCheckPage() {
 
       <section className="vx-ledger" aria-label="Readiness score breakdown">
         <div className="vx-ledger-head">
-          <h2>{dc.ledgerTitle}</h2>
-          <span className="vx-ledger-meta">
-            {profile === 'voice' ? dc.voice : profile === 'video' ? dc.video : dc.full} · {readiness.checks.length} {dc.probesLabel}
-          </span>
+          <div>
+            <h2>{dc.ledgerTitle}</h2>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
+            {nextAssignment && (
+              <div className="vx-next-gate">
+                <span>
+                  Next: <strong>{nextAssignment.ref}</strong> ({nextAssignment.language_pair})
+                </span>
+                <button
+                  type="button"
+                  className="vx-ledger-action"
+                  disabled={markingReady || readiness.verdict === 'fail'}
+                  title={
+                    readiness.verdict === 'fail'
+                      ? 'Pass readiness checks first to mark assignment ready'
+                      : `Mark ${nextAssignment.ref} ready`
+                  }
+                  onClick={async () => {
+                    setMarkingReady(true);
+                    const res = await fetch(`/api/assignments?id=${encodeURIComponent(nextAssignment.id)}`, {
+                      method: 'PATCH',
+                      headers: buildHeaders(session?.access_token, true),
+                      credentials: 'same-origin',
+                      body: JSON.stringify({ action: 'mark_ready' }),
+                    }).catch(() => null);
+                    setMarkingReady(false);
+                    if (res?.ok) {
+                      setMessage(`Marked ${nextAssignment.ref} ready for session.`);
+                      setNextAssignment(null);
+                    } else {
+                      const err = res ? await res.json().catch(() => ({})) : {};
+                      setMessage(err.error || 'Could not update assignment status.');
+                    }
+                  }}
+                >
+                  {markingReady ? 'Updating…' : 'Mark ready'}
+                </button>
+              </div>
+            )}
+            <span className="vx-ledger-meta">
+              {profile === 'voice' ? dc.voice : profile === 'video' ? dc.video : dc.full} · {readiness.checks.length} {dc.probesLabel}
+            </span>
+          </div>
         </div>
         <div className="vx-ledger-body">
           {readiness.checks.map((c) => {
@@ -1877,6 +2055,7 @@ export function DeviceCheckPage() {
                 : c.status === 'fail' || c.impactPoints === 0
                   ? 'fail'
                   : 'warn';
+            const rowPct = c.maxPoints > 0 ? Math.round((c.impactPoints / c.maxPoints) * 100) : 0;
 
             let actionLabel: string | null = null;
             let actionKind: 'mic' | 'tone' | 'camera' | 'screen' | 'network' | 'env' | null = null;
@@ -1903,7 +2082,7 @@ export function DeviceCheckPage() {
             }
 
             return (
-              <div key={c.id} className={`vx-ledger-row${isRunningRow ? ' is-running' : ''}`}>
+              <div key={c.id} className={`vx-ledger-row vx-ledger-row--${scoreTier}${isRunningRow ? ' is-running' : ''}`}>
                 {isRunningRow && (
                   <>
                     <span className="vox-border-beam-glow vox-border-beam-glow--row vox-border-beam-glow--always" aria-hidden="true" />
@@ -1912,11 +2091,23 @@ export function DeviceCheckPage() {
                 )}
                 <span className="vx-ledger-cat">{c.category}</span>
                 <div className="vx-ledger-title">
-                  <strong>{c.label}</strong>
+                  <strong className="vx-ledger-name">
+                    {scoreTier === 'pass' ? (
+                      <CheckCircle2 size={15} className="vx-row-ico vx-row-ico--pass" aria-hidden="true" />
+                    ) : scoreTier === 'warn' ? (
+                      <AlertTriangle size={15} className="vx-row-ico vx-row-ico--warn" aria-hidden="true" />
+                    ) : (
+                      <XCircle size={15} className="vx-row-ico vx-row-ico--fail" aria-hidden="true" />
+                    )}
+                    <span>{c.label}</span>
+                  </strong>
                   {c.status !== 'pass' && <span>{c.threshold}</span>}
                 </div>
                 <div className="vx-ledger-val-stack">
                   <span className="vx-ledger-val">{c.measured}</span>
+                  <div className="vx-row-meter" aria-hidden="true">
+                    <div className={`vx-row-meter-fill vx-row-meter-fill--${scoreTier}`} style={{ width: `${rowPct}%` }} />
+                  </div>
                   {c.measuredDetail && <span className="vx-ledger-val-sub">{c.measuredDetail}</span>}
                 </div>
                 <div className="vx-ledger-end">

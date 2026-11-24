@@ -1900,7 +1900,9 @@ p {
 
 .ui-input,
 .ui-textarea {
+  box-sizing: border-box;
   width: 100%;
+  min-width: 0;
   padding: 9px 12px;
   border: 1px solid var(--vr-hairline);
   border-radius: var(--radius-sm);
