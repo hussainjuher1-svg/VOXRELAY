@@ -56,6 +56,7 @@ export function AssistantTrigger({
       title={isAr ? 'مساعد العمل (Cmd+/)' : 'Work assistant (Cmd+/)'}
       onClick={onToggle}
     >
+      <span className="vox-border-beam vox-border-beam--pill vox-border-beam--always" aria-hidden="true" />
       <BrandMark size={16} pulsing={streaming} />
       <span>{isAr ? 'المساعد' : 'Assistant'}</span>
     </button>

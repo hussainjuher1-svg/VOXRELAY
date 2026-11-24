@@ -160,7 +160,8 @@ export function AppShell({
             className="app-topbar-assistant-btn"
             onClick={() => setAssistantOpen(!assistantOpen)}
           >
-            {isAr ? 'المساعد' : 'Assistant'}
+            <span className="vox-border-beam vox-border-beam--pill vox-border-beam--always" aria-hidden="true" />
+            <span>{isAr ? 'المساعد' : 'Assistant'}</span>
           </button>
         </div>
       </header>

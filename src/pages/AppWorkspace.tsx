@@ -152,40 +152,47 @@ export function OverviewPage() {
       ) : (
         <>
           <div className="vx-kpi-grid">
-            <article className="vx-kpi-card vx-kpi-card--terracotta">
+            <article className={`vx-kpi-card${assignments.length > 0 ? ' is-live-beam' : ''}`}>
+              <span className="vox-border-beam" aria-hidden="true" />
               <span className="eyebrow">Scheduled</span>
               <span className="vx-kpi-value">{assignments.length}</span>
               <Link className="inline-link" to="/app/assignments">
                 Open assignments
               </Link>
             </article>
-            <article className="vx-kpi-card vx-kpi-card--forest">
+            <article className={`vx-kpi-card${readyCount > 0 ? ' is-live-beam' : ''}`}>
+              <span className="vox-border-beam" aria-hidden="true" />
               <span className="eyebrow">Ready / active</span>
               <span className="vx-kpi-value">{readyCount}</span>
               <Link className="inline-link" to="/app/ops">
                 Inspect ops queues
               </Link>
             </article>
-            <article className="vx-kpi-card vx-kpi-card--gold">
+            <article className="vx-kpi-card">
+              <span className="vox-border-beam" aria-hidden="true" />
               <span className="eyebrow">Glossary terms</span>
               <span className="vx-kpi-value">{termsCount}</span>
               <Link className="inline-link" to="/app/terminology">
                 Open terminology
               </Link>
             </article>
-            <article className="vx-kpi-card vx-kpi-card--sage">
-              <span className="eyebrow">Session status</span>
-              <span className="vx-kpi-value" style={{ fontSize: 22, paddingTop: 6 }}>
-                {user ? 'Signed in' : 'Guest'}
-              </span>
-              <span style={{ fontSize: 13, color: 'var(--vr-ink-2)' }}>
-                {user ? user.email : 'Sign in to sync records'}
-              </span>
-            </article>
+            {!user && (
+              <article className="vx-kpi-card is-live-beam">
+                <span className="vox-border-beam" aria-hidden="true" />
+                <span className="eyebrow">Session status</span>
+                <span className="vx-kpi-value" style={{ fontSize: 22, paddingTop: 6 }}>
+                  Guest
+                </span>
+                <Link className="inline-link" to="/login?returnTo=/app">
+                  Sign in to sync records
+                </Link>
+              </article>
+            )}
           </div>
 
           <div className="workspace-grid">
-            <article className="subpage-card">
+            <article className={`subpage-card vx-kpi-card${nextUp ? ' is-live-beam' : ''}`}>
+              <span className="vox-border-beam" aria-hidden="true" />
               <span className="eyebrow">NEXT SESSION</span>
               <h2 style={{ marginTop: 6 }}>{nextUp ? `${nextUp.ref} · ${nextUp.language_pair}` : 'No upcoming assignments'}</h2>
               <p>
@@ -228,6 +235,7 @@ export function AssignmentsPage() {
   const [startLocal, setStartLocal] = useState(() => new Date(Date.now() + 3_600_000).toISOString().slice(0, 16));
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [icsDragOver, setIcsDragOver] = useState(false);
 
   const refresh = useCallback(async () => {
     const res = await fetch('/api/assignments', {
@@ -386,7 +394,8 @@ export function AssignmentsPage() {
       </div>
 
       <div className="workspace-grid">
-        <form className="panel-form" onSubmit={createAssignment}>
+        <form className="panel-form vx-beam-focus-card" onSubmit={createAssignment}>
+          <span className="vox-border-beam" aria-hidden="true" />
           <Field label="Language pair" htmlFor="assign-pair">
             <Input id="assign-pair" value={pair} onChange={(e) => setPair(e.target.value)} required />
           </Field>
@@ -439,10 +448,31 @@ export function AssignmentsPage() {
           )}
         </form>
 
-        <div className="subpage-card">
+        <div
+          className={`subpage-card vx-ics-dropzone${icsDragOver ? ' is-dragover' : ''}`}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIcsDragOver(true);
+          }}
+          onDragLeave={() => setIcsDragOver(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setIcsDragOver(false);
+            const file = e.dataTransfer.files?.[0];
+            if (file) {
+              void file.text().then((txt) => setIcsSlots(parseIcsTimingOnly(txt)));
+            }
+          }}
+        >
+          <span className="vox-border-beam" aria-hidden="true" />
           <h2>Timing-only .ics import</h2>
           <p>Reads DTSTART and DTEND only. Event titles, attendees, and descriptions are discarded.</p>
-          <Input type="file" accept=".ics,text/calendar" onChange={handleIcsImport} aria-label="Import ICS file" />
+          <div className="vx-ics-drop-area">
+            <span style={{ fontSize: 12, color: 'var(--vr-ink-2)' }}>
+              Drop a `.ics` calendar file here or choose from your device
+            </span>
+            <Input type="file" accept=".ics,text/calendar" onChange={handleIcsImport} aria-label="Import ICS file" />
+          </div>
           {icsSlots.length > 0 && (
             <>
               <ul style={{ marginTop: 14, paddingInlineStart: 18 }}>
