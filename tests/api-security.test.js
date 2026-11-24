@@ -426,7 +426,7 @@ describe('Local SQLite API security, authorization, isolation & concurrency', ()
     expect(hashSecret(raceToken)).toBeTruthy();
   });
 
-  it('enforces atomic rate limit under concurrent contact bursts (Priority 5)', async () => {
+  it('enforces atomic rate limit under concurrent contact & signup bursts (Priority 5)', async () => {
     const burst = await Promise.all(
       Array.from({ length: 10 }, (_, i) => {
         const res = createMockRes();
@@ -443,16 +443,44 @@ describe('Local SQLite API security, authorization, isolation & concurrency', ()
     );
     expect(burst.filter((r) => r.statusCode === 201).length).toBe(6);
     expect(burst.filter((r) => r.statusCode === 429).length).toBe(4);
+
+    const signupBurst = await Promise.all(
+      Array.from({ length: 8 }, (_, i) => {
+        const res = createMockRes();
+        return authHandler(
+          createMockReq({
+            method: 'POST',
+            url: '/api/auth',
+            ip: '198.51.100.88',
+            body: {
+              action: 'signup',
+              email: `local.burst.${i}@voxrelay.test`,
+              password: 'ValidBurstPassword123!',
+              fullName: 'Burst User',
+            },
+          }),
+          res
+        ).then(() => res);
+      })
+    );
+    expect(signupBurst.filter((r) => r.statusCode === 201).length).toBe(5);
+    expect(signupBurst.filter((r) => r.statusCode === 429).length).toBe(3);
   });
 
-  it('rolls back review transition if audit write fails (Priority 4)', async () => {
+  it('rolls back review transition AND organization creation if audit write fails (Priority 4)', async () => {
     const c = createMockRes();
     await contactHandler(
       createMockReq({
         method: 'POST',
         url: '/api/contact',
         ip: '10.0.0.4',
-        body: { email: 'audit.fail@voxrelay.test', message: 'Audit fail test', consent: true },
+        body: {
+          email: 'audit.fail@voxrelay.test',
+          role: 'organization',
+          organization: 'Rollback Local Clinic',
+          message: 'Audit fail test',
+          consent: true,
+        },
       }),
       c
     );
@@ -472,15 +500,18 @@ describe('Local SQLite API security, authorization, isolation & concurrency', ()
         method: 'POST',
         url: '/api/admin',
         headers: { cookie: adminCookie },
-        body: { id: reqId, decision: 'reject', note: 'Should rollback' },
+        body: { id: reqId, decision: 'approve', note: 'Should rollback' },
       }),
       reviewRes
     );
     expect(reviewRes.statusCode).toBe(500);
 
-    // Status MUST remain 'pending' because transaction rolled back
-    const row = db.prepare('SELECT status FROM access_requests WHERE id = ?').get(reqId);
+    // Status MUST remain 'pending' AND zero organizations created because transaction rolled back
+    const row = db.prepare('SELECT status, org_id FROM access_requests WHERE id = ?').get(reqId);
     expect(row.status).toBe('pending');
+    expect(row.org_id).toBeNull();
+    const orgCount = db.prepare("SELECT COUNT(*) AS c FROM organizations WHERE name = 'Rollback Local Clinic'").get().c;
+    expect(orgCount).toBe(0);
     db.exec('DROP TRIGGER IF EXISTS fail_audit_insert_test;');
   });
 

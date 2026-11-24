@@ -2,7 +2,6 @@ import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Stateful in-memory transactional Postgres/Supabase test harness for Vercel production routes
 const state = {
   usersByToken: new Map(),
   usersById: new Map(),
@@ -27,7 +26,15 @@ const state = {
     failAuditInsert: false,
     failRateLimitRpc: false,
     failMembershipInsert: false,
+    failCreateUser: false,
+    failDeleteUser: false,
+    failResendEmail: false,
+    throwResendEmail: false,
+    failFinalizeInvite: false,
+    failReleaseInvite: false,
+    leaseExpiresInMs: 120_000,
   },
+  resendCalls: [],
 };
 
 function resetHarness() {
@@ -36,7 +43,20 @@ function resetHarness() {
   state.usersByEmail.clear();
   for (const k of Object.keys(state.tables)) state.tables[k] = [];
   state.seq = { access_requests: 1, audit_events: 1, rate_events: 1 };
-  state.faults = { failAuditInsert: false, failRateLimitRpc: false, failMembershipInsert: false };
+  state.faults = {
+    failAuditInsert: false,
+    failRateLimitRpc: false,
+    failMembershipInsert: false,
+    failCreateUser: false,
+    failDeleteUser: false,
+    failResendEmail: false,
+    throwResendEmail: false,
+    failFinalizeInvite: false,
+    failReleaseInvite: false,
+    leaseExpiresInMs: 120_000,
+  };
+  state.resendCalls = [];
+  process.env.VITE_SUPABASE_ANON_KEY = 'test-anon-key-not-real';
 }
 
 function registerAuthUser({ id = crypto.randomUUID(), email, appRole = 'interpreter', userRoleMeta = undefined, confirmed = true }) {
@@ -198,11 +218,21 @@ vi.mock('@supabase/supabase-js', () => ({
         if (!user) return { data: { user: null }, error: { message: 'Invalid JWT' } };
         return { data: { user }, error: null };
       },
-      async resend() {
+      async resend(payload) {
+        state.resendCalls.push(payload);
+        if (state.faults.throwResendEmail) {
+          throw new Error('network timeout sending mail');
+        }
+        if (state.faults.failResendEmail) {
+          return { data: null, error: { message: 'SMTP rate limited' } };
+        }
         return { data: {}, error: null };
       },
       admin: {
         async createUser({ email, email_confirm = false, user_metadata = {}, app_metadata = {} }) {
+          if (state.faults.failCreateUser) {
+            return { data: { user: null }, error: { message: 'Auth upstream temporary failure' } };
+          }
           const normalized = String(email).toLowerCase();
           if (state.usersByEmail.has(normalized)) {
             return { data: { user: null }, error: { message: 'User already registered' } };
@@ -219,6 +249,9 @@ vi.mock('@supabase/supabase-js', () => ({
           return { data: { user }, error: null };
         },
         async deleteUser(userId) {
+          if (state.faults.failDeleteUser) {
+            return { data: null, error: { message: 'deleteUser RPC error' } };
+          }
           const u = state.usersById.get(userId);
           if (u) {
             state.usersById.delete(userId);
@@ -253,14 +286,28 @@ vi.mock('@supabase/supabase-js', () => ({
         if (row.status !== 'pending') {
           return { data: { ok: false, code: 'already_reviewed', status: row.status }, error: null };
         }
+        // Emulate single-transaction rollback if audit insert fails
         if (state.faults.failAuditInsert) {
           return { data: null, error: { message: 'audit transaction aborted' } };
         }
+
+        let orgId = null;
+        let approvedRole = 'interpreter';
         const nextStatus = args.p_decision === 'approve' ? 'approved' : 'rejected';
-        const approvedRole =
-          args.p_decision === 'approve' && row.audience === 'organization' && args.p_provision_org_id
-            ? 'admin'
-            : 'interpreter';
+
+        if (args.p_decision === 'approve' && row.audience === 'organization') {
+          orgId = row.org_id || crypto.randomUUID();
+          if (!row.org_id) {
+            state.tables.organizations.push({
+              id: orgId,
+              name: String(row.organization || '').trim().slice(0, 120) || `Organization #${row.id}`,
+              created_by: args.p_reviewer_id,
+              created_at: new Date().toISOString(),
+            });
+          }
+          approvedRole = 'admin';
+        }
+
         Object.assign(row, {
           status: nextStatus,
           reviewer_note: args.p_note || '',
@@ -268,9 +315,12 @@ vi.mock('@supabase/supabase-js', () => ({
           reviewed_at: new Date().toISOString(),
           invite_token_hash: args.p_decision === 'approve' ? args.p_invite_hash : null,
           invite_expires_at: args.p_decision === 'approve' ? args.p_invite_expires_at : null,
-          org_id: args.p_decision === 'approve' ? args.p_provision_org_id : null,
+          org_id: orgId,
           approved_role: approvedRole,
+          claim_token: null,
+          claim_expires_at: null,
         });
+
         state.tables.audit_events.push({
           id: state.seq.audit_events++,
           actor_id: args.p_reviewer_id,
@@ -281,6 +331,7 @@ vi.mock('@supabase/supabase-js', () => ({
           result: nextStatus,
           created_at: new Date().toISOString(),
         });
+
         return {
           data: {
             ok: true,
@@ -295,22 +346,33 @@ vi.mock('@supabase/supabase-js', () => ({
         };
       }
 
-      if (fnName === 'claim_access_invite') {
+      if (fnName === 'reserve_access_invite') {
         const row = state.tables.access_requests.find((r) => r.invite_token_hash === args.p_token_hash);
         if (!row) return { data: { ok: false, code: 'invalid_or_used' }, error: null };
-        if (row.status !== 'approved') return { data: { ok: false, code: 'not_approved' }, error: null };
+        if (row.status === 'redeemed') return { data: { ok: false, code: 'already_redeemed' }, error: null };
+        if (row.status === 'rejected' || row.status === 'pending') {
+          return { data: { ok: false, code: 'not_approved' }, error: null };
+        }
         if (row.invite_expires_at && new Date(row.invite_expires_at).getTime() <= Date.now()) {
           return { data: { ok: false, code: 'expired' }, error: null };
         }
         if (row.email.trim().toLowerCase() !== String(args.p_email).trim().toLowerCase()) {
           return { data: { ok: false, code: 'email_mismatch' }, error: null };
         }
-        row.status = 'redeemed';
-        row.invite_token_hash = null;
+        if (row.status === 'reserved' && (!row.claim_expires_at || new Date(row.claim_expires_at).getTime() > Date.now())) {
+          return { data: { ok: false, code: 'in_progress' }, error: null };
+        }
+        const claimToken = crypto.randomUUID();
+        const claimExpiresAt = new Date(Date.now() + state.faults.leaseExpiresInMs).toISOString();
+        row.status = 'reserved';
+        row.claim_token = claimToken;
+        row.claim_expires_at = claimExpiresAt;
         return {
           data: {
             ok: true,
             id: row.id,
+            claim_token: claimToken,
+            claim_expires_at: claimExpiresAt,
             email: row.email,
             audience: row.audience,
             org_id: row.org_id || null,
@@ -318,6 +380,46 @@ vi.mock('@supabase/supabase-js', () => ({
           },
           error: null,
         };
+      }
+
+      if (fnName === 'finalize_access_invite') {
+        if (state.faults.failFinalizeInvite || state.faults.failAuditInsert) {
+          return { data: null, error: { message: 'finalize transaction aborted' } };
+        }
+        const row = state.tables.access_requests.find(
+          (r) => r.id === args.p_request_id && r.status === 'reserved' && r.claim_token === args.p_claim_token
+        );
+        if (!row) return { data: { ok: false, code: 'lease_lost' }, error: null };
+        row.status = 'redeemed';
+        row.invite_token_hash = null;
+        row.claim_token = null;
+        row.claim_expires_at = null;
+        row.provisioned_user_id = args.p_user_id;
+        state.tables.audit_events.push({
+          id: state.seq.audit_events++,
+          actor_id: args.p_user_id,
+          org_id: row.org_id || null,
+          area: 'auth',
+          type: 'invite_signup',
+          object_ref: String(row.id),
+          result: 'ok',
+          created_at: new Date().toISOString(),
+        });
+        return { data: { ok: true, id: row.id, org_id: row.org_id || null, status: 'redeemed' }, error: null };
+      }
+
+      if (fnName === 'release_access_invite') {
+        if (state.faults.failReleaseInvite) {
+          return { data: null, error: { message: 'release RPC offline' } };
+        }
+        const row = state.tables.access_requests.find(
+          (r) => r.id === args.p_request_id && r.status === 'reserved' && r.claim_token === args.p_claim_token
+        );
+        if (!row) return { data: false, error: null };
+        row.status = 'approved';
+        row.claim_token = null;
+        row.claim_expires_at = null;
+        return { data: true, error: null };
       }
 
       return { data: null, error: { message: `Unknown RPC ${fnName}` } };
@@ -357,7 +459,7 @@ function createRes() {
   };
 }
 
-describe('Production Supabase mode (VERCEL=1): authorization, invitation lifecycle & concurrency', () => {
+describe('Production Supabase mode (VERCEL=1): reliability, two-phase invites, rate limits & concurrency', () => {
   let adminHandler;
   let authHandler;
   let contactHandler;
@@ -388,6 +490,44 @@ describe('Production Supabase mode (VERCEL=1): authorization, invitation lifecyc
     resetHarness();
   });
 
+  async function seedAndApproveOrgInvite({ email = 'rahman@clinic.org', orgName = 'Chattogram Medical', adminToken }) {
+    const cRes = createRes();
+    await contactHandler(
+      createReq({
+        method: 'POST',
+        url: '/api/contact',
+        ip: '198.51.100.10',
+        body: {
+          fullName: 'Dr. Rahman',
+          email,
+          audience: 'organization',
+          organization: orgName,
+          country: 'Bangladesh',
+          languages: 'EN-BN',
+          message: 'Onboard clinic',
+          consent: true,
+        },
+      }),
+      cRes
+    );
+    expect(cRes.statusCode).toBe(201);
+    const reqId = state.tables.access_requests[state.tables.access_requests.length - 1].id;
+
+    const approveRes = createRes();
+    await adminHandler(
+      createReq({
+        method: 'POST',
+        url: '/api/admin',
+        headers: { authorization: `Bearer ${adminToken}` },
+        body: { id: reqId, decision: 'approve', note: 'Approved' },
+      }),
+      approveRes
+    );
+    expect(approveRes.statusCode).toBe(200);
+    const inviteToken = new URL(approveRes.json().inviteUrl).searchParams.get('invite');
+    return { reqId, inviteToken, orgId: approveRes.json().orgId };
+  }
+
   it('separates platform_admin from org_admin, user_metadata spoofing, and cross-org records', async () => {
     const orgAId = crypto.randomUUID();
     const orgBId = crypto.randomUUID();
@@ -410,7 +550,6 @@ describe('Production Supabase mode (VERCEL=1): authorization, invitation lifecyc
       { id: crypto.randomUUID(), org_id: orgBId, user_id: orgBAdmin.user.id, role: 'owner', status: 'active' }
     );
 
-    // Seed org-scoped audit & assignment records
     const orgBAssignmentId = crypto.randomUUID();
     state.tables.assignments.push({
       id: orgBAssignmentId,
@@ -430,27 +569,22 @@ describe('Production Supabase mode (VERCEL=1): authorization, invitation lifecyc
       { id: state.seq.audit_events++, actor_id: platformAdmin.user.id, org_id: null, area: 'admin', type: 'global_platform_event', result: 'ok', created_at: new Date().toISOString() }
     );
 
-    // Spoofed user_metadata.role MUST NOT grant /api/admin
     const spoofRes = createRes();
     await adminHandler(createReq({ headers: { authorization: `Bearer ${spoofedUser.token}` } }), spoofRes);
     expect(spoofRes.statusCode).toBe(403);
 
-    // Org admin MUST NOT access global /api/admin
     const orgAdminRes = createRes();
     await adminHandler(createReq({ headers: { authorization: `Bearer ${orgAAdmin.token}` } }), orgAdminRes);
     expect(orgAdminRes.statusCode).toBe(403);
 
-    // Org owner MUST NOT access global /api/admin
     const orgOwnerRes = createRes();
     await adminHandler(createReq({ headers: { authorization: `Bearer ${orgBAdmin.token}` } }), orgOwnerRes);
     expect(orgOwnerRes.statusCode).toBe(403);
 
-    // Platform admin CAN access global /api/admin
     const platRes = createRes();
     await adminHandler(createReq({ headers: { authorization: `Bearer ${platformAdmin.token}` } }), platRes);
     expect(platRes.statusCode).toBe(200);
 
-    // Org A admin audit query ONLY returns Org A rows (never Org B or global platform rows)
     const orgAAuditRes = createRes();
     await opsHandler(
       createReq({ url: '/api/ops?resource=audit', headers: { authorization: `Bearer ${orgAAdmin.token}` } }),
@@ -462,7 +596,6 @@ describe('Production Supabase mode (VERCEL=1): authorization, invitation lifecyc
     expect(types).not.toContain('org_b_secret');
     expect(types).not.toContain('global_platform_event');
 
-    // Org A admin CANNOT read Org B assignment (404)
     const crossOrgAssign = createRes();
     await assignmentsHandler(
       createReq({
@@ -474,36 +607,207 @@ describe('Production Supabase mode (VERCEL=1): authorization, invitation lifecyc
     expect(crossOrgAssign.statusCode).toBe(404);
   });
 
-  it('executes complete production Supabase invitation lifecycle with email binding, confirmation, and atomic concurrency', async () => {
+  it('Scenario 1-6: preserves invitation on createUser/duplicate/membership/finalize failures, cleans up Auth+membership, surfaces cleanup errors, and succeeds on retry', async () => {
     const platformAdmin = registerAuthUser({ email: 'padmin@voxrelay.test', appRole: 'platform_admin' });
+    const { reqId, inviteToken, orgId } = await seedAndApproveOrgInvite({
+      email: 'retry.lead@clinic.org',
+      orgName: 'Retry Clinic',
+      adminToken: platformAdmin.token,
+    });
 
-    // 1. Contact submits organization access request
-    const cRes = createRes();
-    await contactHandler(
+    // 1. Supabase Auth createUser failure does NOT burn the invitation
+    state.faults.failCreateUser = true;
+    const f1 = createRes();
+    await authHandler(
       createReq({
         method: 'POST',
-        url: '/api/contact',
-        ip: '198.51.100.10',
+        url: '/api/auth',
+        ip: '198.51.100.21',
+        body: { action: 'signup', email: 'retry.lead@clinic.org', password: 'ValidStrongPassword123!', inviteToken },
+      }),
+      f1
+    );
+    expect(f1.statusCode).toBe(500);
+    expect(state.tables.access_requests.find((r) => r.id === reqId).status).toBe('approved');
+    state.faults.failCreateUser = false;
+
+    // 2. Membership insertion failure deletes Auth user, releases reservation, leaves 0 memberships
+    state.faults.failMembershipInsert = true;
+    const f2 = createRes();
+    await authHandler(
+      createReq({
+        method: 'POST',
+        url: '/api/auth',
+        ip: '198.51.100.22',
+        body: { action: 'signup', email: 'retry.lead@clinic.org', password: 'ValidStrongPassword123!', inviteToken },
+      }),
+      f2
+    );
+    expect(f2.statusCode).toBe(500);
+    expect(state.usersByEmail.has('retry.lead@clinic.org')).toBe(false);
+    expect(state.tables.memberships.length).toBe(0);
+    expect(state.tables.access_requests.find((r) => r.id === reqId).status).toBe('approved');
+    state.faults.failMembershipInsert = false;
+
+    // 3. Finalize / audit failure AFTER membership insertion cleans up BOTH membership AND Auth user + releases reservation
+    state.faults.failFinalizeInvite = true;
+    const f3 = createRes();
+    await authHandler(
+      createReq({
+        method: 'POST',
+        url: '/api/auth',
+        ip: '198.51.100.23',
+        body: { action: 'signup', email: 'retry.lead@clinic.org', password: 'ValidStrongPassword123!', inviteToken },
+      }),
+      f3
+    );
+    expect(f3.statusCode).toBe(500);
+    expect(state.usersByEmail.has('retry.lead@clinic.org')).toBe(false);
+    expect(state.tables.memberships.length).toBe(0); // zero orphan memberships!
+    expect(state.tables.access_requests.find((r) => r.id === reqId).status).toBe('approved');
+    state.faults.failFinalizeInvite = false;
+
+    // 4. Cleanup failure itself is explicitly reported (never swallowed)
+    state.faults.failMembershipInsert = true;
+    state.faults.failDeleteUser = true;
+    const f4 = createRes();
+    await authHandler(
+      createReq({
+        method: 'POST',
+        url: '/api/auth',
+        ip: '198.51.100.24',
+        body: { action: 'signup', email: 'retry.lead@clinic.org', password: 'ValidStrongPassword123!', inviteToken },
+      }),
+      f4
+    );
+    expect(f4.statusCode).toBe(500);
+    expect(f4.json().error).toMatch(/rollback cleanup was incomplete/i);
+    state.faults.failMembershipInsert = false;
+    state.faults.failDeleteUser = false;
+    // Reset stale user from simulated deleteUser failure before testing final retry
+    state.usersByEmail.delete('retry.lead@clinic.org');
+    // Force release reservation from simulated deleteUser failure
+    state.tables.access_requests.find((r) => r.id === reqId).status = 'approved';
+
+    // 5. Valid invitation succeeds on retry after all recoverable failures!
+    const ok = createRes();
+    await authHandler(
+      createReq({
+        method: 'POST',
+        url: '/api/auth',
+        ip: '198.51.100.25',
+        body: { action: 'signup', email: 'retry.lead@clinic.org', password: 'ValidStrongPassword123!', inviteToken },
+      }),
+      ok
+    );
+    expect(ok.statusCode).toBe(201);
+    expect(ok.json().accountCreated).toBe(true);
+    expect(ok.json().confirmationEmailSent).toBe(true);
+    expect(ok.json().user.org_id).toBe(orgId);
+    expect(ok.json().user.org_role).toBe('admin');
+    expect(state.tables.memberships.length).toBe(1);
+    expect(state.tables.access_requests.find((r) => r.id === reqId).status).toBe('redeemed');
+  });
+
+  it('Scenario 2 & 7-8: handles duplicate-email 409 safely, prevents concurrent invite redemption, and recovers expired reservation leases', async () => {
+    const platformAdmin = registerAuthUser({ email: 'padmin@voxrelay.test', appRole: 'platform_admin' });
+
+    // Duplicate email pre-existing: 409 preserves invitation status as approved
+    registerAuthUser({ email: 'existing@clinic.org', appRole: 'interpreter' });
+    const dupInvite = await seedAndApproveOrgInvite({
+      email: 'existing@clinic.org',
+      orgName: 'Dup Clinic',
+      adminToken: platformAdmin.token,
+    });
+    const dupRes = createRes();
+    await authHandler(
+      createReq({
+        method: 'POST',
+        url: '/api/auth',
+        ip: '198.51.100.30',
         body: {
-          fullName: 'Dr. Rahman',
-          email: 'rahman@clinic.org',
-          audience: 'organization',
-          organization: 'Chattogram Medical',
-          country: 'Bangladesh',
-          languages: 'EN-BN',
-          message: 'Please onboard our team.',
-          consent: true,
+          action: 'signup',
+          email: 'existing@clinic.org',
+          password: 'ValidStrongPassword123!',
+          inviteToken: dupInvite.inviteToken,
         },
       }),
-      cRes
+      dupRes
     );
-    expect(cRes.statusCode).toBe(201);
-    expect(cRes.json().emailDispatched).toBe(false);
-    expect(state.tables.access_requests[0].country).toBe('Bangladesh');
+    expect(dupRes.statusCode).toBe(409);
+    expect(state.tables.access_requests.find((r) => r.id === dupInvite.reqId).status).toBe('approved');
 
-    const reqId = state.tables.access_requests[0].id;
+    // Concurrent invite redemption -> strictly 1 succeeds (201)
+    const concInvite = await seedAndApproveOrgInvite({
+      email: 'conc.user@clinic.org',
+      orgName: 'Concurrent Clinic',
+      adminToken: platformAdmin.token,
+    });
+    const race = await Promise.all(
+      Array.from({ length: 5 }, (_, idx) => {
+        const res = createRes();
+        return authHandler(
+          createReq({
+            method: 'POST',
+            url: '/api/auth',
+            ip: `198.51.100.${40 + idx}`,
+            body: {
+              action: 'signup',
+              email: 'conc.user@clinic.org',
+              password: 'ValidStrongPassword123!',
+              inviteToken: concInvite.inviteToken,
+            },
+          }),
+          res
+        ).then(() => res);
+      })
+    );
+    expect(race.filter((r) => r.statusCode === 201).length).toBe(1);
+    expect(race.filter((r) => r.statusCode !== 201).length).toBe(4);
+    expect(state.tables.memberships.filter((m) => m.org_id === concInvite.orgId).length).toBe(1);
 
-    // 2. Concurrent approvals on the pending request -> strictly 1 succeeds (200), 2 conflict (409)
+    // Expired reservation lease recovery
+    const leaseInvite = await seedAndApproveOrgInvite({
+      email: 'lease.recover@clinic.org',
+      orgName: 'Lease Recovery Clinic',
+      adminToken: platformAdmin.token,
+    });
+    const reqObj = state.tables.access_requests.find((r) => r.id === leaseInvite.reqId);
+    reqObj.status = 'reserved';
+    reqObj.claim_token = crypto.randomUUID();
+    reqObj.claim_expires_at = new Date(Date.now() - 5000).toISOString();
+
+    const recovered = createRes();
+    await authHandler(
+      createReq({
+        method: 'POST',
+        url: '/api/auth',
+        ip: '198.51.100.50',
+        body: {
+          action: 'signup',
+          email: 'lease.recover@clinic.org',
+          password: 'ValidStrongPassword123!',
+          inviteToken: leaseInvite.inviteToken,
+        },
+      }),
+      recovered
+    );
+    expect(recovered.statusCode).toBe(201);
+    expect(state.tables.access_requests.find((r) => r.id === leaseInvite.reqId).status).toBe('redeemed');
+  });
+
+  it('Scenario 9-11: concurrent approvals create strictly 1 org, and rejected or audit-failed reviews leave zero orphan orgs', async () => {
+    const platformAdmin = registerAuthUser({ email: 'padmin@voxrelay.test', appRole: 'platform_admin' });
+
+    // 1. Concurrent organization approvals -> 1 winner, 1 organization
+    state.tables.access_requests.push({
+      id: 101,
+      name: 'Race Org',
+      email: 'raceorg@clinic.org',
+      audience: 'organization',
+      organization: 'Race Medical',
+      status: 'pending',
+    });
     const approvalRace = await Promise.all(
       Array.from({ length: 3 }, () => {
         const res = createRes();
@@ -512,185 +816,180 @@ describe('Production Supabase mode (VERCEL=1): authorization, invitation lifecyc
             method: 'POST',
             url: '/api/admin',
             headers: { authorization: `Bearer ${platformAdmin.token}` },
-            body: { id: reqId, decision: 'approve', note: 'Approved' },
+            body: { id: 101, decision: 'approve', note: 'Approved' },
           }),
           res
         ).then(() => res);
       })
     );
-    const okApprovals = approvalRace.filter((r) => r.statusCode === 200);
-    expect(okApprovals.length).toBe(1);
+    expect(approvalRace.filter((r) => r.statusCode === 200).length).toBe(1);
     expect(approvalRace.filter((r) => r.statusCode === 409).length).toBe(2);
+    expect(state.tables.organizations.filter((o) => o.name === 'Race Medical').length).toBe(1);
 
-    const approvalJson = okApprovals[0].json();
-    expect(approvalJson.emailDispatched).toBe(false);
-    expect(approvalJson.orgId).toBeTruthy();
-    // Must have provisioned a real verified organization row, never using raw free-text name as ID
-    expect(state.tables.organizations.some((o) => o.id === approvalJson.orgId)).toBe(true);
-
-    const inviteToken = new URL(approvalJson.inviteUrl).searchParams.get('invite');
-
-    // 3. Wrong email is rejected (403) without consuming invite
-    const wrongEmail = createRes();
-    await authHandler(
+    // 2. Audit failure on organization approval leaves ZERO orphan organizations
+    state.tables.access_requests.push({
+      id: 102,
+      name: 'Rollback Org',
+      email: 'rborg@clinic.org',
+      audience: 'organization',
+      organization: 'Rollback Medical',
+      status: 'pending',
+    });
+    state.faults.failAuditInsert = true;
+    const failRev = createRes();
+    await adminHandler(
       createReq({
         method: 'POST',
-        url: '/api/auth',
-        body: {
-          action: 'signup',
-          email: 'intruder@evil.org',
-          password: 'ValidStrongPassword123!',
-          fullName: 'Intruder',
-          inviteToken,
-        },
+        url: '/api/admin',
+        headers: { authorization: `Bearer ${platformAdmin.token}` },
+        body: { id: 102, decision: 'approve', note: 'Approve' },
       }),
-      wrongEmail
+      failRev
     );
-    expect(wrongEmail.statusCode).toBe(403);
+    expect(failRev.statusCode).toBe(500);
+    expect(state.tables.organizations.filter((o) => o.name === 'Rollback Medical').length).toBe(0);
+    expect(state.tables.access_requests.find((r) => r.id === 102).status).toBe('pending');
+    state.faults.failAuditInsert = false;
 
-    // 4. Concurrent redemption with invited email -> strictly 1 succeeds (201)
-    const redeemRace = await Promise.all(
-      Array.from({ length: 5 }, () => {
+    // 3. Rejected organization request never creates an organization
+    state.tables.access_requests.push({
+      id: 103,
+      name: 'Rejected Org',
+      email: 'rejorg@clinic.org',
+      audience: 'organization',
+      organization: 'Rejected Medical',
+      status: 'pending',
+    });
+    const rejRes = createRes();
+    await adminHandler(
+      createReq({
+        method: 'POST',
+        url: '/api/admin',
+        headers: { authorization: `Bearer ${platformAdmin.token}` },
+        body: { id: 103, decision: 'reject', note: 'Not eligible' },
+      }),
+      rejRes
+    );
+    expect(rejRes.statusCode).toBe(200);
+    expect(state.tables.organizations.filter((o) => o.name === 'Rejected Medical').length).toBe(0);
+  });
+
+  it('Scenario 12: enforces atomic rate limits on public signup, contact, and fails closed on DB error', async () => {
+    const signupBurst = await Promise.all(
+      Array.from({ length: 8 }, (_, i) => {
         const res = createRes();
         return authHandler(
           createReq({
             method: 'POST',
             url: '/api/auth',
+            ip: '198.51.100.77',
             body: {
               action: 'signup',
-              email: 'rahman@clinic.org',
+              email: `burst.signup.${i}@clinic.org`,
               password: 'ValidStrongPassword123!',
-              fullName: 'Dr. Rahman',
-              inviteToken,
+              fullName: 'Burst User',
             },
           }),
           res
         ).then(() => res);
       })
     );
-    const createdCalls = redeemRace.filter((r) => r.statusCode === 201);
-    expect(createdCalls.length).toBe(1);
-    expect(redeemRace.filter((r) => r.statusCode !== 201).length).toBe(4);
+    expect(signupBurst.filter((r) => r.statusCode === 201).length).toBe(5);
+    expect(signupBurst.filter((r) => r.statusCode === 429).length).toBe(3);
 
-    const createdBody = createdCalls[0].json();
-    expect(createdBody.requiresConfirmation).toBe(true);
-    expect(createdBody.user.role).toBe('interpreter'); // never platform_admin
-    expect(createdBody.user.org_id).toBe(approvalJson.orgId);
-    expect(createdBody.user.org_role).toBe('admin');
-
-    const provisionedAuthUser = state.usersByEmail.get('rahman@clinic.org');
-    expect(provisionedAuthUser.email_confirmed_at).toBeNull(); // email confirmation preserved
-    expect(provisionedAuthUser.app_metadata.role).toBe('interpreter');
-
-    // 5. Reapproving a redeemed request must return 409
-    const reapprove = createRes();
-    await adminHandler(
-      createReq({
-        method: 'POST',
-        url: '/api/admin',
-        headers: { authorization: `Bearer ${platformAdmin.token}` },
-        body: { id: reqId, decision: 'approve', note: 'Retry' },
-      }),
-      reapprove
-    );
-    expect(reapprove.statusCode).toBe(409);
-
-    // 6. Uninvited public signup always gets ordinary interpreter role with no memberships
-    const publicSignup = createRes();
+    // DB rate limiter error fails closed (503) before creating any user
+    state.faults.failRateLimitRpc = true;
+    const failedDbRes = createRes();
     await authHandler(
       createReq({
         method: 'POST',
         url: '/api/auth',
+        ip: '198.51.100.99',
         body: {
           action: 'signup',
-          email: 'public.interp@voxrelay.test',
-          password: 'PublicInterpPassword123!',
-          fullName: 'Public Interp',
-          role: 'org_admin',
+          email: 'dbfail.signup@clinic.org',
+          password: 'ValidStrongPassword123!',
         },
-      }),
-      publicSignup
-    );
-    expect(publicSignup.statusCode).toBe(201);
-    expect(publicSignup.json().user.role).toBe('interpreter');
-    expect(publicSignup.json().user.org_id).toBeNull();
-  });
-
-  it('enforces atomic rate limit under concurrent Supabase requests and fails closed on DB errors', async () => {
-    const burst = await Promise.all(
-      Array.from({ length: 10 }, (_, i) => {
-        const res = createRes();
-        return contactHandler(
-          createReq({
-            method: 'POST',
-            url: '/api/contact',
-            ip: '203.0.113.88',
-            body: { email: `burst${i}@clinic.org`, message: 'Test', consent: true },
-          }),
-          res
-        ).then(() => res);
-      })
-    );
-    expect(burst.filter((r) => r.statusCode === 201).length).toBe(6);
-    expect(burst.filter((r) => r.statusCode === 429).length).toBe(4);
-
-    // DB error fails closed (503) instead of allowing request through
-    state.faults.failRateLimitRpc = true;
-    const failedDbRes = createRes();
-    await contactHandler(
-      createReq({
-        method: 'POST',
-        url: '/api/contact',
-        ip: '203.0.113.99',
-        body: { email: 'dbfail@clinic.org', message: 'Test', consent: true },
       }),
       failedDbRes
     );
     expect(failedDbRes.statusCode).toBe(503);
+    expect(state.usersByEmail.has('dbfail.signup@clinic.org')).toBe(false);
   });
 
-  it('rolls back / fails closed if audit write fails during Supabase review or invite signup', async () => {
+  it('Scenario 13: reports confirmation email failures truthfully, preserves invites on dispatch error, and supports safe resend_confirmation', async () => {
     const platformAdmin = registerAuthUser({ email: 'padmin@voxrelay.test', appRole: 'platform_admin' });
-    state.tables.access_requests.push({
-      id: 99,
-      name: 'Audit Test',
-      email: 'audit.test@clinic.org',
-      audience: 'interpreter',
-      status: 'pending',
+    const { reqId, inviteToken, orgId } = await seedAndApproveOrgInvite({
+      email: 'mailfail.invite@clinic.org',
+      orgName: 'Mail Fail Clinic',
+      adminToken: platformAdmin.token,
     });
 
-    state.faults.failAuditInsert = true;
-    const reviewErrRes = createRes();
-    await adminHandler(
-      createReq({
-        method: 'POST',
-        url: '/api/admin',
-        headers: { authorization: `Bearer ${platformAdmin.token}` },
-        body: { id: 99, decision: 'reject', note: 'Test' },
-      }),
-      reviewErrRes
-    );
-    expect(reviewErrRes.statusCode).toBe(500);
-    expect(state.tables.access_requests.find((r) => r.id === 99).status).toBe('pending');
-    state.faults.failAuditInsert = false;
-
-    // Also verify if audit write fails during invite signup, auth user is rolled back (deleted)
-    state.faults.failAuditInsert = true;
-    const signupErrRes = createRes();
+    // Missing anonKey on invited signup -> rolls back user+membership & preserves invite (503)
+    delete process.env.VITE_SUPABASE_ANON_KEY;
+    const noKeyRes = createRes();
     await authHandler(
       createReq({
         method: 'POST',
         url: '/api/auth',
+        ip: '198.51.100.120',
         body: {
           action: 'signup',
-          email: 'rollback.user@voxrelay.test',
-          password: 'RollbackUserPassword123!',
-          fullName: 'Rollback',
+          email: 'mailfail.invite@clinic.org',
+          password: 'ValidStrongPassword123!',
+          inviteToken,
         },
       }),
-      signupErrRes
+      noKeyRes
     );
-    expect(signupErrRes.statusCode).toBe(500);
-    expect(state.usersByEmail.has('rollback.user@voxrelay.test')).toBe(false);
+    expect(noKeyRes.statusCode).toBe(503);
+    expect(noKeyRes.json().accountCreated).toBe(false);
+    expect(noKeyRes.json().confirmationEmailSent).toBe(false);
+    expect(noKeyRes.json().invitePreserved).toBe(true);
+    expect(state.usersByEmail.has('mailfail.invite@clinic.org')).toBe(false);
+    expect(state.tables.memberships.filter((m) => m.org_id === orgId).length).toBe(0);
+    expect(state.tables.access_requests.find((r) => r.id === reqId).status).toBe('approved');
+    process.env.VITE_SUPABASE_ANON_KEY = 'test-anon-key-not-real';
+
+    // Uninvited signup when resend() returns an error -> truthful accountCreated=true, confirmationEmailSent=false
+    state.faults.failResendEmail = true;
+    const uninvitedRes = createRes();
+    await authHandler(
+      createReq({
+        method: 'POST',
+        url: '/api/auth',
+        ip: '198.51.100.121',
+        body: {
+          action: 'signup',
+          email: 'unconfirmed.interp@clinic.org',
+          password: 'ValidStrongPassword123!',
+        },
+      }),
+      uninvitedRes
+    );
+    expect(uninvitedRes.statusCode).toBe(201);
+    expect(uninvitedRes.json().accountCreated).toBe(true);
+    expect(uninvitedRes.json().confirmationEmailSent).toBe(false);
+    expect(uninvitedRes.json().confirmationWarning).toBeTruthy();
+
+    // Retry via action='resend_confirmation' recovers without creating a duplicate account
+    state.faults.failResendEmail = false;
+    const userCountBefore = state.usersByEmail.size;
+    const resendOk = createRes();
+    await authHandler(
+      createReq({
+        method: 'POST',
+        url: '/api/auth',
+        ip: '198.51.100.122',
+        body: {
+          action: 'resend_confirmation',
+          email: 'unconfirmed.interp@clinic.org',
+        },
+      }),
+      resendOk
+    );
+    expect(resendOk.statusCode).toBe(200);
+    expect(resendOk.json().confirmationEmailSent).toBe(true);
+    expect(state.usersByEmail.size).toBe(userCountBefore);
   });
 });

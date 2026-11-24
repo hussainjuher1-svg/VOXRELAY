@@ -95,6 +95,15 @@ export default async function handler(req, res) {
 
           if (reqRow.role === 'organization') {
             provisionedOrgId = reqRow.org_id || crypto.randomUUID();
+            if (!reqRow.org_id) {
+              const orgName = String(reqRow.organization || '').trim().slice(0, 120) || `Organization ${provisionedOrgId.slice(0, 8)}`;
+              db.prepare('INSERT INTO organizations (id, name, created_by, created_at) VALUES (?, ?, ?, ?)').run(
+                provisionedOrgId,
+                orgName,
+                actor.user.id,
+                new Date().toISOString()
+              );
+            }
           }
 
           const upd = db
@@ -197,37 +206,14 @@ export default async function handler(req, res) {
         return sendJson(res, 400, { error: 'Invalid access request ID.' });
       }
 
-      const { data: reqRow, error: lookupErr } = await ctx.supabase
-        .from('access_requests')
-        .select('id, audience, organization, status, org_id')
-        .eq('id', numericId)
-        .maybeSingle();
-      if (lookupErr) throw new Error(lookupErr.message);
-      if (!reqRow) return sendJson(res, 404, { error: 'Access request not found.' });
-      if (reqRow.status !== 'pending') {
-        return sendJson(res, 409, { error: `Access request has already been ${reqRow.status}.` });
-      }
-
-      let provisionOrgId = reqRow.org_id || null;
-      if (parsed.data.decision === 'approve' && reqRow.audience === 'organization' && !provisionOrgId) {
-        const orgName = String(reqRow.organization || '').trim() || `Organization #${numericId}`;
-        const { data: orgRow, error: orgErr } = await ctx.supabase
-          .from('organizations')
-          .insert({ name: orgName.slice(0, 120), created_by: ctx.userId })
-          .select('id')
-          .single();
-        if (orgErr || !orgRow?.id) {
-          throw new Error(orgErr?.message || 'Unable to provision organization record.');
-        }
-        provisionOrgId = orgRow.id;
-      }
-
       const rawInvite = parsed.data.decision === 'approve' ? crypto.randomBytes(24).toString('base64url') : null;
       const inviteHash = rawInvite ? hashSecret(rawInvite) : null;
       const expiresAt = rawInvite ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() : null;
       const origin = process.env.APP_ORIGIN || 'https://voxrelay.vercel.app';
       const inviteUrl = rawInvite ? `${origin}/login?invite=${encodeURIComponent(rawInvite)}` : null;
 
+      // Organization creation, request lock/transition, and audit_events insert
+      // all happen inside the single transactional review_access_request RPC.
       const { data: rpcResult, error: rpcErr } = await ctx.supabase.rpc('review_access_request', {
         p_request_id: numericId,
         p_decision: parsed.data.decision,
@@ -235,7 +221,6 @@ export default async function handler(req, res) {
         p_reviewer_id: ctx.userId,
         p_invite_hash: inviteHash,
         p_invite_expires_at: expiresAt,
-        p_provision_org_id: provisionOrgId,
       });
 
       if (rpcErr) {

@@ -1,8 +1,19 @@
--- Migration 002: Atomic invitation review/redemption RPCs, verified org linkage, and advisory-locked rate limiting.
+-- Migration 002: Two-phase invitation reservation/finalization/release,
+-- in-transaction organization provisioning on approval, and advisory-locked rate limiting.
 
 ALTER TABLE voxrelay.access_requests
   ADD COLUMN IF NOT EXISTS org_id UUID REFERENCES voxrelay.organizations(id) ON DELETE SET NULL,
-  ADD COLUMN IF NOT EXISTS approved_role TEXT NOT NULL DEFAULT 'interpreter';
+  ADD COLUMN IF NOT EXISTS approved_role TEXT NOT NULL DEFAULT 'interpreter',
+  ADD COLUMN IF NOT EXISTS claim_token UUID,
+  ADD COLUMN IF NOT EXISTS claim_expires_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS provisioned_user_id UUID;
+
+ALTER TABLE voxrelay.access_requests
+  DROP CONSTRAINT IF EXISTS access_requests_status_check;
+
+ALTER TABLE voxrelay.access_requests
+  ADD CONSTRAINT access_requests_status_check
+  CHECK (status IN ('pending', 'approved', 'reserved', 'rejected', 'redeemed'));
 
 DO $$
 BEGIN
@@ -15,16 +26,27 @@ BEGIN
   END IF;
 END $$;
 
--- Atomic review transition: only 'pending' requests can move to 'approved' or 'rejected',
--- and the corresponding audit_events record is written inside the same transaction.
+CREATE INDEX IF NOT EXISTS idx_voxrelay_access_requests_claim
+  ON voxrelay.access_requests(id, claim_token)
+  WHERE claim_token IS NOT NULL;
+
+-- Drop older signature if present from an earlier revision of Migration 002
+DROP FUNCTION IF EXISTS voxrelay.review_access_request(BIGINT, TEXT, TEXT, UUID, TEXT, TIMESTAMPTZ, UUID);
+DROP FUNCTION IF EXISTS voxrelay.claim_access_invite(TEXT, TEXT);
+
+-- Atomic review transition:
+--   1. Locks pending access_requests row FOR UPDATE
+--   2. Confirms status = 'pending'
+--   3. Creates organization record INSIDE the same transaction for approved organization requests
+--   4. Stores verified org_id and approved_role on the request
+--   5. Inserts audit_events inside the same transaction (any failure rolls everything back)
 CREATE OR REPLACE FUNCTION voxrelay.review_access_request(
   p_request_id BIGINT,
   p_decision TEXT,
   p_note TEXT,
   p_reviewer_id UUID,
   p_invite_hash TEXT DEFAULT NULL,
-  p_invite_expires_at TIMESTAMPTZ DEFAULT NULL,
-  p_provision_org_id UUID DEFAULT NULL
+  p_invite_expires_at TIMESTAMPTZ DEFAULT NULL
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -32,25 +54,22 @@ SECURITY DEFINER
 SET search_path = voxrelay, pg_catalog
 AS $$
 DECLARE
+  v_req voxrelay.access_requests%ROWTYPE;
   v_row voxrelay.access_requests%ROWTYPE;
-  v_existing_status TEXT;
   v_next_status TEXT;
-  v_approved_role TEXT;
+  v_org_id UUID := NULL;
+  v_org_name TEXT;
+  v_approved_role TEXT := 'interpreter';
 BEGIN
   IF p_decision NOT IN ('approve', 'reject') THEN
     RAISE EXCEPTION 'Invalid review decision';
   END IF;
 
-  IF p_decision = 'approve' THEN
-    IF p_invite_hash IS NULL OR length(trim(p_invite_hash)) = 0 THEN
-      RAISE EXCEPTION 'Invite token hash is required for approval';
-    END IF;
-    v_next_status := 'approved';
-  ELSE
-    v_next_status := 'rejected';
+  IF p_decision = 'approve' AND (p_invite_hash IS NULL OR length(trim(p_invite_hash)) = 0) THEN
+    RAISE EXCEPTION 'Invite token hash is required for approval';
   END IF;
 
-  SELECT status INTO v_existing_status
+  SELECT * INTO v_req
   FROM voxrelay.access_requests
   WHERE id = p_request_id
   FOR UPDATE;
@@ -59,8 +78,27 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'code', 'not_found');
   END IF;
 
-  IF v_existing_status <> 'pending' THEN
-    RETURN jsonb_build_object('ok', false, 'code', 'already_reviewed', 'status', v_existing_status);
+  IF v_req.status <> 'pending' THEN
+    RETURN jsonb_build_object('ok', false, 'code', 'already_reviewed', 'status', v_req.status);
+  END IF;
+
+  IF p_decision = 'approve' THEN
+    v_next_status := 'approved';
+    IF v_req.audience = 'organization' THEN
+      IF v_req.org_id IS NOT NULL THEN
+        v_org_id := v_req.org_id;
+      ELSE
+        v_org_name := left(COALESCE(NULLIF(trim(v_req.organization), ''), 'Organization #' || p_request_id::TEXT), 120);
+        INSERT INTO voxrelay.organizations (name, created_by)
+        VALUES (v_org_name, p_reviewer_id)
+        RETURNING id INTO v_org_id;
+      END IF;
+      v_approved_role := 'admin';
+    END IF;
+  ELSE
+    v_next_status := 'rejected';
+    v_org_id := NULL;
+    v_approved_role := 'interpreter';
   END IF;
 
   UPDATE voxrelay.access_requests
@@ -71,11 +109,10 @@ BEGIN
     reviewed_at = now(),
     invite_token_hash = CASE WHEN p_decision = 'approve' THEN p_invite_hash ELSE NULL END,
     invite_expires_at = CASE WHEN p_decision = 'approve' THEN p_invite_expires_at ELSE NULL END,
-    org_id = CASE WHEN p_decision = 'approve' THEN p_provision_org_id ELSE NULL END,
-    approved_role = CASE
-      WHEN p_decision = 'approve' AND audience = 'organization' AND p_provision_org_id IS NOT NULL THEN 'admin'
-      ELSE 'interpreter'
-    END
+    org_id = v_org_id,
+    approved_role = v_approved_role,
+    claim_token = NULL,
+    claim_expires_at = NULL
   WHERE id = p_request_id AND status = 'pending'
   RETURNING * INTO v_row;
 
@@ -93,24 +130,24 @@ BEGIN
     v_next_status
   );
 
-  v_approved_role := v_row.approved_role;
   RETURN jsonb_build_object(
     'ok', true,
     'id', v_row.id,
     'email', v_row.email,
     'audience', v_row.audience,
     'org_id', v_row.org_id,
-    'approved_role', v_approved_role,
+    'approved_role', v_row.approved_role,
     'status', v_row.status
   );
 END;
 $$;
 
--- Atomic conditional invitation claim: verifies token hash, status='approved',
--- invited email match, and non-expiration before transitioning to 'redeemed'.
-CREATE OR REPLACE FUNCTION voxrelay.claim_access_invite(
+-- Phase 1 of two-phase invite redemption: atomically reserve an approved (or lease-expired) invitation.
+-- Keeps invite_token_hash intact so recoverable provisioning failures can release and retry safely.
+CREATE OR REPLACE FUNCTION voxrelay.reserve_access_invite(
   p_token_hash TEXT,
-  p_email TEXT
+  p_email TEXT,
+  p_lease_seconds INTEGER DEFAULT 120
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -118,44 +155,28 @@ SECURITY DEFINER
 SET search_path = voxrelay, pg_catalog
 AS $$
 DECLARE
-  v_row voxrelay.access_requests%ROWTYPE;
   v_existing voxrelay.access_requests%ROWTYPE;
+  v_claim UUID;
+  v_claim_exp TIMESTAMPTZ;
 BEGIN
   IF p_token_hash IS NULL OR length(trim(p_token_hash)) = 0 THEN
     RETURN jsonb_build_object('ok', false, 'code', 'invalid');
   END IF;
 
-  UPDATE voxrelay.access_requests
-  SET
-    status = 'redeemed',
-    invite_token_hash = NULL
-  WHERE invite_token_hash = p_token_hash
-    AND status = 'approved'
-    AND lower(trim(email)) = lower(trim(p_email))
-    AND (invite_expires_at IS NULL OR invite_expires_at > now())
-  RETURNING * INTO v_row;
-
-  IF FOUND THEN
-    RETURN jsonb_build_object(
-      'ok', true,
-      'id', v_row.id,
-      'email', v_row.email,
-      'audience', v_row.audience,
-      'org_id', v_row.org_id,
-      'approved_role', v_row.approved_role
-    );
-  END IF;
-
   SELECT * INTO v_existing
   FROM voxrelay.access_requests
   WHERE invite_token_hash = p_token_hash
-  LIMIT 1;
+  FOR UPDATE;
 
   IF NOT FOUND THEN
     RETURN jsonb_build_object('ok', false, 'code', 'invalid_or_used');
   END IF;
 
-  IF v_existing.status <> 'approved' THEN
+  IF v_existing.status = 'redeemed' THEN
+    RETURN jsonb_build_object('ok', false, 'code', 'already_redeemed');
+  END IF;
+
+  IF v_existing.status = 'rejected' OR v_existing.status = 'pending' THEN
     RETURN jsonb_build_object('ok', false, 'code', 'not_approved');
   END IF;
 
@@ -167,7 +188,113 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'code', 'email_mismatch');
   END IF;
 
-  RETURN jsonb_build_object('ok', false, 'code', 'invalid');
+  IF v_existing.status = 'reserved' AND (v_existing.claim_expires_at IS NULL OR v_existing.claim_expires_at > now()) THEN
+    RETURN jsonb_build_object('ok', false, 'code', 'in_progress');
+  END IF;
+
+  v_claim := gen_random_uuid();
+  v_claim_exp := now() + (GREATEST(10, COALESCE(p_lease_seconds, 120)) * INTERVAL '1 second');
+
+  UPDATE voxrelay.access_requests
+  SET
+    status = 'reserved',
+    claim_token = v_claim,
+    claim_expires_at = v_claim_exp
+  WHERE id = v_existing.id
+    AND invite_token_hash = p_token_hash
+    AND (
+      status = 'approved'
+      OR (status = 'reserved' AND claim_expires_at IS NOT NULL AND claim_expires_at <= now())
+    );
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', false, 'code', 'in_progress');
+  END IF;
+
+  RETURN jsonb_build_object(
+    'ok', true,
+    'id', v_existing.id,
+    'claim_token', v_claim,
+    'claim_expires_at', v_claim_exp,
+    'email', v_existing.email,
+    'audience', v_existing.audience,
+    'org_id', v_existing.org_id,
+    'approved_role', v_existing.approved_role
+  );
+END;
+$$;
+
+-- Phase 2 of two-phase invite redemption: finalize to 'redeemed' and write audit_events atomically
+-- only after Auth user and membership provisioning succeed.
+CREATE OR REPLACE FUNCTION voxrelay.finalize_access_invite(
+  p_request_id BIGINT,
+  p_claim_token UUID,
+  p_user_id UUID
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = voxrelay, pg_catalog
+AS $$
+DECLARE
+  v_row voxrelay.access_requests%ROWTYPE;
+BEGIN
+  UPDATE voxrelay.access_requests
+  SET
+    status = 'redeemed',
+    invite_token_hash = NULL,
+    claim_token = NULL,
+    claim_expires_at = NULL,
+    provisioned_user_id = p_user_id
+  WHERE id = p_request_id
+    AND status = 'reserved'
+    AND claim_token = p_claim_token
+  RETURNING * INTO v_row;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', false, 'code', 'lease_lost');
+  END IF;
+
+  INSERT INTO voxrelay.audit_events (actor_id, org_id, area, type, object_ref, result)
+  VALUES (
+    p_user_id,
+    v_row.org_id,
+    'auth',
+    'invite_signup',
+    p_request_id::TEXT,
+    'ok'
+  );
+
+  RETURN jsonb_build_object(
+    'ok', true,
+    'id', v_row.id,
+    'org_id', v_row.org_id,
+    'status', v_row.status
+  );
+END;
+$$;
+
+-- Recovery path: release a reservation lease if provisioning failed before finalization.
+CREATE OR REPLACE FUNCTION voxrelay.release_access_invite(
+  p_request_id BIGINT,
+  p_claim_token UUID
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = voxrelay, pg_catalog
+AS $$
+BEGIN
+  UPDATE voxrelay.access_requests
+  SET
+    status = 'approved',
+    claim_token = NULL,
+    claim_expires_at = NULL
+  WHERE id = p_request_id
+    AND status = 'reserved'
+    AND claim_token = p_claim_token;
+
+  RETURN FOUND;
 END;
 $$;
 
@@ -205,11 +332,17 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION voxrelay.review_access_request(BIGINT, TEXT, TEXT, UUID, TEXT, TIMESTAMPTZ, UUID) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION voxrelay.review_access_request(BIGINT, TEXT, TEXT, UUID, TEXT, TIMESTAMPTZ, UUID) TO service_role;
+REVOKE ALL ON FUNCTION voxrelay.review_access_request(BIGINT, TEXT, TEXT, UUID, TEXT, TIMESTAMPTZ) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION voxrelay.review_access_request(BIGINT, TEXT, TEXT, UUID, TEXT, TIMESTAMPTZ) TO service_role;
 
-REVOKE ALL ON FUNCTION voxrelay.claim_access_invite(TEXT, TEXT) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION voxrelay.claim_access_invite(TEXT, TEXT) TO service_role;
+REVOKE ALL ON FUNCTION voxrelay.reserve_access_invite(TEXT, TEXT, INTEGER) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION voxrelay.reserve_access_invite(TEXT, TEXT, INTEGER) TO service_role;
+
+REVOKE ALL ON FUNCTION voxrelay.finalize_access_invite(BIGINT, UUID, UUID) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION voxrelay.finalize_access_invite(BIGINT, UUID, UUID) TO service_role;
+
+REVOKE ALL ON FUNCTION voxrelay.release_access_invite(BIGINT, UUID) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION voxrelay.release_access_invite(BIGINT, UUID) TO service_role;
 
 REVOKE ALL ON FUNCTION voxrelay.consume_rate_limit(TEXT, INTEGER, BIGINT) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION voxrelay.consume_rate_limit(TEXT, INTEGER, BIGINT) TO service_role;

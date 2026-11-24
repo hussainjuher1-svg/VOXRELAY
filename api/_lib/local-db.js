@@ -84,6 +84,13 @@ export function getLocalDb() {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS organizations (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS assignments (
       id TEXT PRIMARY KEY,
       ref TEXT NOT NULL UNIQUE,

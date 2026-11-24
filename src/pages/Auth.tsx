@@ -32,9 +32,34 @@ export function LoginPage() {
   }, [loading, user, navigate, returnTo]);
 
   async function handleResendConfirmation() {
-    if (!supabase || !email) return;
+    if (!email) return;
     setBusy(true);
     try {
+      const serverRes = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ action: 'resend_confirmation', email }),
+      }).catch(() => null);
+
+      if (serverRes) {
+        const serverData = await serverRes.json().catch(() => ({}));
+        if (serverRes.ok && serverData.confirmationEmailSent) {
+          setFeedback({ kind: 'info', text: `Confirmation link re-sent to ${email}. Check your inbox and spam folder.` });
+          setNeedsConfirmation(false);
+          return;
+        }
+        if (!serverRes.ok && serverRes.status !== 503) {
+          setFeedback({ kind: 'error', text: serverData.error || 'Unable to resend confirmation email.' });
+          return;
+        }
+      }
+
+      if (!supabase) {
+        setFeedback({ kind: 'error', text: 'Confirmation email delivery is unavailable.' });
+        return;
+      }
+
       const { error } = await supabase.auth.resend({ type: 'signup', email });
       if (error) setFeedback({ kind: 'error', text: error.message });
       else {
@@ -92,8 +117,11 @@ export function LoginPage() {
           if (localData.requiresConfirmation) {
             setNeedsConfirmation(true);
             setFeedback({
-              kind: 'info',
-              text: 'Account created. Check your inbox to confirm your email before signing in.',
+              kind: localData.confirmationEmailSent === false ? 'error' : 'info',
+              text:
+                localData.confirmationEmailSent === false
+                  ? localData.confirmationWarning || 'Account created, but confirmation email could not be sent. Retry below.'
+                  : 'Account created. Check your inbox to confirm your email before signing in.',
             });
             return;
           }
