@@ -1122,6 +1122,25 @@ export function DeviceCheckPage() {
     }
   }
 
+  async function runEnvRescan() {
+    setBusyStep('env');
+    try {
+      const env = await detectEnvironment();
+      setEnvReport(env);
+      setMessage('Browser & hardware environment re-scanned.');
+    } finally {
+      setBusyStep(null);
+    }
+  }
+
+  function triggerRowAction(kind: 'mic' | 'tone' | 'camera' | 'network' | 'env') {
+    if (kind === 'mic') void runMicProbe();
+    else if (kind === 'tone') playSpeakerTone();
+    else if (kind === 'camera') void runCameraProbe();
+    else if (kind === 'network') void runNetworkProbe();
+    else void runEnvRescan();
+  }
+
   async function runFullSuite() {
     setBusyStep('all');
     const [env, net] = await Promise.all([detectEnvironment(), probeNetworkDiagnostics(12)]);
@@ -1360,7 +1379,7 @@ export function DeviceCheckPage() {
               <Camera size={14} />
               <span>{periph.cameraResolution ? `Cam ${periph.cameraResolution}` : 'Test camera'}</span>
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => void detectEnvironment().then(setEnvReport)}>
+            <Button size="sm" variant="ghost" onClick={() => void runEnvRescan()} loading={busyStep === 'env'}>
               <Monitor size={14} />
               <span>Re-scan</span>
             </Button>
@@ -1371,44 +1390,112 @@ export function DeviceCheckPage() {
       <section className="vx-ledger" aria-label="Readiness score breakdown">
         <div className="vx-ledger-head">
           <h2>Diagnostic ledger &amp; thresholds</h2>
-          <span className="mono-ltr" style={{ fontSize: 12, color: 'var(--vr-ink-2)' }}>
-            Profile: {profile} · {readiness.checks.length} live probes
+          <span className="vx-ledger-meta">
+            Profile: {profile === 'voice' ? 'Voice-only' : profile === 'video' ? 'Voice + Video' : 'Full session'} · {readiness.checks.length} live probes
           </span>
         </div>
-        {readiness.checks.map((c) => (
-          <div key={c.id} className="vx-ledger-row">
-            <span className="vx-ledger-cat">{c.category}</span>
-            <div className="vx-ledger-title">
-              <strong>{c.label}</strong>
-              <span>Target: {c.threshold}</span>
-            </div>
-            <span className="vx-ledger-val">{c.measured}</span>
-            <Badge tone={c.status === 'pass' ? 'success' : c.status === 'warn' ? 'warning' : 'danger'}>
-              {c.impactPoints}/{c.maxPoints}
-            </Badge>
-          </div>
-        ))}
+        <div className="vx-ledger-body">
+          {readiness.checks.map((c) => {
+            const isMic = c.id === 'periph_mic';
+            const isAv = c.id === 'periph_av';
+            const isNet = c.id === 'net_latency' || c.id === 'net_loss_bw';
+            const isEnv = c.id === 'browser_webrtc' || c.id === 'device_cpu' || c.id === 'device_storage';
+
+            const isRunningRow =
+              (isMic && (busyStep === 'mic' || busyStep === 'all')) ||
+              (isAv && busyStep === 'camera') ||
+              (isNet && (busyStep === 'network' || busyStep === 'all')) ||
+              (isEnv && (busyStep === 'env' || busyStep === 'all'));
+
+            const scoreTier =
+              c.status === 'pass' && c.impactPoints === c.maxPoints
+                ? 'pass'
+                : c.status === 'fail' || c.impactPoints === 0
+                  ? 'fail'
+                  : 'warn';
+
+            let actionLabel: string | null = null;
+            let actionKind: 'mic' | 'tone' | 'camera' | 'network' | 'env' | null = null;
+            if (isMic && c.impactPoints < c.maxPoints) {
+              actionLabel = busyStep === 'mic' ? 'Testing…' : 'Test mic';
+              actionKind = 'mic';
+            } else if (isAv && c.impactPoints < c.maxPoints) {
+              if (profile === 'voice') {
+                actionLabel = 'Play tone';
+                actionKind = 'tone';
+              } else {
+                actionLabel = busyStep === 'camera' ? 'Testing…' : 'Test camera';
+                actionKind = 'camera';
+              }
+            } else if (isNet && c.impactPoints < c.maxPoints) {
+              actionLabel = busyStep === 'network' ? 'Probing…' : 'Re-check';
+              actionKind = 'network';
+            } else if (isEnv && c.impactPoints < c.maxPoints) {
+              actionLabel = busyStep === 'env' ? 'Scanning…' : 'Re-check';
+              actionKind = 'env';
+            }
+
+            return (
+              <div key={c.id} className={`vx-ledger-row${isRunningRow ? ' is-running' : ''}`}>
+                {isRunningRow && (
+                  <>
+                    <span className="vox-border-beam-glow vox-border-beam-glow--row vox-border-beam-glow--always" aria-hidden="true" />
+                    <span className="vox-border-beam vox-border-beam--row vox-border-beam--always" aria-hidden="true" />
+                  </>
+                )}
+                <span className="vx-ledger-cat">{c.category}</span>
+                <div className="vx-ledger-title">
+                  <strong>{c.label}</strong>
+                  <span>Target: {c.threshold}</span>
+                </div>
+                <span className="vx-ledger-val">{c.measured}</span>
+                <div className="vx-ledger-end">
+                  {actionLabel && actionKind && (
+                    <button
+                      type="button"
+                      className="vx-ledger-action"
+                      disabled={Boolean(busyStep)}
+                      onClick={() => triggerRowAction(actionKind)}
+                    >
+                      {actionLabel}
+                    </button>
+                  )}
+                  <span className={`vx-score-pill vx-score-pill--${scoreTier}`}>
+                    {c.impactPoints}/{c.maxPoints}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </section>
 
       {history.length > 0 && (
         <section className="vx-ledger" aria-label="Saved readiness runs">
           <div className="vx-ledger-head">
             <h2>Saved diagnostic history</h2>
-            <span className="mono-ltr" style={{ fontSize: 12, color: 'var(--vr-ink-2)' }}>{history.length} saved run(s)</span>
+            <span className="vx-ledger-meta">{history.length} saved run(s)</span>
           </div>
-          {history.slice(0, 8).map((h) => (
-            <div key={h.id} className="vx-ledger-row">
-              <span className="vx-ledger-cat">{h.profile}</span>
-              <div className="vx-ledger-title">
-                <strong>Readiness score: {h.score} / 100</strong>
-                <span className="mono-ltr">{h.created_at}</span>
-              </div>
-              <span className="vx-ledger-val">{h.id.slice(0, 8)}</span>
-              <Badge tone={h.verdict === 'pass' ? 'success' : h.verdict === 'warn' ? 'warning' : 'danger'}>
-                {h.verdict}
-              </Badge>
-            </div>
-          ))}
+          <div className="vx-ledger-body">
+            {history.slice(0, 8).map((h) => {
+              const tier = h.verdict === 'pass' ? 'pass' : h.verdict === 'warn' ? 'warn' : 'fail';
+              return (
+                <div key={h.id} className="vx-ledger-row">
+                  <span className="vx-ledger-cat">{h.profile}</span>
+                  <div className="vx-ledger-title">
+                    <strong>Readiness score: {h.score} / 100</strong>
+                    <span>{new Date(h.created_at).toLocaleString()}</span>
+                  </div>
+                  <span className="vx-ledger-val">Run {h.id.slice(0, 8)}</span>
+                  <div className="vx-ledger-end">
+                    <span className={`vx-score-pill vx-score-pill--${tier}`}>
+                      {h.verdict}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </section>
       )}
     </AppShell>
