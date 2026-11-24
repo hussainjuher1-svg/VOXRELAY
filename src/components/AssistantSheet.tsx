@@ -116,6 +116,7 @@ export function AssistantTrigger({
 }) {
   const { locale } = useLocale();
   const isAr = locale === 'ar';
+  const isBn = locale === 'bn';
 
   return (
     <button
@@ -124,14 +125,14 @@ export function AssistantTrigger({
       className={variant === 'sidebar' ? 'sidebar-assistant-btn' : 'hdr-assistant-btn'}
       aria-expanded={open}
       aria-controls={open ? 'assistant-panel' : undefined}
-      aria-label={isAr ? 'مساعد العمل' : 'Work assistant'}
-      title={isAr ? 'مساعد العمل (Cmd+/)' : 'Work assistant (Cmd+/)'}
+      aria-label={isAr ? 'مساعد العمل' : isBn ? 'কর্মক্ষেত্র সহকারী' : 'Work assistant'}
+      title={isAr ? 'مساعد العمل (Cmd+/)' : isBn ? 'কর্মক্ষেত্র সহকারী (Cmd+/)' : 'Work assistant (Cmd+/)'}
       onClick={onToggle}
     >
       <span className="vox-border-beam-glow vox-border-beam-glow--pill vox-border-beam-glow--always" aria-hidden="true" />
       <span className="vox-border-beam vox-border-beam--pill vox-border-beam--always" aria-hidden="true" />
       <BrandMark size={16} pulsing={streaming} />
-      <span>{isAr ? 'المساعد' : 'Assistant'}</span>
+      <span>{isAr ? 'المساعد' : isBn ? 'সহকারী' : 'Assistant'}</span>
     </button>
   );
 }

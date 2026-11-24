@@ -881,6 +881,7 @@ export function TerminologyPage() {
 
 export function DeviceCheckPage() {
   const { session, user } = useAuth();
+  const { locale } = useLocale();
   const [profile, setProfile] = useState<ReadinessProfile>('video');
   const [envReport, setEnvReport] = useState<EnvironmentReport | null>(null);
   const [netReport, setNetReport] = useState<NetworkReport | null>(null);
@@ -900,13 +901,134 @@ export function DeviceCheckPage() {
     screenShareTested: false,
   });
 
+  const dc = {
+    en: {
+      eyebrow: 'DEVICE & NETWORK READINESS LAB',
+      title: 'Live hardware & network check',
+      json: 'Export JSON',
+      csv: 'Export CSV',
+      print: 'Print PDF',
+      readinessProfile: 'READINESS PROFILE',
+      readyPrefix: 'Ready for',
+      remainingSuffix: 'remaining',
+      runSuite: 'Run full check',
+      voice: 'Voice-only',
+      video: 'Voice + Video',
+      full: 'Full (Screen)',
+      audioEyebrow: 'AUDIO STUDIO',
+      audioTitle: 'Microphone & tone',
+      signal: 'Signal',
+      peak: 'Peak',
+      rate: 'Rate',
+      testMic: 'Test mic',
+      playTone: 'Play 440Hz',
+      audible: 'Audible ✓',
+      confirmAudible: 'Confirm audible',
+      netEyebrow: 'NETWORK & HARDWARE',
+      rtt: 'Median RTT',
+      jitter: 'Jitter / p95',
+      downLoss: 'Down / Loss',
+      reNet: 'Re-run network',
+      testCam: 'Test camera',
+      testScreen: 'Test screen',
+      screenOk: 'Screen OK ✓',
+      rescan: 'Re-scan',
+      ledgerTitle: 'Live checks',
+      probesLabel: 'live probes',
+      openFullTab: 'Open full tab',
+      retry: 'Retry',
+      dismiss: 'Dismiss',
+      initialMsg: 'Measured live in your browser. Zero audio recorded or uploaded.',
+    },
+    bn: {
+      eyebrow: 'ডিভাইস ও নেটওয়ার্ক যাচাই',
+      title: 'লাইভ হার্ডওয়্যার ও নেটওয়ার্ক পরীক্ষা',
+      json: 'JSON রপ্তানি',
+      csv: 'CSV রপ্তানি',
+      print: 'PDF প্রিন্ট',
+      readinessProfile: 'প্রস্তুতি প্রোফাইল',
+      readyPrefix: 'প্রস্তুত:',
+      remainingSuffix: 'টি বাকি',
+      runSuite: 'সম্পূর্ণ পরীক্ষা চালান',
+      voice: 'শুধু ভয়েস',
+      video: 'ভয়েস + ভিডিও',
+      full: 'পূর্ণ (স্ক্রিন শেয়ার)',
+      audioEyebrow: 'অডিও স্টুডিও',
+      audioTitle: 'মাইক্রোফোন ও টোন',
+      signal: 'সিগন্যাল',
+      peak: 'পিক',
+      rate: 'হার্টজ',
+      testMic: 'মাইক পরীক্ষা',
+      playTone: '৪৪০Hz টোন',
+      audible: 'শোনা গেছে ✓',
+      confirmAudible: 'শোনা নিশ্চিত করুন',
+      netEyebrow: 'নেটওয়ার্ক ও হার্ডওয়্যার',
+      rtt: 'গড় RTT',
+      jitter: 'জিটার / p95',
+      downLoss: 'গতি / লস',
+      reNet: 'নেটওয়ার্ক পরীক্ষা',
+      testCam: 'ক্যামেরা পরীক্ষা',
+      testScreen: 'স্ক্রিন শেয়ার',
+      screenOk: 'স্ক্রিন ঠিক আছে ✓',
+      rescan: 'পুনরায় স্ক্যান',
+      ledgerTitle: 'লাইভ চেক তালিকা',
+      probesLabel: 'টি লাইভ প্রোব',
+      openFullTab: 'নতুন ট্যাবে খুলুন',
+      retry: 'আবার চেষ্টা করুন',
+      dismiss: 'বন্ধ করুন',
+      initialMsg: 'সরাসরি আপনার ব্রাউজারে পরিমাপ করা। কোনো অডিও সংরক্ষিত হয় না।',
+    },
+    ar: {
+      eyebrow: 'مختبر جاهزية الجهاز والشبكة',
+      title: 'فحص حي للأجهزة والشبكة',
+      json: 'تصدير JSON',
+      csv: 'تصدير CSV',
+      print: 'طباعة PDF',
+      readinessProfile: 'ملف الجاهزية',
+      readyPrefix: 'جاهز لـ',
+      remainingSuffix: 'متبقية',
+      runSuite: 'تشغيل الفحص الكامل',
+      voice: 'صوت فقط',
+      video: 'صوت + فيديو',
+      full: 'كامل (مشاركة شاشة)',
+      audioEyebrow: 'استوديو الصوت',
+      audioTitle: 'الميكروفون والنغمة',
+      signal: 'الإشارة',
+      peak: 'الذروة',
+      rate: 'التردد',
+      testMic: 'فحص الميكروفون',
+      playTone: 'تشغيل 440Hz',
+      audible: 'مسموع ✓',
+      confirmAudible: 'تأكيد السماع',
+      netEyebrow: 'الشبكة والعتاد',
+      rtt: 'متوسط RTT',
+      jitter: 'التذبذب / p95',
+      downLoss: 'السرعة / الفقد',
+      reNet: 'إعادة فحص الشبكة',
+      testCam: 'فحص الكاميرا',
+      testScreen: 'فحص الشاشة',
+      screenOk: 'الشاشة جاهزة ✓',
+      rescan: 'إعادة المسح',
+      ledgerTitle: 'الفحوصات الحية',
+      probesLabel: 'فحوصات حية',
+      openFullTab: 'فتح في تبويب كامل',
+      retry: 'إعادة المحاولة',
+      dismiss: 'إغلاق',
+      initialMsg: 'قياس فوري داخل متصفحك. لا يتم تسجيل أو رفع أي صوت.',
+    },
+  }[locale];
+
   const [level, setLevel] = useState(0);
   const [liveDb, setLiveDb] = useState<number | null>(null);
   const [busyStep, setBusyStep] = useState<string | null>(null);
-  const [deviceAlert, setDeviceAlert] = useState<{ tone: 'error' | 'warn'; title: string; detail: string } | null>(null);
-  const [message, setMessage] = useState<string>(
-    'Every number below is measured live in your browser or against the server. Zero fake values.'
-  );
+  const [deviceAlert, setDeviceAlert] = useState<{
+    tone: 'error' | 'warn';
+    title: string;
+    detail: string;
+    retryKind?: 'mic' | 'camera' | 'screen';
+    canOpenNewTab?: boolean;
+  } | null>(null);
+  const [message, setMessage] = useState<string>(dc.initialMsg);
   const [history, setHistory] = useState<
     Array<{ id: string; profile: string; score: number; verdict: string; created_at: string }>
   >([]);
@@ -917,18 +1039,29 @@ export function DeviceCheckPage() {
 
   function explainMediaError(kind: 'Microphone' | 'Camera' | 'Screen share', err: unknown) {
     const name = err && typeof err === 'object' && 'name' in err ? String((err as { name: string }).name) : '';
+    const inIframe = typeof window !== 'undefined' && window.self !== window.top;
     if (!window.isSecureContext) {
       return {
         permission: 'unsupported' as const,
-        title: `${kind} blocked — insecure context`,
-        detail: `Browser security requires HTTPS or localhost to access ${kind.toLowerCase()}. Open the preview over HTTPS to test.`,
+        title: `${kind} blocked — HTTPS required`,
+        detail: `Browser security requires HTTPS or localhost to prompt for ${kind.toLowerCase()} access.`,
+        canOpenNewTab: inIframe,
       };
     }
     if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError') {
+      if (inIframe) {
+        return {
+          permission: 'denied' as const,
+          title: `${kind} blocked by preview frame`,
+          detail: `This embedded preview frame restricts ${kind.toLowerCase()} prompts. Open in a full browser tab to grant real device permission, or enable ${kind} in browser site settings.`,
+          canOpenNewTab: true,
+        };
+      }
       return {
         permission: 'denied' as const,
         title: `${kind} permission denied`,
-        detail: `Your browser or OS blocked ${kind.toLowerCase()} access. Click the site-permissions (lock) icon in the address bar, set ${kind} to Allow, then try again.`,
+        detail: `Your browser or OS blocked ${kind.toLowerCase()} access. Click the lock/site-settings icon in the address bar, set ${kind} to Allow, then click Retry.`,
+        canOpenNewTab: false,
       };
     }
     if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
@@ -936,26 +1069,30 @@ export function DeviceCheckPage() {
         permission: 'unavailable' as const,
         title: `No ${kind.toLowerCase()} detected`,
         detail: `No ${kind.toLowerCase()} hardware was reported by this device. Connect or enable one in OS settings and retry.`,
+        canOpenNewTab: false,
       };
     }
     if (name === 'NotReadableError' || name === 'TrackStartError') {
       return {
         permission: 'denied' as const,
         title: `${kind} is busy or locked`,
-        detail: `Another app or OS privacy setting is holding the ${kind.toLowerCase()}. Close other video/call apps and retry.`,
+        detail: `Another app or OS privacy setting is holding the ${kind.toLowerCase()}. Close other call apps and retry.`,
+        canOpenNewTab: false,
       };
     }
     if (name === 'AbortError') {
       return {
         permission: 'denied' as const,
         title: `${kind} prompt dismissed`,
-        detail: `The ${kind.toLowerCase()} selection was cancelled before completion. Click the button again and choose a source.`,
+        detail: `The ${kind.toLowerCase()} prompt was closed before selecting a device. Click Retry to ask again.`,
+        canOpenNewTab: false,
       };
     }
     return {
       permission: 'unavailable' as const,
       title: `${kind} check failed`,
       detail: `Your browser could not start ${kind.toLowerCase()} capture (${name || 'device unavailable'}).`,
+      canOpenNewTab: inIframe,
     };
   }
 
@@ -993,8 +1130,61 @@ export function DeviceCheckPage() {
         })
         .catch(() => {});
     }
+
+    const onDeviceChange = () => {
+      void detectEnvironment().then((r) => {
+        if (active) setEnvReport(r);
+      });
+    };
+    const onNetChange = () => {
+      void probeNetworkDiagnostics(6).then((net) => {
+        if (active) setNetReport(net);
+      });
+    };
+
+    navigator.mediaDevices?.addEventListener?.('devicechange', onDeviceChange);
+    window.addEventListener('online', onNetChange);
+    window.addEventListener('offline', onNetChange);
+    const navConn = (navigator as Navigator & { connection?: EventTarget }).connection;
+    navConn?.addEventListener?.('change', onNetChange);
+
+    let micPermStatus: PermissionStatus | null = null;
+    let camPermStatus: PermissionStatus | null = null;
+    if (navigator.permissions?.query) {
+      void navigator.permissions
+        .query({ name: 'microphone' as PermissionName })
+        .then((status) => {
+          if (!active) return;
+          micPermStatus = status;
+          status.onchange = () => {
+            if (!active) return;
+            setPeriph((p) => ({ ...p, micPermission: status.state }));
+            if (status.state === 'granted') setDeviceAlert(null);
+          };
+        })
+        .catch(() => {});
+      void navigator.permissions
+        .query({ name: 'camera' as PermissionName })
+        .then((status) => {
+          if (!active) return;
+          camPermStatus = status;
+          status.onchange = () => {
+            if (!active) return;
+            setPeriph((p) => ({ ...p, cameraPermission: status.state }));
+            if (status.state === 'granted') setDeviceAlert(null);
+          };
+        })
+        .catch(() => {});
+    }
+
     return () => {
       active = false;
+      navigator.mediaDevices?.removeEventListener?.('devicechange', onDeviceChange);
+      window.removeEventListener('online', onNetChange);
+      window.removeEventListener('offline', onNetChange);
+      navConn?.removeEventListener?.('change', onNetChange);
+      if (micPermStatus) micPermStatus.onchange = null;
+      if (camPermStatus) camPermStatus.onchange = null;
       stopStream();
     };
   }, [user, session?.access_token, stopStream]);
@@ -1052,6 +1242,7 @@ export function DeviceCheckPage() {
     stopStream();
     setBusyStep('mic');
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      const inIframe = typeof window !== 'undefined' && window.self !== window.top;
       const next: PeripheralReport = {
         ...periph,
         micTested: true,
@@ -1063,10 +1254,12 @@ export function DeviceCheckPage() {
       setPeriph(next);
       setDeviceAlert({
         tone: 'error',
-        title: !window.isSecureContext ? 'Microphone blocked — insecure context' : 'Microphone API unavailable',
+        title: !window.isSecureContext ? 'Microphone blocked — HTTPS required' : 'Microphone API unavailable',
         detail: !window.isSecureContext
           ? 'Browser security requires HTTPS or localhost to access microphone hardware.'
           : 'This browser does not expose navigator.mediaDevices.getUserMedia.',
+        retryKind: 'mic',
+        canOpenNewTab: inIframe,
       });
       setMessage('Microphone unavailable in this browser.');
       setBusyStep(null);
@@ -1074,29 +1267,6 @@ export function DeviceCheckPage() {
     }
 
     try {
-      if (navigator.permissions?.query) {
-        const perm = await navigator.permissions.query({ name: 'microphone' as PermissionName }).catch(() => null);
-        if (perm?.state === 'denied') {
-          const next: PeripheralReport = {
-            ...periph,
-            micTested: true,
-            micPermission: 'denied',
-            micRmsDb: null,
-            micPeakPct: 0,
-            micSampleRate: null,
-          };
-          setPeriph(next);
-          setDeviceAlert({
-            tone: 'error',
-            title: 'Microphone permission denied',
-            detail: 'Site permissions show Microphone is blocked. Click the lock icon in your address bar, allow Microphone, and click Test mic again.',
-          });
-          setMessage('Microphone permission denied by browser settings.');
-          setBusyStep(null);
-          return next;
-        }
-      }
-
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const AudioCtx =
         window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -1176,7 +1346,13 @@ export function DeviceCheckPage() {
         micSampleRate: null,
       };
       setPeriph(next);
-      setDeviceAlert({ tone: 'error', title: info.title, detail: info.detail });
+      setDeviceAlert({
+        tone: 'error',
+        title: info.title,
+        detail: info.detail,
+        retryKind: 'mic',
+        canOpenNewTab: info.canOpenNewTab,
+      });
       setMessage(info.title);
       return next;
     } finally {
@@ -1187,6 +1363,7 @@ export function DeviceCheckPage() {
   async function runCameraProbe(): Promise<PeripheralReport> {
     setBusyStep('camera');
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      const inIframe = typeof window !== 'undefined' && window.self !== window.top;
       const next: PeripheralReport = {
         ...periph,
         cameraTested: true,
@@ -1197,10 +1374,12 @@ export function DeviceCheckPage() {
       setPeriph(next);
       setDeviceAlert({
         tone: 'error',
-        title: !window.isSecureContext ? 'Camera blocked — insecure context' : 'Camera API unavailable',
+        title: !window.isSecureContext ? 'Camera blocked — HTTPS required' : 'Camera API unavailable',
         detail: !window.isSecureContext
           ? 'Browser security requires HTTPS or localhost to access camera hardware.'
           : 'This browser does not expose camera capture APIs.',
+        retryKind: 'camera',
+        canOpenNewTab: inIframe,
       });
       setBusyStep(null);
       return next;
@@ -1233,7 +1412,13 @@ export function DeviceCheckPage() {
         cameraFps: null,
       };
       setPeriph(next);
-      setDeviceAlert({ tone: 'error', title: info.title, detail: info.detail });
+      setDeviceAlert({
+        tone: 'error',
+        title: info.title,
+        detail: info.detail,
+        retryKind: 'camera',
+        canOpenNewTab: info.canOpenNewTab,
+      });
       setMessage(info.title);
       return next;
     } finally {
@@ -1248,6 +1433,8 @@ export function DeviceCheckPage() {
         tone: 'warn',
         title: 'Screen share unsupported here',
         detail: 'Your browser or embedded context does not allow getDisplayMedia screen sharing.',
+        retryKind: 'screen',
+        canOpenNewTab: typeof window !== 'undefined' && window.self !== window.top,
       });
       setBusyStep(null);
       return;
@@ -1260,7 +1447,13 @@ export function DeviceCheckPage() {
       setMessage('Screen share permission verified (zero frames recorded).');
     } catch (err) {
       const info = explainMediaError('Screen share', err);
-      setDeviceAlert({ tone: 'warn', title: info.title, detail: info.detail });
+      setDeviceAlert({
+        tone: 'warn',
+        title: info.title,
+        detail: info.detail,
+        retryKind: 'screen',
+        canOpenNewTab: info.canOpenNewTab,
+      });
       setMessage(info.title);
     } finally {
       setBusyStep(null);
@@ -1395,20 +1588,20 @@ export function DeviceCheckPage() {
     <AppShell>
       <div className="workspace-header">
         <div>
-          <span className="eyebrow">DEVICE &amp; NETWORK READINESS LAB</span>
-          <h1>Live hardware, audio &amp; network telemetry</h1>
+          <span className="eyebrow">{dc.eyebrow}</span>
+          <h1>{dc.title}</h1>
         </div>
         <div className="hero-actions">
           <Button variant="secondary" size="sm" onClick={exportReportJson}>
             <Download size={14} />
-            <span>Export JSON</span>
+            <span>{dc.json}</span>
           </Button>
           <Button variant="secondary" size="sm" onClick={exportReportCsv}>
             <Download size={14} />
-            <span>Export CSV</span>
+            <span>{dc.csv}</span>
           </Button>
           <Button variant="secondary" size="sm" onClick={() => window.print()}>
-            <span>Print PDF</span>
+            <span>{dc.print}</span>
           </Button>
         </div>
       </div>
@@ -1440,16 +1633,16 @@ export function DeviceCheckPage() {
         <div className="vx-diag-hero-body">
           <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
             <div>
-              <span className="eyebrow" style={{ color: '#96b5aa' }}>READINESS PROFILE</span>
+              <span className="eyebrow" style={{ color: '#96b5aa' }}>{dc.readinessProfile}</span>
               <h2>
                 {readiness.verdict === 'pass'
-                  ? `Ready for ${profile === 'voice' ? 'Voice' : profile === 'video' ? 'Voice + Video' : 'Full session'}`
-                  : `${readiness.deductions.length} check(s) remaining for ${profile}`}
+                  ? `${dc.readyPrefix} ${profile === 'voice' ? dc.voice : profile === 'video' ? dc.video : dc.full}`
+                  : `${readiness.deductions.length} ${dc.remainingSuffix}`}
               </h2>
             </div>
             <Button onClick={() => void runFullSuite()} loading={busyStep === 'all'}>
               <Activity size={15} />
-              <span>Run full diagnostic suite</span>
+              <span>{dc.runSuite}</span>
             </Button>
           </div>
 
@@ -1461,7 +1654,7 @@ export function DeviceCheckPage() {
                 className={`vx-profile-pill${profile === p ? ' is-active' : ''}`}
                 onClick={() => setProfile(p)}
               >
-                {p === 'voice' ? 'Voice-only' : p === 'video' ? 'Voice + Video' : 'Full (Screen share)'}
+                {p === 'voice' ? dc.voice : p === 'video' ? dc.video : dc.full}
               </button>
             ))}
           </div>
@@ -1490,8 +1683,8 @@ export function DeviceCheckPage() {
         <article className="vx-studio-card vx-studio-card--cream">
           <div className="vx-studio-head">
             <div>
-              <span className="eyebrow">AUDIO &amp; SPEAKER STUDIO</span>
-              <h2>Live microphone &amp; tone</h2>
+              <span className="eyebrow">{dc.audioEyebrow}</span>
+              <h2>{dc.audioTitle}</h2>
             </div>
             <Badge tone={periph.micPermission === 'granted' ? 'success' : periph.micPermission === 'denied' ? 'danger' : 'neutral'}>
               {periph.micTested ? periph.micPermission : 'Ready'}
@@ -1513,15 +1706,15 @@ export function DeviceCheckPage() {
 
           <div className="vx-stat-strip">
             <div className="vx-stat-cell">
-              <span>Signal</span>
+              <span>{dc.signal}</span>
               <strong>{liveDb ?? periph.micRmsDb ?? '—'} dBFS</strong>
             </div>
             <div className="vx-stat-cell">
-              <span>Peak</span>
+              <span>{dc.peak}</span>
               <strong>{periph.micPeakPct}%</strong>
             </div>
             <div className="vx-stat-cell">
-              <span>Sample rate</span>
+              <span>{dc.rate}</span>
               <strong>{periph.micSampleRate ?? '—'} Hz</strong>
             </div>
           </div>
@@ -1529,11 +1722,11 @@ export function DeviceCheckPage() {
           <div className="vx-studio-actions">
             <Button size="sm" onClick={() => void runMicProbe()} loading={busyStep === 'mic'}>
               <Mic size={14} />
-              <span>Test mic</span>
+              <span>{dc.testMic}</span>
             </Button>
             <Button size="sm" variant="secondary" onClick={() => void playSpeakerTone()}>
               <Volume2 size={14} />
-              <span>Play 440Hz tone</span>
+              <span>{dc.playTone}</span>
             </Button>
             <Button
               size="sm"
@@ -1543,7 +1736,7 @@ export function DeviceCheckPage() {
                 setMessage('Speaker output confirmed audible.');
               }}
             >
-              {periph.speakerConfirmed ? 'Audible ✓' : 'Confirm audible'}
+              {periph.speakerConfirmed ? dc.audible : dc.confirmAudible}
             </Button>
           </div>
         </article>
@@ -1551,7 +1744,7 @@ export function DeviceCheckPage() {
         <article className="vx-studio-card">
           <div className="vx-studio-head">
             <div>
-              <span className="eyebrow">NETWORK &amp; HARDWARE TELEMETRY</span>
+              <span className="eyebrow">{dc.netEyebrow}</span>
               <h2>{envReport ? `${envReport.browserName} · ${envReport.osName}` : 'Detecting environment…'}</h2>
             </div>
             <Badge tone={netReport ? 'success' : 'neutral'}>{netReport ? `${netReport.medianMs ?? '—'} ms RTT` : 'Probing'}</Badge>
@@ -1559,17 +1752,17 @@ export function DeviceCheckPage() {
 
           <div className="vx-stat-strip">
             <div className="vx-stat-cell">
-              <span>Median RTT</span>
+              <span>{dc.rtt}</span>
               <strong>{netReport?.medianMs != null ? `${netReport.medianMs} ms` : 'Probing…'}</strong>
             </div>
             <div className="vx-stat-cell">
-              <span>Jitter / p95</span>
+              <span>{dc.jitter}</span>
               <strong>
                 {netReport ? `${netReport.jitterMs ?? '—'} / ${netReport.p95Ms ?? '—'} ms` : '—'}
               </strong>
             </div>
             <div className="vx-stat-cell">
-              <span>Down / Loss</span>
+              <span>{dc.downLoss}</span>
               <strong>
                 {netReport ? `${netReport.downMbps ?? '—'} Mbps · ${netReport.lossPct}%` : '—'}
               </strong>
@@ -1578,7 +1771,7 @@ export function DeviceCheckPage() {
 
           <p className="vx-studio-hw">
             {envReport
-              ? `${envReport.hardware.cpuCores ?? '—'} cores · Display ${envReport.display.width}×${envReport.display.height}${envReport.display.refreshHz ? ` · ${envReport.display.refreshHz} Hz` : ''} · ICE ${envReport.webrtc.iceCandidatesGathered} (${envReport.webrtc.gatheringMs ?? '—'} ms)`
+              ? `${envReport.hardware.cpuCores ?? '—'} cores · ${envReport.display.width}×${envReport.display.height}${envReport.display.refreshHz ? ` · ${envReport.display.refreshHz} Hz` : ''} · ICE ${envReport.webrtc.iceCandidatesGathered} (${envReport.webrtc.gatheringMs ?? '—'} ms)`
               : 'Scanning CPU, display, and WebRTC ICE candidates…'}
           </p>
 
@@ -1601,21 +1794,21 @@ export function DeviceCheckPage() {
           <div className="vx-studio-actions">
             <Button size="sm" onClick={() => void runNetworkProbe()} loading={busyStep === 'network'}>
               <Wifi size={14} />
-              <span>Re-run network</span>
+              <span>{dc.reNet}</span>
             </Button>
             <Button size="sm" variant="secondary" onClick={() => void runCameraProbe()} loading={busyStep === 'camera'}>
               <Camera size={14} />
-              <span>{periph.cameraPermission === 'granted' && periph.cameraResolution ? `Cam ${periph.cameraResolution}` : 'Test camera'}</span>
+              <span>{periph.cameraPermission === 'granted' && periph.cameraResolution ? `Cam ${periph.cameraResolution}` : dc.testCam}</span>
             </Button>
             {profile === 'full' && (
               <Button size="sm" variant="secondary" onClick={() => void runScreenShareProbe()} loading={busyStep === 'screen'}>
                 <Monitor size={14} />
-                <span>{periph.screenShareTested ? 'Screen OK ✓' : 'Test screen'}</span>
+                <span>{periph.screenShareTested ? dc.screenOk : dc.testScreen}</span>
               </Button>
             )}
             <Button size="sm" variant="secondary" onClick={() => void runEnvRescan()} loading={busyStep === 'env'}>
               <Monitor size={14} />
-              <span>Re-scan</span>
+              <span>{dc.rescan}</span>
             </Button>
           </div>
         </article>
@@ -1627,22 +1820,42 @@ export function DeviceCheckPage() {
             <strong>{deviceAlert.title}</strong>
             <p>{deviceAlert.detail}</p>
           </div>
-          <button
-            type="button"
-            className="vx-device-alert-close"
-            onClick={() => setDeviceAlert(null)}
-            aria-label="Dismiss device alert"
-          >
-            Dismiss
-          </button>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+            {deviceAlert.retryKind && (
+              <button
+                type="button"
+                className="vx-device-alert-close"
+                onClick={() => triggerRowAction(deviceAlert.retryKind!)}
+              >
+                {dc.retry}
+              </button>
+            )}
+            {deviceAlert.canOpenNewTab && (
+              <button
+                type="button"
+                className="vx-device-alert-close"
+                onClick={() => window.open(window.location.href, '_blank', 'noopener,noreferrer')}
+              >
+                {dc.openFullTab} ↗
+              </button>
+            )}
+            <button
+              type="button"
+              className="vx-device-alert-close"
+              onClick={() => setDeviceAlert(null)}
+              aria-label="Dismiss device alert"
+            >
+              {dc.dismiss}
+            </button>
+          </div>
         </div>
       )}
 
       <section className="vx-ledger" aria-label="Readiness score breakdown">
         <div className="vx-ledger-head">
-          <h2>Diagnostic ledger &amp; thresholds</h2>
+          <h2>{dc.ledgerTitle}</h2>
           <span className="vx-ledger-meta">
-            Profile: {profile === 'voice' ? 'Voice-only' : profile === 'video' ? 'Voice + Video' : 'Full session'} · {readiness.checks.length} live probes
+            {profile === 'voice' ? dc.voice : profile === 'video' ? dc.video : dc.full} · {readiness.checks.length} {dc.probesLabel}
           </span>
         </div>
         <div className="vx-ledger-body">
@@ -1668,17 +1881,17 @@ export function DeviceCheckPage() {
             let actionLabel: string | null = null;
             let actionKind: 'mic' | 'tone' | 'camera' | 'screen' | 'network' | 'env' | null = null;
             if (isMic && c.impactPoints < c.maxPoints) {
-              actionLabel = busyStep === 'mic' ? 'Testing…' : 'Test mic';
+              actionLabel = busyStep === 'mic' ? 'Testing…' : dc.testMic;
               actionKind = 'mic';
             } else if (isAv && c.impactPoints < c.maxPoints) {
               if (profile === 'voice') {
-                actionLabel = 'Play tone';
+                actionLabel = dc.playTone;
                 actionKind = 'tone';
               } else if (profile === 'full' && periph.cameraPermission === 'granted' && !periph.screenShareTested) {
-                actionLabel = busyStep === 'screen' ? 'Testing…' : 'Test screen';
+                actionLabel = busyStep === 'screen' ? 'Testing…' : dc.testScreen;
                 actionKind = 'screen';
               } else {
-                actionLabel = busyStep === 'camera' ? 'Testing…' : 'Test camera';
+                actionLabel = busyStep === 'camera' ? 'Testing…' : dc.testCam;
                 actionKind = 'camera';
               }
             } else if (isNet && c.impactPoints < c.maxPoints) {
@@ -1700,7 +1913,7 @@ export function DeviceCheckPage() {
                 <span className="vx-ledger-cat">{c.category}</span>
                 <div className="vx-ledger-title">
                   <strong>{c.label}</strong>
-                  <span>Target: {c.threshold}</span>
+                  {c.status !== 'pass' && <span>{c.threshold}</span>}
                 </div>
                 <div className="vx-ledger-val-stack">
                   <span className="vx-ledger-val">{c.measured}</span>

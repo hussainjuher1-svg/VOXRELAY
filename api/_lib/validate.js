@@ -88,7 +88,7 @@ export const sessionDocSchema = z.object({
 export const assistantRequestSchema = z.object({
   question: maxCodePoints(400, 'Question').min(1, 'Question is required'),
   mode: z.enum(['ask', 'research']).default('ask'),
-  locale: z.enum(['en', 'ar']).default('en'),
+  locale: z.enum(['en', 'bn', 'ar']).default('en'),
   tier: z.string().max(16).optional(),
   category: z.string().max(64).optional(),
 });

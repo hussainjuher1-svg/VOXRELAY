@@ -511,7 +511,6 @@ export function scoreReadiness(
     category: 'network',
     label: 'Packet loss & throughput',
     measured: net ? `${net.lossPct}% loss · ${down ?? '—'} Mbps` : 'Not probed',
-    measuredDetail: net ? 'Downlink measured' : undefined,
     threshold: `≤ ${thresholds.maxLossPct}% loss · ≥ ${thresholds.minDownMbps} Mbps`,
     status: netThroughputStatus,
     impactPoints: !net ? 0 : netThroughputStatus === 'pass' ? 15 : netThroughputStatus === 'warn' ? 8 : 2,
@@ -581,7 +580,12 @@ export function scoreReadiness(
         ? 'Not audible'
         : 'Tone not confirmed';
   const avDetail = thresholds.needCamera
-    ? `${periph.speakerConfirmed ? 'Speaker OK' : 'Speaker unconfirmed'}${thresholds.needScreen ? ` · Screen ${periph.screenShareTested ? 'OK' : periph.screenShareSupported ? 'Ready' : 'Blocked'}` : ''}`
+    ? [
+        periph.speakerConfirmed === true ? 'Speaker OK' : null,
+        thresholds.needScreen ? `Screen ${periph.screenShareTested ? 'OK' : periph.screenShareSupported ? 'Ready' : 'Blocked'}` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ') || undefined
     : undefined;
   checks.push({
     id: 'periph_av',

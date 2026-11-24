@@ -108,10 +108,18 @@ export function buildWorkspaceSnapshot({ db, userId }) {
 
 export async function runAssistantStream({ mode = 'ask', question, locale = 'en', db, userId, emit }) {
   const sanitized = redactPii(question).trim();
-  const lang = locale === 'ar' ? 'ar' : 'en';
+  const lang = locale === 'ar' ? 'ar' : locale === 'bn' ? 'bn' : 'en';
 
   if (!sanitized) {
-    emit({ type: 'error', message: lang === 'ar' ? 'الرجاء إدخال سؤال.' : 'Please enter a question.' });
+    emit({
+      type: 'error',
+      message:
+        lang === 'ar'
+          ? 'الرجاء إدخال سؤال.'
+          : lang === 'bn'
+            ? 'অনুগ্রহ করে একটি প্রশ্ন লিখুন।'
+            : 'Please enter a question.',
+    });
     return;
   }
 
@@ -119,7 +127,9 @@ export async function runAssistantStream({ mode = 'ask', question, locale = 'en'
     const greetingText =
       lang === 'ar'
         ? 'مرحباً! أنا مساعد عمل VOXRELAY. كيف يمكنني مساعدتك اليوم؟ يمكنك سؤالي عن الجدولة واستيراد .ics، الخصوصية وعدم التسجيل، فحص الجهاز، أو مستويات T0–T3 — أو اختيار موضوع سريع أدناه.'
-        : "Hello! I'm the VOXRELAY Work Assistant. How can I help you today? Pick a quick topic below or ask about scheduling, privacy, device readiness, or billing.";
+        : lang === 'bn'
+          ? 'হ্যালো! আমি VOXRELAY কর্মক্ষেত্র সহকারী। সময়সূচী ও .ics আমদানি, গোপনীয়তা, ডিভাইস পরীক্ষা, বা T0–T3 নীতি সম্পর্কে প্রশ্ন করুন বা নিচের যেকোনো বিষয়ে ক্লিক করুন।'
+          : "Hello! I'm the VOXRELAY Work Assistant. How can I help you today? Pick a quick topic below or ask about scheduling, privacy, device readiness, or billing.";
     emit({ type: 'delta', text: greetingText });
     emit({ type: 'quick_chips', show: true });
     return;

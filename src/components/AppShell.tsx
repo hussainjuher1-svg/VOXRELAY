@@ -45,6 +45,7 @@ export function AppShell({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const assistantTriggerRef = useRef<HTMLButtonElement | null>(null);
   const isAr = locale === 'ar';
+  const isBn = locale === 'bn';
 
   const assistantOpen = controlledAssistantOpen ?? internalAssistantOpen;
   const setAssistantOpen = onAssistantOpenChange ?? setInternalAssistantOpen;
@@ -99,35 +100,65 @@ export function AppShell({
           ],
         },
       ]
-    : [
-        {
-          heading: 'Workflow',
-          items: [
-            { to: '/app', label: 'Overview', icon: LayoutDashboard, end: true },
-            { to: '/app/ops', label: 'Ops queues', icon: Activity },
-            { to: '/app/assignments', label: 'Assignments', icon: CalendarDays },
-            { to: '/app/availability', label: 'Availability', icon: CalendarClock },
-          ],
-        },
-        {
-          heading: 'Prep & Audio',
-          items: [
-            { to: '/app/terminology', label: 'Terminology', icon: BookOpen },
-            { to: '/app/device-check', label: 'Device check', icon: Mic },
-          ],
-        },
-        {
-          heading: 'Billing & Ops',
-          items: [
-            { to: '/app/billing', label: 'Billing', icon: CreditCard },
-            { to: '/app/reports', label: 'Reports', icon: BarChart3 },
-            { to: '/app/quality', label: 'Quality', icon: CheckCircle2 },
-            { to: '/app/support', label: 'Support', icon: Headset },
-            { to: '/app/admin', label: 'Access queue', icon: ShieldCheck },
-            { to: '/app/settings', label: 'Settings', icon: Settings },
-          ],
-        },
-      ];
+    : isBn
+      ? [
+          {
+            heading: 'কর্মপ্রবাহ',
+            items: [
+              { to: '/app', label: 'সংক্ষিপ্তসার', icon: LayoutDashboard, end: true },
+              { to: '/app/ops', label: 'অপারেশন কিউ', icon: Activity },
+              { to: '/app/assignments', label: 'দায়িত্বসমূহ', icon: CalendarDays },
+              { to: '/app/availability', label: 'প্রাপ্যতা', icon: CalendarClock },
+            ],
+          },
+          {
+            heading: 'প্রস্তুতি ও অডিও',
+            items: [
+              { to: '/app/terminology', label: 'পরিভাষা', icon: BookOpen },
+              { to: '/app/device-check', label: 'ডিভাইস পরীক্ষা', icon: Mic },
+            ],
+          },
+          {
+            heading: 'বিলিং ও সহায়তা',
+            items: [
+              { to: '/app/billing', label: 'বিলিং', icon: CreditCard },
+              { to: '/app/reports', label: 'প্রতিবেদন', icon: BarChart3 },
+              { to: '/app/quality', label: 'মান যাচাই', icon: CheckCircle2 },
+              { to: '/app/support', label: 'মানব সহায়তা', icon: Headset },
+              { to: '/app/admin', label: 'প্রবেশাধিকার কিউ', icon: ShieldCheck },
+              { to: '/app/settings', label: 'সেটিংস', icon: Settings },
+            ],
+          },
+        ]
+      : [
+          {
+            heading: 'Workflow',
+            items: [
+              { to: '/app', label: 'Overview', icon: LayoutDashboard, end: true },
+              { to: '/app/ops', label: 'Ops queues', icon: Activity },
+              { to: '/app/assignments', label: 'Assignments', icon: CalendarDays },
+              { to: '/app/availability', label: 'Availability', icon: CalendarClock },
+            ],
+          },
+          {
+            heading: 'Prep & Audio',
+            items: [
+              { to: '/app/terminology', label: 'Terminology', icon: BookOpen },
+              { to: '/app/device-check', label: 'Device check', icon: Mic },
+            ],
+          },
+          {
+            heading: 'Billing & Ops',
+            items: [
+              { to: '/app/billing', label: 'Billing', icon: CreditCard },
+              { to: '/app/reports', label: 'Reports', icon: BarChart3 },
+              { to: '/app/quality', label: 'Quality', icon: CheckCircle2 },
+              { to: '/app/support', label: 'Support', icon: Headset },
+              { to: '/app/admin', label: 'Access queue', icon: ShieldCheck },
+              { to: '/app/settings', label: 'Settings', icon: Settings },
+            ],
+          },
+        ];
 
   const allItems = navGroups.flatMap((g) => g.items);
   const currentNav =
@@ -217,12 +248,14 @@ export function AppShell({
         <div className="sidebar-policy-card">
           <div className="sidebar-policy-title">
             <span className="status-dot is-ok" aria-hidden="true" />
-            <span>{isAr ? 'سياسة T3 البشرية' : 'T3 Human-Only Policy'}</span>
+            <span>{isAr ? 'سياسة T3 البشرية' : isBn ? 'T3 মানব-নেতৃত্ব নীতি' : 'T3 Human-Only Policy'}</span>
           </div>
           <p>
             {isAr
               ? 'لا تسجيل صوتي. تحليل التوقيت فقط في ملفات .ics.'
-              : 'Zero audio storage. Timing-only .ics intake active.'}
+              : isBn
+                ? 'কোনো অডিও সংরক্ষণ নয়। .ics থেকে কেবল সময় পড়া হয়।'
+                : 'Zero audio storage. Timing-only .ics intake active.'}
           </p>
         </div>
 
@@ -234,7 +267,7 @@ export function AppShell({
             buttonRef={assistantTriggerRef}
           />
           <div className="app-user-meta">
-            <strong>{user?.email || (isAr ? 'جلسة ضيف' : 'Guest view')}</strong>
+            <strong>{user?.email || (isAr ? 'جلسة ضيف' : isBn ? 'অতিথি ভিউ' : 'Guest view')}</strong>
             <span>{userRole}</span>
           </div>
           <div className="app-util-row">
@@ -262,11 +295,11 @@ export function AppShell({
                 navigate('/login');
               }}
             >
-              {isAr ? 'تسجيل الخروج' : 'Sign out'}
+              {isAr ? 'تسجيل الخروج' : isBn ? 'সাইন আউট' : 'Sign out'}
             </button>
           ) : (
             <Link to="/login?mode=signup" className="app-signout-btn" style={{ textAlign: 'center' }}>
-              {isAr ? 'تسجيل الدخول / إنشاء حساب' : 'Sign in / Create account'}
+              {isAr ? 'تسجيل الدخول / إنشاء حساب' : isBn ? 'সাইন ইন / অ্যাকাউন্ট' : 'Sign in / Create account'}
             </Link>
           )}
         </div>
