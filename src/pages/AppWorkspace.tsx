@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { BookOpen, CalendarDays, Check, Headset, Inbox, Mic, ShieldCheck } from 'lucide-react';
+import { BookOpen, CalendarDays, Check, Headset, Inbox, Mic, ShieldCheck, Trash2 } from 'lucide-react';
 import { AppShell } from '../components/AppShell';
 import { EmptyAssignmentsIllustration, EmptyTerminologyIllustration } from '../components/EditorialIllustrations';
 import { Button } from '../components/ui/Button';
@@ -39,6 +39,13 @@ interface SupportTicketItem {
   created_at: string;
 }
 
+function buildHeaders(token?: string, json = false): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (json) headers['Content-Type'] = 'application/json';
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
+}
+
 export function OverviewPage() {
   const { user, session } = useAuth();
   const [assignments, setAssignments] = useState<AssignmentItem[]>([]);
@@ -47,8 +54,7 @@ export function OverviewPage() {
 
   useEffect(() => {
     let active = true;
-    const headers: Record<string, string> = {};
-    if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`;
+    const headers = buildHeaders(session?.access_token);
 
     Promise.all([
       fetch('/api/assignments', { headers, credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : null)),
@@ -153,9 +159,10 @@ export function AssignmentsPage() {
   const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async () => {
-    const headers: Record<string, string> = {};
-    if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`;
-    const res = await fetch('/api/assignments', { headers, credentials: 'same-origin' });
+    const res = await fetch('/api/assignments', {
+      headers: buildHeaders(session?.access_token),
+      credentials: 'same-origin',
+    });
     if (res.ok) {
       const json = await res.json();
       setItems(json.data || []);
@@ -165,9 +172,10 @@ export function AssignmentsPage() {
 
   useEffect(() => {
     let active = true;
-    const headers: Record<string, string> = {};
-    if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`;
-    fetch('/api/assignments', { headers, credentials: 'same-origin' })
+    fetch('/api/assignments', {
+      headers: buildHeaders(session?.access_token),
+      credentials: 'same-origin',
+    })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('load failed'))))
       .then((json) => {
         if (active) {
@@ -189,17 +197,20 @@ export function AssignmentsPage() {
       setFeedback({ kind: 'error', text: 'Sign in via /login first to save assignments.' });
       return;
     }
+    const parsedDate = new Date(startLocal);
+    if (Number.isNaN(parsedDate.getTime())) {
+      setFeedback({ kind: 'error', text: 'Please enter a valid start date and time.' });
+      return;
+    }
+
     setBusy(true);
     setFeedback(null);
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`;
-
-      const startIso = new Date(startLocal).toISOString();
+      const startIso = parsedDate.toISOString();
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
       const res = await fetch('/api/assignments', {
         method: 'POST',
-        headers,
+        headers: buildHeaders(session?.access_token, true),
         credentials: 'same-origin',
         body: JSON.stringify({
           start_at: startIso,
@@ -218,6 +229,37 @@ export function AssignmentsPage() {
       await refresh();
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function transitionStatus(
+    id: string,
+    action: 'start_preparation' | 'mark_ready' | 'start_session' | 'close_out' | 'cancel'
+  ) {
+    setFeedback(null);
+    const body = action === 'close_out' ? { action, exception_category: 'none' } : { action };
+    const res = await fetch(`/api/assignments?id=${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: buildHeaders(session?.access_token, true),
+      credentials: 'same-origin',
+      body: JSON.stringify(body),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setFeedback({ kind: 'error', text: json.error || 'Unable to update assignment status.' });
+      return;
+    }
+    await refresh();
+  }
+
+  async function deleteAssignment(id: string) {
+    const res = await fetch(`/api/assignments?id=${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: buildHeaders(session?.access_token),
+      credentials: 'same-origin',
+    });
+    if (res.ok) {
+      await refresh();
     }
   }
 
@@ -324,7 +366,9 @@ export function AssignmentsPage() {
               <article key={a.id} className="subpage-card">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                   <span className="mono-ltr eyebrow">{a.ref}</span>
-                  <Badge tone={a.status === 'ready' ? 'success' : 'neutral'}>{a.status}</Badge>
+                  <Badge tone={a.status === 'ready' || a.status === 'completed' ? 'success' : 'neutral'}>
+                    {a.status}
+                  </Badge>
                 </div>
                 <h2>{a.language_pair}</h2>
                 <p>
@@ -333,9 +377,33 @@ export function AssignmentsPage() {
                 <p className="mono-ltr" style={{ fontSize: 12 }}>
                   UTC: {new Date(a.start_at).toISOString().slice(0, 16).replace('T', ' ')}Z
                 </p>
-                <Link className="inline-link" to={`/app/session/${a.id}`}>
-                  Open session focus
-                </Link>
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+                  {(a.status === 'scheduled' || a.status === 'rescheduled') && (
+                    <Button size="sm" variant="secondary" onClick={() => void transitionStatus(a.id, 'mark_ready')}>
+                      Mark ready
+                    </Button>
+                  )}
+                  {(a.status === 'scheduled' || a.status === 'preparation_required' || a.status === 'ready') && (
+                    <Button size="sm" onClick={() => void transitionStatus(a.id, 'start_session')}>
+                      Start session
+                    </Button>
+                  )}
+                  {a.status === 'in_progress' && (
+                    <Button size="sm" onClick={() => void transitionStatus(a.id, 'close_out')}>
+                      Complete
+                    </Button>
+                  )}
+                  <Button size="sm" variant="ghost" onClick={() => void deleteAssignment(a.id)} aria-label={`Delete ${a.ref}`}>
+                    <Trash2 size={14} />
+                  </Button>
+                </div>
+
+                <div style={{ marginTop: 10 }}>
+                  <Link className="inline-link" to={`/app/session/${a.id}`}>
+                    Open session focus
+                  </Link>
+                </div>
               </article>
             ))}
           </div>
@@ -347,24 +415,60 @@ export function AssignmentsPage() {
 
 export function SessionFocusPage() {
   const { id } = useParams();
-  const [events, setEvents] = useState<Array<{ type: string; at: string }>>([]);
+  const { session } = useAuth();
+  const assignmentId = id || 'preview';
+  const [events, setEvents] = useState<Array<{ id?: number; type: string; created_at: string }>>([]);
 
-  function logIntervention(type: string) {
-    setEvents((prev) => [...prev, { type, at: new Date().toISOString() }]);
+  useEffect(() => {
+    let active = true;
+    fetch(`/api/ops?resource=session_event&assignment_id=${encodeURIComponent(assignmentId)}`, {
+      headers: buildHeaders(session?.access_token),
+      credentials: 'same-origin',
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (active && json?.data) setEvents(json.data);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [assignmentId, session?.access_token]);
+
+  async function logIntervention(type: string) {
+    const res = await fetch('/api/ops?resource=session_event', {
+      method: 'POST',
+      headers: buildHeaders(session?.access_token, true),
+      credentials: 'same-origin',
+      body: JSON.stringify({ assignment_id: assignmentId, type }),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      if (json.data) {
+        setEvents((prev) => [...prev, json.data]);
+        return;
+      }
+    }
+    setEvents((prev) => [...prev, { type, created_at: new Date().toISOString() }]);
   }
 
   return (
     <AppShell focusMode>
       <div className="focus-card">
-        <span className="eyebrow">ACTIVE SESSION · {id || 'PREVIEW'}</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+          <span className="eyebrow">ACTIVE SESSION · {assignmentId}</span>
+          <Link className="inline-link" to="/app/assignments">
+            Back to schedule
+          </Link>
+        </div>
         <h1>Operational intervention log</h1>
         <p>Log intervention type and timestamp only. Never enter patient identity or conversation content.</p>
         <div className="focus-actions">
-          <Button onClick={() => logIntervention('clarification')}>Clarification</Button>
-          <Button variant="secondary" onClick={() => logIntervention('pace_pause')}>
+          <Button onClick={() => void logIntervention('clarification')}>Clarification</Button>
+          <Button variant="secondary" onClick={() => void logIntervention('pace_pause')}>
             Pace / pause
           </Button>
-          <Button variant="secondary" onClick={() => logIntervention('technical_issue')}>
+          <Button variant="secondary" onClick={() => void logIntervention('technical_issue')}>
             Technical issue
           </Button>
         </div>
@@ -373,8 +477,8 @@ export function SessionFocusPage() {
         ) : (
           <ul>
             {events.map((ev, i) => (
-              <li key={i} className="mono-ltr">
-                {ev.at} — {ev.type}
+              <li key={ev.id ?? i} className="mono-ltr">
+                {ev.created_at} — {ev.type}
               </li>
             ))}
           </ul>
@@ -385,7 +489,7 @@ export function SessionFocusPage() {
 }
 
 export function TerminologyPage() {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const [terms, setTerms] = useState<TermItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
@@ -396,7 +500,10 @@ export function TerminologyPage() {
 
   useEffect(() => {
     let active = true;
-    fetch('/api/terms', { credentials: 'same-origin' })
+    fetch('/api/terms', {
+      headers: buildHeaders(session?.access_token),
+      credentials: 'same-origin',
+    })
       .then((r) => (r.ok ? r.json() : null))
       .then((json) => {
         if (active) {
@@ -410,7 +517,7 @@ export function TerminologyPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [session?.access_token]);
 
   const visible = terms.filter((item) => matchesSearch(`${item.label} ${item.target_term}`, query));
 
@@ -419,10 +526,10 @@ export function TerminologyPage() {
     if (!label.trim()) return;
     setBusy(true);
     try {
-      if (user) {
+      if (user || session?.access_token) {
         const res = await fetch('/api/terms', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: buildHeaders(session?.access_token, true),
           credentials: 'same-origin',
           body: JSON.stringify({ label: label.trim(), target_term: translation.trim() }),
         });
@@ -445,6 +552,17 @@ export function TerminologyPage() {
     }
   }
 
+  async function deleteTerm(id: string) {
+    if (user || session?.access_token) {
+      await fetch(`/api/terms?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: buildHeaders(session?.access_token),
+        credentials: 'same-origin',
+      }).catch(() => {});
+    }
+    setTerms((prev) => prev.filter((item) => item.id !== id));
+  }
+
   async function importCsv(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -464,10 +582,10 @@ export function TerminologyPage() {
         })
         .filter((p) => p.label);
 
-      if (user && parsed.length > 0) {
+      if ((user || session?.access_token) && parsed.length > 0) {
         const res = await fetch('/api/terms', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: buildHeaders(session?.access_token, true),
           credentials: 'same-origin',
           body: JSON.stringify({ terms: parsed }),
         });
@@ -560,9 +678,19 @@ export function TerminologyPage() {
           <div className="workspace-grid">
             {visible.map((item) => (
               <article key={item.id} className="subpage-card">
-                <h2>
-                  <bdi dir="auto">{item.label}</bdi>
-                </h2>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                  <h2>
+                    <bdi dir="auto">{item.label}</bdi>
+                  </h2>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => void deleteTerm(item.id)}
+                    aria-label={`Delete ${item.label}`}
+                  >
+                    <Trash2 size={14} />
+                  </Button>
+                </div>
                 <p>
                   <bdi dir="auto">{item.target_term || '—'}</bdi>
                 </p>
@@ -576,54 +704,122 @@ export function TerminologyPage() {
 }
 
 export function DeviceCheckPage() {
+  const { session } = useAuth();
   const [result, setResult] = useState<'idle' | 'pass' | 'fail'>('idle');
   const [level, setLevel] = useState(0);
-  const [message, setMessage] = useState<string>('Verifies browser microphone permission and live signal level without recording.');
-  const timerRef = useRef<number | null>(null);
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
+  const [history, setHistory] = useState<Array<{ id: string; result: string; latency_ms: number | null; peak_level: number; created_at: string }>>([]);
+  const [message, setMessage] = useState<string>('Verifies browser microphone permission, live signal level, and round-trip latency without recording.');
+  const rafRef = useRef<number | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const ctxRef = useRef<AudioContext | null>(null);
 
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) window.clearInterval(timerRef.current);
-    };
+  const stopStream = useCallback(() => {
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    if (ctxRef.current) {
+      void ctxRef.current.close().catch(() => {});
+      ctxRef.current = null;
+    }
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    fetch('/api/ops?resource=device_check', {
+      headers: buildHeaders(session?.access_token),
+      credentials: 'same-origin',
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (active && json?.data) setHistory(json.data);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+      stopStream();
+    };
+  }, [session?.access_token, stopStream]);
+
+  async function saveCheck(status: 'pass' | 'fail', rtt: number | null, peak: number) {
+    const res = await fetch('/api/ops?resource=device_check', {
+      method: 'POST',
+      headers: buildHeaders(session?.access_token, true),
+      credentials: 'same-origin',
+      body: JSON.stringify({ result: status, latency_ms: rtt, peak_level: peak }),
+    }).catch(() => null);
+    if (res?.ok) {
+      const json = await res.json();
+      if (json.data) setHistory((prev) => [json.data, ...prev]);
+    }
+  }
+
   async function runCheck() {
+    stopStream();
+    const t0 = performance.now();
+    let rtt: number | null = null;
+    try {
+      const ping = await fetch('/api/health', { cache: 'no-store' });
+      if (ping.ok) rtt = Math.max(1, Math.round(performance.now() - t0));
+    } catch {
+      rtt = null;
+    }
+    setLatencyMs(rtt);
+
     if (!navigator.mediaDevices?.getUserMedia) {
       setResult('fail');
       setMessage('Microphone API is unavailable in this browser.');
+      await saveCheck('fail', rtt, 0);
       return;
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      let peak = 0;
       if (AudioCtx) {
         const ctx = new AudioCtx();
         const src = ctx.createMediaStreamSource(stream);
         const analyser = ctx.createAnalyser();
         analyser.fftSize = 256;
         src.connect(analyser);
-        const data = new Uint8Array(analyser.frequencyBinCount);
-        let ticks = 0;
-        if (timerRef.current) window.clearInterval(timerRef.current);
-        timerRef.current = window.setInterval(() => {
-          analyser.getByteFrequencyData(data);
-          const avg = data.reduce((a, b) => a + b, 0) / data.length;
-          setLevel(Math.min(100, Math.round((avg / 128) * 100)));
-          ticks += 1;
-          if (ticks >= 25) {
-            if (timerRef.current) window.clearInterval(timerRef.current);
-            stream.getTracks().forEach((t) => t.stop());
-            void ctx.close();
+        streamRef.current = stream;
+        ctxRef.current = ctx;
+
+        const data = new Uint8Array(analyser.fftSize);
+        const startedAt = performance.now();
+        const tick = () => {
+          analyser.getByteTimeDomainData(data);
+          let sumSq = 0;
+          for (let i = 0; i < data.length; i += 1) {
+            const v = (data[i] - 128) / 128;
+            sumSq += v * v;
           }
-        }, 120);
+          const pct = Math.min(100, Math.round(Math.sqrt(sumSq / data.length) * 280));
+          peak = Math.max(peak, pct);
+          setLevel(pct);
+          if (performance.now() - startedAt < 3000) {
+            rafRef.current = requestAnimationFrame(tick);
+          } else {
+            stopStream();
+            void saveCheck('pass', rtt, peak);
+          }
+        };
+        rafRef.current = requestAnimationFrame(tick);
       } else {
         stream.getTracks().forEach((track) => track.stop());
+        await saveCheck('pass', rtt, 0);
       }
       setResult('pass');
-      setMessage('Microphone access verified. Live signal meter active for 3 seconds (no audio stored).');
+      setMessage(`Microphone active (live 3s meter) · Measured RTT: ${rtt ?? '—'} ms (zero audio stored).`);
     } catch {
       setResult('fail');
       setMessage('Microphone access failed or was denied.');
+      await saveCheck('fail', rtt, 0);
     }
   }
 
@@ -635,38 +831,103 @@ export function DeviceCheckPage() {
           <h1>Audio readiness check</h1>
         </div>
       </div>
-      <div className="subpage-card" style={{ maxWidth: 560 }}>
+      <div className="subpage-card" style={{ maxWidth: 580 }}>
         <p>{message}</p>
         <div className="meter-track" aria-label="Microphone signal level">
           <div className="meter-fill" style={{ width: `${level}%` }} />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 16 }}>
-          <Button onClick={runCheck}>
+          <Button onClick={() => void runCheck()}>
             <Mic size={15} />
-            <span>Run microphone check</span>
+            <span>Run microphone &amp; latency check</span>
           </Button>
           <Badge tone={result === 'pass' ? 'success' : result === 'fail' ? 'danger' : 'neutral'}>
-            {result === 'pass' ? 'Passed' : result === 'fail' ? 'Failed' : 'Not tested'}
+            {result === 'pass' ? `Passed (${latencyMs ?? '—'} ms)` : result === 'fail' ? 'Failed' : 'Not tested'}
           </Badge>
         </div>
       </div>
+
+      {history.length > 0 && (
+        <div style={{ marginTop: 24 }}>
+          <h2 style={{ marginBottom: 12 }}>Recent checks ({history.length})</h2>
+          <div className="workspace-grid">
+            {history.slice(0, 6).map((h) => (
+              <article key={h.id} className="subpage-card">
+                <Badge tone={h.result === 'pass' ? 'success' : 'danger'}>{h.result}</Badge>
+                <p className="mono-ltr" style={{ marginTop: 8 }}>
+                  RTT: {h.latency_ms ?? '—'} ms · Peak: {h.peak_level}%
+                </p>
+              </article>
+            ))}
+          </div>
+        </div>
+      )}
     </AppShell>
   );
 }
 
 export function BillingPage() {
+  const { session, user } = useAuth();
   const [rateDollars, setRateDollars] = useState(45);
   const [minutes, setMinutes] = useState(60);
   const [minimumMinutes, setMinimumMinutes] = useState(30);
   const [roundTo, setRoundTo] = useState(15);
-  const [records, setRecords] = useState<Array<{ id: string; minutes: number; amountDollars: string; status: 'invoiced' | 'paid' }>>([]);
+  const [records, setRecords] = useState<Array<{ id: string; minutes: number; amount_cents: number; status: 'invoiced' | 'paid' }>>([]);
 
-  function addRecord(e: FormEvent) {
+  useEffect(() => {
+    let active = true;
+    fetch('/api/ops?resource=billing', {
+      headers: buildHeaders(session?.access_token),
+      credentials: 'same-origin',
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (active && json?.records) setRecords(json.records);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [session?.access_token]);
+
+  async function addRecord(e: FormEvent) {
     e.preventDefault();
+    if (user || session?.access_token) {
+      const res = await fetch('/api/ops?resource=billing', {
+        method: 'POST',
+        headers: buildHeaders(session?.access_token, true),
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          minutes,
+          rate_cents: Math.round(rateDollars * 100),
+          minimum_minutes: minimumMinutes,
+          round_to_minutes: roundTo,
+        }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data) {
+          setRecords((prev) => [json.data, ...prev]);
+          return;
+        }
+      }
+    }
     const floored = Math.max(minutes, minimumMinutes);
     const billable = Math.ceil(floored / Math.max(1, roundTo)) * Math.max(1, roundTo);
-    const amountDollars = ((billable / 60) * rateDollars).toFixed(2);
-    setRecords((prev) => [{ id: crypto.randomUUID(), minutes: billable, amountDollars, status: 'invoiced' }, ...prev]);
+    const amount_cents = Math.round((billable / 60) * rateDollars * 100);
+    setRecords((prev) => [{ id: crypto.randomUUID(), minutes: billable, amount_cents, status: 'invoiced' }, ...prev]);
+  }
+
+  async function markPaid(id: string) {
+    if (user || session?.access_token) {
+      await fetch('/api/ops?resource=billing', {
+        method: 'PATCH',
+        headers: buildHeaders(session?.access_token, true),
+        credentials: 'same-origin',
+        body: JSON.stringify({ id }),
+      }).catch(() => {});
+    }
+    setRecords((prev) => prev.map((x) => (x.id === id ? { ...x, status: 'paid' } : x)));
   }
 
   return (
@@ -677,7 +938,7 @@ export function BillingPage() {
           <h1>Interpreter billing tracker</h1>
         </div>
       </div>
-      <form className="panel-form" onSubmit={addRecord}>
+      <form className="panel-form" onSubmit={(e) => void addRecord(e)} style={{ marginBottom: 24 }}>
         <div className="form-row-2">
           <Field label="Hourly rate (USD)" htmlFor="bill-rate">
             <Input id="bill-rate" type="number" min={0} value={rateDollars} onChange={(e) => setRateDollars(Number(e.target.value))} />
@@ -700,18 +961,12 @@ export function BillingPage() {
         {records.map((r) => (
           <article key={r.id} className="subpage-card">
             <p className="mono-ltr">
-              {r.minutes} min · ${r.amountDollars}
+              {r.minutes} min · ${(r.amount_cents / 100).toFixed(2)}
             </p>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
               <Badge tone={r.status === 'paid' ? 'success' : 'warning'}>{r.status}</Badge>
               {r.status === 'invoiced' && (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() =>
-                    setRecords((prev) => prev.map((x) => (x.id === r.id ? { ...x, status: 'paid' } : x)))
-                  }
-                >
+                <Button size="sm" variant="secondary" onClick={() => void markPaid(r.id)}>
                   Mark paid
                 </Button>
               )}
@@ -724,7 +979,7 @@ export function BillingPage() {
 }
 
 export function SupportPage() {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const [tickets, setTickets] = useState<SupportTicketItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState('general');
@@ -733,17 +988,23 @@ export function SupportPage() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const loadTickets = useCallback(async () => {
-    const res = await fetch('/api/support', { credentials: 'same-origin' });
+    const res = await fetch('/api/support', {
+      headers: buildHeaders(session?.access_token),
+      credentials: 'same-origin',
+    });
     if (res.ok) {
       const json = await res.json();
       setTickets(json.tickets || []);
     }
     setLoading(false);
-  }, []);
+  }, [session?.access_token]);
 
   useEffect(() => {
     let active = true;
-    fetch('/api/support', { credentials: 'same-origin' })
+    fetch('/api/support', {
+      headers: buildHeaders(session?.access_token),
+      credentials: 'same-origin',
+    })
       .then((r) => (r.ok ? r.json() : null))
       .then((json) => {
         if (active) {
@@ -757,13 +1018,13 @@ export function SupportPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [session?.access_token]);
 
   async function submitTicket(e: FormEvent) {
     e.preventDefault();
     const res = await fetch('/api/support', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: buildHeaders(session?.access_token, true),
       credentials: 'same-origin',
       body: JSON.stringify({ category, subject, body }),
     });
@@ -773,7 +1034,8 @@ export function SupportPage() {
       setNotice('Ticket queued for human support and confirmation logged in email outbox.');
       await loadTickets();
     } else {
-      setNotice('Unable to create ticket.');
+      const err = await res.json().catch(() => ({}));
+      setNotice(err.error || 'Unable to create ticket.');
     }
   }
 
@@ -798,6 +1060,7 @@ export function SupportPage() {
                 { value: 'access', label: 'Access or organization invite' },
                 { value: 'technical', label: 'Audio / browser setup issue' },
                 { value: 'billing', label: 'Billing or duration dispute' },
+                { value: 'boundary_escalation', label: 'Human boundary escalation' },
               ]}
             />
           </Field>
@@ -849,7 +1112,7 @@ export function SupportPage() {
 }
 
 export function AdminReviewPage() {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const [requests, setRequests] = useState<
     Array<{
       id: string;
@@ -870,18 +1133,24 @@ export function AdminReviewPage() {
   const [inviteBanner, setInviteBanner] = useState<string | null>(null);
 
   const loadAdmin = useCallback(async () => {
-    const res = await fetch('/api/admin', { credentials: 'same-origin' });
+    const res = await fetch('/api/admin', {
+      headers: buildHeaders(session?.access_token),
+      credentials: 'same-origin',
+    });
     if (res.ok) {
       const json = await res.json();
       setRequests(json.requests || []);
       setOutbox(json.outbox || []);
     }
     setLoading(false);
-  }, []);
+  }, [session?.access_token]);
 
   useEffect(() => {
     let active = true;
-    fetch('/api/admin', { credentials: 'same-origin' })
+    fetch('/api/admin', {
+      headers: buildHeaders(session?.access_token),
+      credentials: 'same-origin',
+    })
       .then((r) => (r.ok ? r.json() : null))
       .then((json) => {
         if (active && json) {
@@ -896,12 +1165,12 @@ export function AdminReviewPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [session?.access_token]);
 
   async function decide(id: string, decision: 'approve' | 'reject') {
     const res = await fetch('/api/admin', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: buildHeaders(session?.access_token, true),
       credentials: 'same-origin',
       body: JSON.stringify({ id, decision }),
     });
@@ -925,7 +1194,7 @@ export function AdminReviewPage() {
         <EmptyState
           icon={<ShieldCheck size={20} />}
           title="Sign in to review requests"
-          description="Create or sign in to a local account at /login to review incoming Request Access submissions and inspect queued emails."
+          description="Create or sign in to an account at /login to review incoming Request Access submissions and inspect queued emails."
           action={
             <Link className="button-primary" to="/login?returnTo=/app/admin">
               Sign in
@@ -1002,6 +1271,155 @@ export function AdminReviewPage() {
   );
 }
 
+export function SettingsPage() {
+  const { user, session } = useAuth();
+  const { locale, setLocale } = useLocale();
+  const [fullName, setFullName] = useState('');
+  const [timeZone, setTimeZone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
+  const [languagePairs, setLanguagePairs] = useState('EN-AR, EN-ES');
+  const [weeklyHours, setWeeklyHours] = useState(30);
+  const [savedNotice, setSavedNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user && !session?.access_token) return;
+    let active = true;
+    fetch('/api/ops?resource=profile', {
+      headers: buildHeaders(session?.access_token),
+      credentials: 'same-origin',
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (active && json?.data) {
+          setFullName(json.data.full_name || '');
+          if (json.data.time_zone) setTimeZone(json.data.time_zone);
+          if (json.data.language_pairs) setLanguagePairs(json.data.language_pairs);
+          if (json.data.weekly_hours) setWeeklyHours(Number(json.data.weekly_hours));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [user, session?.access_token]);
+
+  async function saveProfile(e: FormEvent) {
+    e.preventDefault();
+    setSavedNotice(null);
+    const res = await fetch('/api/ops?resource=profile', {
+      method: 'POST',
+      headers: buildHeaders(session?.access_token, true),
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        full_name: fullName,
+        locale,
+        time_zone: timeZone,
+        language_pairs: languagePairs,
+        weekly_hours: weeklyHours,
+      }),
+    });
+    if (res.ok) {
+      setSavedNotice('Settings saved.');
+    } else {
+      setSavedNotice('Sign in first to save profile settings.');
+    }
+  }
+
+  return (
+    <AppShell>
+      <div className="workspace-header">
+        <div>
+          <span className="eyebrow">SETTINGS</span>
+          <h1>Profile, locale &amp; capacity</h1>
+        </div>
+      </div>
+
+      <form className="panel-form" onSubmit={(e) => void saveProfile(e)}>
+        <Field label="Display name" htmlFor="set-name">
+          <Input id="set-name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+        </Field>
+        <Field label="Interface language" htmlFor="set-locale">
+          <Select
+            id="set-locale"
+            value={locale}
+            onValueChange={(v) => setLocale(v === 'ar' ? 'ar' : 'en')}
+            options={[
+              { value: 'en', label: 'English (LTR)' },
+              { value: 'ar', label: 'العربية (RTL)' },
+            ]}
+          />
+        </Field>
+        <div className="form-row-2">
+          <Field label="Time zone" htmlFor="set-tz">
+            <Input id="set-tz" value={timeZone} onChange={(e) => setTimeZone(e.target.value)} />
+          </Field>
+          <Field label="Weekly hours" htmlFor="set-hours">
+            <Input
+              id="set-hours"
+              type="number"
+              min={1}
+              max={100}
+              value={weeklyHours}
+              onChange={(e) => setWeeklyHours(Number(e.target.value))}
+            />
+          </Field>
+        </div>
+        <Field label="Language pairs" htmlFor="set-pairs">
+          <Input id="set-pairs" value={languagePairs} onChange={(e) => setLanguagePairs(e.target.value)} />
+        </Field>
+        <Button type="submit">Save settings</Button>
+        {savedNotice && <p className="form-success">{savedNotice}</p>}
+      </form>
+    </AppShell>
+  );
+}
+
+export function ReportsPage() {
+  const { session } = useAuth();
+  const [summary, setSummary] = useState<{
+    sessions?: number;
+    totalMinutes?: number;
+    byPair?: Record<string, { sessions: number; minutes: number }>;
+    byModality?: Record<string, { sessions: number; minutes: number }>;
+  } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/ops?resource=reports', {
+      headers: buildHeaders(session?.access_token),
+      credentials: 'same-origin',
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (active && json) setSummary(json);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [session?.access_token]);
+
+  return (
+    <AppShell>
+      <div className="workspace-header">
+        <div>
+          <span className="eyebrow">REPORTS</span>
+          <h1>Interpreter &amp; organization totals</h1>
+        </div>
+      </div>
+      <div className="workspace-grid">
+        <article className="subpage-card">
+          <h2>Completed sessions</h2>
+          <p className="mono-ltr">{summary?.sessions ?? 0}</p>
+        </article>
+        <article className="subpage-card">
+          <h2>Total interpreted minutes</h2>
+          <p className="mono-ltr">{summary?.totalMinutes ?? 0} min</p>
+        </article>
+      </div>
+    </AppShell>
+  );
+}
+
 export function RecordsAssistantPage() {
   const { session } = useAuth();
   const { tr } = useLocale();
@@ -1012,7 +1430,7 @@ export function RecordsAssistantPage() {
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!session?.access_token) {
-      setEvents([{ type: 'error', message: 'Use the Workspace Assistant button in the corner or sign in first.' }]);
+      setEvents([{ type: 'error', message: 'Use the Work Assistant button in the sidebar or sign in first.' }]);
       return;
     }
     setEvents([]);

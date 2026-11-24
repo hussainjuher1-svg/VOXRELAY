@@ -282,11 +282,14 @@ export function AssistantDock({
 
   async function escalateToHuman(msg: ChatMessage) {
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`;
       const res = await fetch('/api/support', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
+        credentials: 'same-origin',
         body: JSON.stringify({
-          category: 'assistant_escalation',
+          category: 'boundary_escalation',
           subject: isAr ? 'تصعيد من مساعد العمل' : 'Work Assistant escalation',
           body: msg.text.slice(0, 600),
           route: pathname,

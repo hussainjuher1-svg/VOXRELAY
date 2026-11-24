@@ -65,7 +65,7 @@ export const contactRequestSchema = z.object({
   name: maxCodePoints(120, 'Name').optional().default(''),
   fullName: maxCodePoints(120, 'Full name').optional(),
   email: z.string().trim().email('Valid email address is required').max(160),
-  audience: z.enum(['interpreter', 'organization', 'other']).default('interpreter'),
+  audience: z.enum(['interpreter', 'organization', 'support', 'other']).default('interpreter'),
   organization: maxCodePoints(140, 'Organization').optional().default(''),
   country: maxCodePoints(80, 'Country').optional().default(''),
   languages: maxCodePoints(160, 'Languages').optional().default(''),

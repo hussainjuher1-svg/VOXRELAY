@@ -65,6 +65,25 @@ async function handleLocal(req, res, actor) {
     return sendJson(res, 201, { data: { ...created, checklist: JSON.parse(created.checklist_json || '[]') } });
   }
 
+  if (req.method === 'GET' && id) {
+    const row = db.prepare('SELECT * FROM assignments WHERE id = ? AND owner_id = ?').get(id, actor.user.id);
+    if (!row) return sendJson(res, 404, { error: 'Assignment not found.' });
+    const checks = db
+      .prepare('SELECT * FROM device_checks WHERE user_id = ? ORDER BY created_at DESC LIMIT 5')
+      .all(actor.user.id);
+    const events = db
+      .prepare('SELECT * FROM session_events WHERE assignment_id = ? ORDER BY created_at ASC')
+      .all(id);
+    const checklist = JSON.parse(row.checklist_json || '[]');
+    const readiness = computeReadiness({
+      checklist,
+      deviceChecks: checks,
+      assignmentId: row.id,
+      startAt: row.start_at,
+    });
+    return sendJson(res, 200, { data: { ...row, checklist }, events, readiness });
+  }
+
   if (req.method === 'PATCH' && id) {
     const row = db.prepare('SELECT * FROM assignments WHERE id = ? AND owner_id = ?').get(id, actor.user.id);
     if (!row) return sendJson(res, 404, { error: 'Assignment not found.' });
@@ -76,19 +95,32 @@ async function handleLocal(req, res, actor) {
     if (!rule.from.includes(row.status)) {
       return sendJson(res, 409, { error: `Cannot ${d.action.replace('_', ' ')} while status is "${row.status}".` });
     }
+    if (d.action === 'close_out' && !d.exception_category) {
+      return sendJson(res, 400, { error: 'Close-out requires an exception category.' });
+    }
     const nextStatus = rule.to || (d.action === 'mark_ready' ? 'ready' : row.status);
     const nextChecklist = d.checklist !== undefined ? JSON.stringify(d.checklist) : row.checklist_json;
     const nextNote = d.personal_note !== undefined ? d.personal_note : row.personal_note;
+    const nextStart = d.action === 'reschedule' && d.start_at ? d.start_at : row.start_at;
+    const nextDuration = d.action === 'reschedule' && d.duration_minutes ? d.duration_minutes : row.duration_minutes;
+    const nextException = d.action === 'close_out' ? d.exception_category : row.exception_category;
     const now = new Date().toISOString();
-    db.prepare('UPDATE assignments SET status = ?, checklist_json = ?, personal_note = ?, updated_at = ? WHERE id = ?').run(
-      nextStatus,
-      nextChecklist,
-      nextNote,
-      now,
-      id
-    );
+    db.prepare(
+      `UPDATE assignments
+       SET status = ?, start_at = ?, duration_minutes = ?, exception_category = ?, checklist_json = ?, personal_note = ?, updated_at = ?
+       WHERE id = ?`
+    ).run(nextStatus, nextStart, nextDuration, nextException, nextChecklist, nextNote, now, id);
+    writeLocalAudit(db, { actorId: actor.user.id, area: 'assignments', type: rule.event, objectRef: row.ref, result: 'ok' });
     const updated = db.prepare('SELECT * FROM assignments WHERE id = ?').get(id);
     return sendJson(res, 200, { data: { ...updated, checklist: JSON.parse(updated.checklist_json || '[]') } });
+  }
+
+  if (req.method === 'DELETE' && id) {
+    const row = db.prepare('SELECT * FROM assignments WHERE id = ? AND owner_id = ?').get(id, actor.user.id);
+    if (!row) return sendJson(res, 404, { error: 'Assignment not found.' });
+    db.prepare('DELETE FROM assignments WHERE id = ? AND owner_id = ?').run(id, actor.user.id);
+    writeLocalAudit(db, { actorId: actor.user.id, area: 'assignments', type: 'deleted', objectRef: row.ref, result: 'ok' });
+    return sendJson(res, 200, { ok: true });
   }
 
   return sendJson(res, 405, { error: 'Method not allowed.' });

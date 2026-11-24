@@ -17,13 +17,14 @@ export default async function handler(req, res) {
   });
   if (!raw || res.writableEnded) return;
 
-  // Allow feedback recording on same endpoint
-  if (raw.feedback && typeof raw.feedback === 'string') {
+  // Allow feedback recording on same endpoint (supports both { action: 'feedback', vote } and { feedback })
+  const rating = typeof raw.feedback === 'string' ? raw.feedback : raw.action === 'feedback' && typeof raw.vote === 'string' ? raw.vote : null;
+  if (rating) {
     const db = getLocalDb();
     if (db) {
       db.prepare(
         'INSERT INTO assistant_feedback (id, mode, rating, question_hash, created_at) VALUES (?, ?, ?, ?, ?)'
-      ).run(crypto.randomUUID(), raw.mode || 'ask', raw.feedback, hashQuestion(raw.question || ''), new Date().toISOString());
+      ).run(crypto.randomUUID(), raw.mode || 'ask', rating, hashQuestion(raw.question || raw.messageId || ''), new Date().toISOString());
     }
     return sendJson(res, 200, { ok: true });
   }

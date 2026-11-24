@@ -1,15 +1,168 @@
+import crypto from 'node:crypto';
+import { resolveActor } from './_lib/auth-session.js';
 import { evaluateAssistantRequest, matchTopic } from './_lib/assistant.js';
 import { can, canReadDoc, canReviewDoc, HttpError, requireCapability } from './_lib/authz.js';
 import { enforceRateLimit, readJsonBody, sendJson, streamRoute } from './_lib/core.js';
+import { writeLocalAudit } from './_lib/local-db.js';
 import { computeBillingAmountCents, computeQualityIndicators, summarizeReports } from './_lib/ops-metrics.js';
 import { authenticateRequest } from './_lib/supabase.js';
 import { assistantRequestSchema, safeMeta, sessionDocSchema } from './_lib/validate.js';
 
+async function handleLocalOps(req, res, actor, resource) {
+  const db = actor.db;
+  const userId = actor.user.id;
+  const url = new URL(req.url, 'http://localhost');
+
+  if (resource === 'billing') {
+    if (req.method === 'GET') {
+      const records = db
+        .prepare('SELECT * FROM billing_records WHERE user_id = ? ORDER BY created_at DESC LIMIT 100')
+        .all(userId);
+      return sendJson(res, 200, { settings: null, records });
+    }
+    if (req.method === 'POST') {
+      const body = await readJsonBody(req);
+      const rateCents = Math.max(0, Math.round(Number(body.rate_cents ?? 0)));
+      const calc = computeBillingAmountCents(body.minutes, rateCents, {
+        minimum_minutes: body.minimum_minutes ?? 0,
+        round_to_minutes: body.round_to_minutes ?? 1,
+      });
+      const id = crypto.randomUUID();
+      const now = new Date().toISOString();
+      db.prepare(
+        `INSERT INTO billing_records (id, user_id, assignment_ref, minutes, rate_cents, currency, amount_cents, status, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'invoiced', ?)`
+      ).run(id, userId, body.assignment_ref || null, calc.minutes, rateCents, String(body.currency || 'USD'), calc.amount_cents, now);
+      const rec = db.prepare('SELECT * FROM billing_records WHERE id = ?').get(id);
+      return sendJson(res, 201, { data: rec });
+    }
+    if (req.method === 'PATCH') {
+      const body = await readJsonBody(req);
+      if (!body.id) return sendJson(res, 400, { error: 'Billing record ID required.' });
+      db.prepare("UPDATE billing_records SET status = 'paid' WHERE id = ? AND user_id = ?").run(body.id, userId);
+      const rec = db.prepare('SELECT * FROM billing_records WHERE id = ? AND user_id = ?').get(body.id, userId);
+      return sendJson(res, 200, { data: rec });
+    }
+  }
+
+  if (resource === 'device_check') {
+    if (req.method === 'GET') {
+      const rows = db
+        .prepare('SELECT * FROM device_checks WHERE user_id = ? ORDER BY created_at DESC LIMIT 20')
+        .all(userId);
+      return sendJson(res, 200, { data: rows });
+    }
+    if (req.method === 'POST') {
+      const body = await readJsonBody(req);
+      const id = crypto.randomUUID();
+      const now = new Date().toISOString();
+      const result = body.result === 'fail' ? 'fail' : 'pass';
+      const latencyMs = Number.isFinite(Number(body.latency_ms)) ? Math.round(Number(body.latency_ms)) : null;
+      const peakLevel = Math.min(100, Math.max(0, Math.round(Number(body.peak_level ?? 0))));
+      db.prepare(
+        `INSERT INTO device_checks (id, user_id, result, latency_ms, peak_level, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      ).run(id, userId, result, latencyMs, peakLevel, now);
+      writeLocalAudit(db, { actorId: userId, area: 'device_check', type: 'device_check_run', result });
+      const rec = db.prepare('SELECT * FROM device_checks WHERE id = ?').get(id);
+      return sendJson(res, 201, { data: rec });
+    }
+  }
+
+  if (resource === 'session_event') {
+    const assignmentId = req.query?.assignment_id || url.searchParams.get('assignment_id') || 'preview';
+    if (req.method === 'GET') {
+      const rows = db
+        .prepare('SELECT * FROM session_events WHERE assignment_id = ? AND actor_id = ? ORDER BY id ASC')
+        .all(assignmentId, userId);
+      return sendJson(res, 200, { data: rows });
+    }
+    if (req.method === 'POST') {
+      const body = await readJsonBody(req);
+      const allowed = new Set(['clarification', 'pace_pause', 'technical_issue']);
+      const type = allowed.has(body.type) ? body.type : 'clarification';
+      const aid = String(body.assignment_id || assignmentId);
+      const now = new Date().toISOString();
+      const info = db
+        .prepare('INSERT INTO session_events (assignment_id, actor_id, type, created_at) VALUES (?, ?, ?, ?)')
+        .run(aid, userId, type, now);
+      const rec = db.prepare('SELECT * FROM session_events WHERE id = ?').get(info.lastInsertRowid);
+      return sendJson(res, 201, { data: rec });
+    }
+  }
+
+  if (resource === 'reports' && req.method === 'GET') {
+    const assignments = db.prepare('SELECT * FROM assignments WHERE owner_id = ?').all(userId);
+    return sendJson(res, 200, summarizeReports(assignments));
+  }
+
+  if (resource === 'quality' && req.method === 'GET') {
+    const assignments = db.prepare('SELECT * FROM assignments WHERE owner_id = ?').all(userId);
+    const checks = db.prepare('SELECT * FROM device_checks WHERE user_id = ?').all(userId);
+    return sendJson(res, 200, {
+      indicators: computeQualityIndicators({
+        assignments,
+        assignmentEvents: [],
+        deviceChecks: checks,
+        sessionDocs: [],
+        followups: [],
+      }),
+    });
+  }
+
+  if (resource === 'profile') {
+    const row = db
+      .prepare('SELECT id, email, full_name, role, locale, time_zone, language_pairs, weekly_hours FROM local_users WHERE id = ?')
+      .get(userId);
+    if (req.method === 'GET') {
+      return sendJson(res, 200, {
+        data: row || {
+          id: userId,
+          email: actor.user.email,
+          full_name: actor.user.full_name || '',
+          role: actor.user.role || 'interpreter',
+          locale: 'en',
+          time_zone: 'UTC',
+          language_pairs: '',
+          weekly_hours: 30,
+        },
+      });
+    }
+    if (req.method === 'POST') {
+      const body = await readJsonBody(req);
+      if (row) {
+        db.prepare(
+          'UPDATE local_users SET full_name = ?, locale = ?, time_zone = ?, language_pairs = ?, weekly_hours = ? WHERE id = ?'
+        ).run(
+          String(body.full_name ?? row.full_name).slice(0, 120),
+          body.locale === 'ar' ? 'ar' : 'en',
+          String(body.time_zone ?? row.time_zone).slice(0, 64),
+          String(body.language_pairs ?? row.language_pairs).slice(0, 160),
+          Math.min(100, Math.max(1, Math.round(Number(body.weekly_hours ?? row.weekly_hours)))),
+          userId
+        );
+      }
+      const updated = db
+        .prepare('SELECT id, email, full_name, role, locale, time_zone, language_pairs, weekly_hours FROM local_users WHERE id = ?')
+        .get(userId);
+      return sendJson(res, 200, { data: updated || row });
+    }
+  }
+
+  return sendJson(res, 404, { error: 'Unknown ops resource.' });
+}
+
 export default async function handler(req, res) {
   try {
-    const ctx = await authenticateRequest(req);
     const url = new URL(req.url, 'http://localhost');
     const resource = req.query?.resource || url.searchParams.get('resource') || 'dashboard';
+
+    const actor = await resolveActor(req);
+    if (actor?.mode === 'local') {
+      return await handleLocalOps(req, res, actor, resource);
+    }
+
+    const ctx = await authenticateRequest(req);
 
     if (resource === 'assistant' && req.method === 'POST') {
       await enforceRateLimit(ctx.supabase, `assistant:${ctx.userId}`, { maxRequests: 20, windowMs: 60_000 });

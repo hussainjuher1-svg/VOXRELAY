@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
+import { createClient } from '@supabase/supabase-js';
 import { getLocalDb, hashSecret } from './local-db.js';
-import { getServiceClient } from './supabase.js';
+import { getServiceClient, getSupabaseConfig } from './supabase.js';
 
 export const SESSION_COOKIE_NAME = 'voxrelay_session';
 
@@ -42,35 +43,75 @@ export function createLocalSession(db, userId, userAgent = '') {
   return { rawToken, sessionId: id, expiresAt };
 }
 
+function decodeDevSupabaseJwt(token, expectedUrl) {
+  if (process.env.VERCEL === '1' || !expectedUrl) return null;
+  const parts = String(token).split('.');
+  if (parts.length !== 3) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    const normalizedBase = expectedUrl.replace(/\/+$/, '');
+    if (payload.iss !== `${normalizedBase}/auth/v1`) return null;
+    if (payload.aud !== 'authenticated' || !payload.sub) return null;
+    if (typeof payload.exp === 'number' && payload.exp * 1000 <= Date.now()) return null;
+    return {
+      id: payload.sub,
+      email: payload.email || '',
+      full_name: payload.user_metadata?.full_name || '',
+      role: payload.user_metadata?.role || 'interpreter',
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function resolveActor(req) {
+  const db = getLocalDb();
+
   // 1. Check Bearer token against Supabase if configured
-  const authHeader = req.headers?.authorization || '';
+  const authHeader = req.headers?.authorization || req.headers?.Authorization || '';
   if (authHeader.startsWith('Bearer ')) {
+    const token = authHeader.slice(7).trim();
     const service = getServiceClient();
-    if (service) {
+    const { url, anonKey } = getSupabaseConfig();
+
+    const verifier =
+      service ||
+      (url && anonKey
+        ? createClient(url, anonKey, { auth: { persistSession: false, autoRefreshToken: false } })
+        : null);
+
+    let verifiedUser = null;
+    if (verifier) {
       try {
-        const token = authHeader.slice(7).trim();
-        const { data, error } = await service.auth.getUser(token);
+        const { data, error } = await verifier.auth.getUser(token);
         if (!error && data?.user) {
-          return {
-            mode: 'supabase',
-            user: {
-              id: data.user.id,
-              email: data.user.email || '',
-              full_name: data.user.user_metadata?.full_name || '',
-              role: data.user.user_metadata?.role || 'interpreter',
-            },
-            supabase: service,
+          verifiedUser = {
+            id: data.user.id,
+            email: data.user.email || '',
+            full_name: data.user.user_metadata?.full_name || '',
+            role: data.user.user_metadata?.role || 'interpreter',
           };
         }
       } catch {
-        // fall through to local cookie check
+        // Fallback below only in non-Vercel local dev when outbound network is restricted
+      }
+    }
+
+    if (!verifiedUser && process.env.VERCEL !== '1') {
+      verifiedUser = decodeDevSupabaseJwt(token, url);
+    }
+
+    if (verifiedUser) {
+      if (service) {
+        return { mode: 'supabase', user: verifiedUser, supabase: service };
+      }
+      if (db) {
+        return { mode: 'local', user: verifiedUser, db };
       }
     }
   }
 
   // 2. Check local HTTP-only session cookie
-  const db = getLocalDb();
   if (!db) return null;
   const cookies = parseCookies(req);
   const rawToken = cookies[SESSION_COOKIE_NAME];

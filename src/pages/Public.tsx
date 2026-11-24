@@ -1291,10 +1291,11 @@ export function ContactPage() {
                 </Field>
               </div>
 
-              <Field label={isAr ? 'نبذة عن احتياج العمل' : 'Workflow notes'} htmlFor="contact-msg">
+              <Field label={isAr ? 'نبذة عن احتياج العمل' : 'Workflow notes'} htmlFor="contact-msg" required>
                 <Textarea
                   id="contact-msg"
                   rows={4}
+                  required
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   placeholder={

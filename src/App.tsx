@@ -26,6 +26,8 @@ const SessionFocusPage = lazy(() => import('./pages/AppWorkspace').then((m) => (
 const TerminologyPage = lazy(() => import('./pages/AppWorkspace').then((m) => ({ default: m.TerminologyPage })));
 const DeviceCheckPage = lazy(() => import('./pages/AppWorkspace').then((m) => ({ default: m.DeviceCheckPage })));
 const BillingPage = lazy(() => import('./pages/AppWorkspace').then((m) => ({ default: m.BillingPage })));
+const ReportsPage = lazy(() => import('./pages/AppWorkspace').then((m) => ({ default: m.ReportsPage })));
+const SettingsPage = lazy(() => import('./pages/AppWorkspace').then((m) => ({ default: m.SettingsPage })));
 const RecordsAssistantPage = lazy(() => import('./pages/AppWorkspace').then((m) => ({ default: m.RecordsAssistantPage })));
 const SupportPage = lazy(() => import('./pages/AppWorkspace').then((m) => ({ default: m.SupportPage })));
 const AdminReviewPage = lazy(() => import('./pages/AppWorkspace').then((m) => ({ default: m.AdminReviewPage })));
@@ -147,16 +149,7 @@ export function AppRoutes() {
           <Route path="/app/assistant" element={<RecordsAssistantPage />} />
           <Route path="/app/support" element={<SupportPage />} />
           <Route path="/app/admin" element={<AdminReviewPage />} />
-          <Route
-            path="/app/reports"
-            element={
-              <WorkspacePlaceholderPage
-                eyebrow="REPORTS"
-                title="Interpreter & organization totals"
-                description="Sessions and minutes grouped by language pair and modality, computed from completed assignments."
-              />
-            }
-          />
+          <Route path="/app/reports" element={<ReportsPage />} />
           <Route
             path="/app/quality"
             element={
@@ -177,16 +170,7 @@ export function AppRoutes() {
               />
             }
           />
-          <Route
-            path="/app/settings"
-            element={
-              <WorkspacePlaceholderPage
-                eyebrow="SETTINGS"
-                title="Profile, locale & retention"
-                description="Manage language preference (English / Arabic), time zone, theme, and retention settings."
-              />
-            }
-          />
+          <Route path="/app/settings" element={<SettingsPage />} />
           <Route path="*" element={wrapPublic(<NotFoundPage />)} />
         </Routes>
       </Suspense>
