@@ -74,6 +74,9 @@ export function OverviewPage() {
     };
   }, [session?.access_token]);
 
+  const readyCount = assignments.filter((a) => a.status === 'ready' || a.status === 'in_session').length;
+  const nextUp = assignments.find((a) => a.status !== 'completed' && a.status !== 'cancelled') || assignments[0];
+
   return (
     <AppShell>
       <div className="workspace-header">
@@ -82,8 +85,8 @@ export function OverviewPage() {
           <h1>Interpreter workspace</h1>
         </div>
         <div className="hero-actions">
-          <Link className="button-secondary" to="/app/admin">
-            Review queue &amp; outbox
+          <Link className="button-secondary" to="/app/device-check">
+            Run device check
           </Link>
           <Link className="button-primary" to="/app/assignments">
             Manage assignments
@@ -92,55 +95,99 @@ export function OverviewPage() {
       </div>
 
       {!user && (
-        <div className="subpage-card warning-card" style={{ marginBottom: 20 }}>
-          <h2>Sign in to persist records</h2>
-          <p>
-            Create an account or sign in at{' '}
-            <Link className="inline-link" to="/login">
-              /login
-            </Link>{' '}
-            to save assignments, glossary terms, and support tickets.
-          </p>
+        <div className="vx-guest-banner">
+          <div>
+            <span className="eyebrow" style={{ color: '#96b5aa' }}>WORKSPACE SESSION</span>
+            <h2>Sign in to save schedules, terminology &amp; billing</h2>
+            <p>
+              Timing-only assignments, glossary terms, device checks, and support queues sync directly to your account.
+            </p>
+          </div>
+          <div className="hero-actions">
+            <Link className="button-secondary" to="/login?returnTo=/app">
+              Sign in
+            </Link>
+            <Link className="button-primary" to="/login?mode=signup&returnTo=/app">
+              Create free account
+            </Link>
+          </div>
         </div>
       )}
 
       {loading ? (
-        <div className="workspace-grid">
-          <div className="subpage-card">
+        <div className="vx-kpi-grid">
+          <div className="vx-kpi-card">
             <Skeleton height={24} width="60%" />
-            <div style={{ marginTop: 12 }}>
-              <Skeleton height={16} />
-            </div>
+            <Skeleton height={16} />
           </div>
-          <div className="subpage-card">
+          <div className="vx-kpi-card">
             <Skeleton height={24} width="50%" />
-            <div style={{ marginTop: 12 }}>
-              <Skeleton height={16} />
-            </div>
+            <Skeleton height={16} />
           </div>
         </div>
       ) : (
-        <div className="workspace-grid">
-          <article className="subpage-card">
-            <h2>Account session</h2>
-            <p>{user ? `Signed in as ${user.email}` : 'No active session'}</p>
-            <Badge tone={user ? 'success' : 'warning'}>{user ? 'Authenticated' : 'Guest view'}</Badge>
-          </article>
-          <article className="subpage-card">
-            <h2>Assignments</h2>
-            <p>{assignments.length} persisted assignment(s) in your schedule.</p>
-            <Link className="inline-link" to="/app/assignments">
-              Open schedule
-            </Link>
-          </article>
-          <article className="subpage-card">
-            <h2>Glossary</h2>
-            <p>{termsCount} saved terminology entry/entries.</p>
-            <Link className="inline-link" to="/app/terminology">
-              Open terminology
-            </Link>
-          </article>
-        </div>
+        <>
+          <div className="vx-kpi-grid">
+            <article className="vx-kpi-card vx-kpi-card--terracotta">
+              <span className="eyebrow">Scheduled</span>
+              <span className="vx-kpi-value">{assignments.length}</span>
+              <Link className="inline-link" to="/app/assignments">
+                Open assignments
+              </Link>
+            </article>
+            <article className="vx-kpi-card vx-kpi-card--forest">
+              <span className="eyebrow">Ready / active</span>
+              <span className="vx-kpi-value">{readyCount}</span>
+              <Link className="inline-link" to="/app/ops">
+                Inspect ops queues
+              </Link>
+            </article>
+            <article className="vx-kpi-card vx-kpi-card--gold">
+              <span className="eyebrow">Glossary terms</span>
+              <span className="vx-kpi-value">{termsCount}</span>
+              <Link className="inline-link" to="/app/terminology">
+                Open terminology
+              </Link>
+            </article>
+            <article className="vx-kpi-card vx-kpi-card--sage">
+              <span className="eyebrow">Session status</span>
+              <span className="vx-kpi-value" style={{ fontSize: 22, paddingTop: 6 }}>
+                {user ? 'Signed in' : 'Guest'}
+              </span>
+              <span style={{ fontSize: 13, color: 'var(--vr-ink-2)' }}>
+                {user ? user.email : 'Sign in to sync records'}
+              </span>
+            </article>
+          </div>
+
+          <div className="workspace-grid">
+            <article className="subpage-card">
+              <span className="eyebrow">NEXT SESSION</span>
+              <h2 style={{ marginTop: 6 }}>{nextUp ? `${nextUp.ref} · ${nextUp.language_pair}` : 'No upcoming assignments'}</h2>
+              <p>
+                {nextUp
+                  ? `${new Date(nextUp.start_at).toLocaleString()} · ${nextUp.modality} · ${nextUp.duration_minutes} min`
+                  : 'Create an assignment or import a timing-only .ics calendar file.'}
+              </p>
+              <div style={{ marginTop: 12 }}>
+                <Link className="inline-link" to={nextUp ? `/app/session/${nextUp.id}` : '/app/assignments'}>
+                  {nextUp ? 'Enter focus mode' : 'Add assignment'}
+                </Link>
+              </div>
+            </article>
+
+            <article className="subpage-card">
+              <span className="eyebrow">AUDIO &amp; GOVERNANCE</span>
+              <h2 style={{ marginTop: 6 }}>T3 Human-Only Policy active</h2>
+              <p>Zero audio recording. Real-time browser microphone metering and latency checks stay in your tab.</p>
+              <div style={{ marginTop: 12 }}>
+                <Link className="inline-link" to="/app/device-check">
+                  Test microphone &amp; latency
+                </Link>
+              </div>
+            </article>
+          </div>
+        </>
       )}
     </AppShell>
   );
@@ -1546,25 +1593,29 @@ export function OpsDashboardPage() {
           <h1>Live operational queues</h1>
         </div>
       </div>
-      <div className="workspace-grid">
-        <article className="subpage-card">
-          <h2>Assignments</h2>
-          <p className="mono-ltr">{counts.assignments} total · {counts.ready} ready</p>
+      <div className="vx-kpi-grid">
+        <article className="vx-kpi-card vx-kpi-card--terracotta">
+          <span className="eyebrow">Assignments</span>
+          <span className="vx-kpi-value">{counts.assignments}</span>
+          <span className="mono-ltr" style={{ fontSize: 12, color: 'var(--vr-ink-2)' }}>{counts.ready} ready</span>
           <Link className="inline-link" to="/app/assignments">Open assignments</Link>
         </article>
-        <article className="subpage-card">
-          <h2>Device checks</h2>
-          <p className="mono-ltr">{counts.checks} recorded check(s)</p>
+        <article className="vx-kpi-card vx-kpi-card--forest">
+          <span className="eyebrow">Device checks</span>
+          <span className="vx-kpi-value">{counts.checks}</span>
+          <span className="mono-ltr" style={{ fontSize: 12, color: 'var(--vr-ink-2)' }}>browser audio &amp; RTT</span>
           <Link className="inline-link" to="/app/device-check">Run device check</Link>
         </article>
-        <article className="subpage-card">
-          <h2>Billing records</h2>
-          <p className="mono-ltr">{counts.billing} logged record(s)</p>
+        <article className="vx-kpi-card vx-kpi-card--gold">
+          <span className="eyebrow">Billing records</span>
+          <span className="vx-kpi-value">{counts.billing}</span>
+          <span className="mono-ltr" style={{ fontSize: 12, color: 'var(--vr-ink-2)' }}>logged entries</span>
           <Link className="inline-link" to="/app/billing">Open billing</Link>
         </article>
-        <article className="subpage-card">
-          <h2>Support queue</h2>
-          <p className="mono-ltr">{counts.tickets} ticket(s)</p>
+        <article className="vx-kpi-card vx-kpi-card--sage">
+          <span className="eyebrow">Support queue</span>
+          <span className="vx-kpi-value">{counts.tickets}</span>
+          <span className="mono-ltr" style={{ fontSize: 12, color: 'var(--vr-ink-2)' }}>human coordinator</span>
           <Link className="inline-link" to="/app/support">Open support</Link>
         </article>
       </div>
@@ -1704,7 +1755,7 @@ export function AvailabilityPage() {
 }
 
 export function QualityPage() {
-  const { session } = useAuth();
+  const { session, user } = useAuth();
   const [indicators, setIndicators] = useState<
     Array<{ key: string; label?: string; numerator: number; denominator: number; ratio?: number | null }>
   >([]);
@@ -1736,6 +1787,32 @@ export function QualityPage() {
     };
   }, [session?.access_token]);
 
+  const defaultMetrics = [
+    { key: 'device_checks_passed', title: 'Device check pass rate', link: '/app/device-check', cta: 'Run device check' },
+    { key: 'sessions_without_tech_exception', title: 'Sessions without tech exception', link: '/app/assignments', cta: 'Review sessions' },
+    { key: 'on_time_starts', title: 'On-time session starts', link: '/app/assignments', cta: 'Open schedule' },
+    { key: 'documentation_completed', title: 'Close-out documentation complete', link: '/app/reports', cta: 'View reports' },
+  ];
+
+  const indicatorMap = new Map(indicators.map((i) => [i.key, i]));
+  const cards = indicators.length > 0
+    ? indicators.map((i) => ({
+        key: i.key,
+        title: i.label || i.key.replace(/_/g, ' '),
+        numerator: i.numerator,
+        denominator: i.denominator,
+        link: i.key.includes('device') ? '/app/device-check' : '/app/assignments',
+        cta: i.key.includes('device') ? 'Run device check' : 'Open schedule',
+      }))
+    : defaultMetrics.map((m) => {
+        const found = indicatorMap.get(m.key);
+        return {
+          ...m,
+          numerator: found?.numerator ?? 0,
+          denominator: found?.denominator ?? 0,
+        };
+      });
+
   return (
     <AppShell>
       <div className="workspace-header">
@@ -1743,22 +1820,46 @@ export function QualityPage() {
           <span className="eyebrow">QUALITY MONITORING</span>
           <h1>Operational readiness indicators</h1>
         </div>
+        <Link className="button-secondary" to="/app/device-check">
+          Run device check
+        </Link>
       </div>
-      <div className="workspace-grid">
-        {indicators.length === 0 ? (
-          <article className="subpage-card">
-            <p>Sign in and log assignments or device checks to compute live operational ratios.</p>
-          </article>
-        ) : (
-          indicators.map((ind) => (
-            <article key={ind.key} className="subpage-card">
-              <span className="eyebrow">{ind.key.replace(/_/g, ' ')}</span>
-              <p className="mono-ltr" style={{ fontSize: 22, marginTop: 8 }}>
-                {ind.numerator} / {ind.denominator}
-              </p>
+
+      {!user && (
+        <div className="vx-guest-banner">
+          <div>
+            <span className="eyebrow" style={{ color: '#96b5aa' }}>LIVE METRICS</span>
+            <h2>Sign in to compute personal quality ratios</h2>
+            <p>Every ratio is calculated directly from your persisted assignments and audio readiness checks.</p>
+          </div>
+          <Link className="button-primary" to="/login?mode=signup&returnTo=/app/quality">
+            Sign in / Create account
+          </Link>
+        </div>
+      )}
+
+      <div className="vx-kpi-grid">
+        {cards.map((ind, idx) => {
+          const pct = ind.denominator > 0 ? Math.round((ind.numerator / ind.denominator) * 100) : 0;
+          const accentClass = ['vx-kpi-card--terracotta', 'vx-kpi-card--forest', 'vx-kpi-card--gold', 'vx-kpi-card--sage'][idx % 4];
+          return (
+            <article key={ind.key} className={`vx-kpi-card ${accentClass}`}>
+              <span className="eyebrow">{ind.title}</span>
+              <span className="vx-kpi-value">
+                {ind.denominator > 0 ? `${pct}%` : '0 / 0'}
+              </span>
+              <div className="meter-track" aria-label={ind.title}>
+                <div className="meter-fill" style={{ width: `${pct}%` }} />
+              </div>
+              <span className="mono-ltr" style={{ fontSize: 12, color: 'var(--vr-ink-2)' }}>
+                {ind.numerator} of {ind.denominator} recorded
+              </span>
+              <Link className="inline-link" to={ind.link}>
+                {ind.cta}
+              </Link>
             </article>
-          ))
-        )}
+          );
+        })}
       </div>
     </AppShell>
   );
