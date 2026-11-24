@@ -6,7 +6,18 @@ import { enforceRateLimit, readJsonBody, sendJson, streamRoute } from './_lib/co
 import { writeLocalAudit } from './_lib/local-db.js';
 import { computeBillingAmountCents, computeQualityIndicators, summarizeReports } from './_lib/ops-metrics.js';
 import { authenticateRequest } from './_lib/supabase.js';
-import { assistantRequestSchema, safeMeta, sessionDocSchema } from './_lib/validate.js';
+import {
+  assistantRequestSchema,
+  availabilityCreateSchema,
+  billingMarkPaidSchema,
+  billingRecordCreateSchema,
+  deviceCheckCreateSchema,
+  diagnosticsRunSchema,
+  profileUpdateSchema,
+  safeMeta,
+  sessionDocSchema,
+  sessionEventCreateSchema,
+} from './_lib/validate.js';
 
 async function handleLocalOps(req, res, actor, resource) {
   const db = actor.db;
@@ -22,25 +33,30 @@ async function handleLocalOps(req, res, actor, resource) {
     }
     if (req.method === 'POST') {
       const body = await readJsonBody(req);
-      const rateCents = Math.max(0, Math.round(Number(body.rate_cents ?? 0)));
-      const calc = computeBillingAmountCents(body.minutes, rateCents, {
-        minimum_minutes: body.minimum_minutes ?? 0,
-        round_to_minutes: body.round_to_minutes ?? 1,
+      const parsed = billingRecordCreateSchema.safeParse(body);
+      if (!parsed.success) return sendJson(res, 400, { error: parsed.error.issues[0]?.message || 'Invalid billing entry' });
+      const d = parsed.data;
+      const rateCents = d.rate_cents ?? 0;
+      const calc = computeBillingAmountCents(d.minutes, rateCents, {
+        minimum_minutes: d.minimum_minutes,
+        round_to_minutes: d.round_to_minutes,
       });
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       db.prepare(
         `INSERT INTO billing_records (id, user_id, assignment_ref, minutes, rate_cents, currency, amount_cents, status, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, 'invoiced', ?)`
-      ).run(id, userId, body.assignment_ref || null, calc.minutes, rateCents, String(body.currency || 'USD'), calc.amount_cents, now);
+      ).run(id, userId, d.assignment_ref || null, calc.minutes, rateCents, d.currency, calc.amount_cents, now);
       const rec = db.prepare('SELECT * FROM billing_records WHERE id = ?').get(id);
       return sendJson(res, 201, { data: rec });
     }
     if (req.method === 'PATCH') {
       const body = await readJsonBody(req);
-      if (!body.id) return sendJson(res, 400, { error: 'Billing record ID required.' });
-      db.prepare("UPDATE billing_records SET status = 'paid' WHERE id = ? AND user_id = ?").run(body.id, userId);
-      const rec = db.prepare('SELECT * FROM billing_records WHERE id = ? AND user_id = ?').get(body.id, userId);
+      const parsed = billingMarkPaidSchema.safeParse(body);
+      if (!parsed.success) return sendJson(res, 400, { error: parsed.error.issues[0]?.message || 'Billing record ID required.' });
+      db.prepare("UPDATE billing_records SET status = 'paid' WHERE id = ? AND user_id = ?").run(parsed.data.id, userId);
+      const rec = db.prepare('SELECT * FROM billing_records WHERE id = ? AND user_id = ?').get(parsed.data.id, userId);
+      if (!rec) return sendJson(res, 404, { error: 'Billing record not found.' });
       return sendJson(res, 200, { data: rec });
     }
   }
@@ -54,11 +70,13 @@ async function handleLocalOps(req, res, actor, resource) {
     }
     if (req.method === 'POST') {
       const body = await readJsonBody(req);
+      const parsed = deviceCheckCreateSchema.safeParse(body);
+      if (!parsed.success) return sendJson(res, 400, { error: parsed.error.issues[0]?.message || 'Invalid device check' });
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
-      const result = body.result === 'fail' ? 'fail' : 'pass';
-      const latencyMs = Number.isFinite(Number(body.latency_ms)) ? Math.round(Number(body.latency_ms)) : null;
-      const peakLevel = Math.min(100, Math.max(0, Math.round(Number(body.peak_level ?? 0))));
+      const result = parsed.data.result;
+      const latencyMs = parsed.data.latency_ms !== null && parsed.data.latency_ms !== undefined ? Math.round(parsed.data.latency_ms) : null;
+      const peakLevel = Math.round(parsed.data.peak_level);
       db.prepare(
         `INSERT INTO device_checks (id, user_id, result, latency_ms, peak_level, created_at)
          VALUES (?, ?, ?, ?, ?, ?)`
@@ -79,13 +97,13 @@ async function handleLocalOps(req, res, actor, resource) {
     }
     if (req.method === 'POST') {
       const body = await readJsonBody(req);
-      const allowed = new Set(['clarification', 'pace_pause', 'technical_issue']);
-      const type = allowed.has(body.type) ? body.type : 'clarification';
-      const aid = String(body.assignment_id || assignmentId);
+      const parsed = sessionEventCreateSchema.safeParse(body);
+      if (!parsed.success) return sendJson(res, 400, { error: parsed.error.issues[0]?.message || 'Invalid session event' });
+      const aid = parsed.data.assignment_id || assignmentId;
       const now = new Date().toISOString();
       const info = db
         .prepare('INSERT INTO session_events (assignment_id, actor_id, type, created_at) VALUES (?, ?, ?, ?)')
-        .run(aid, userId, type, now);
+        .run(aid, userId, parsed.data.type, now);
       const rec = db.prepare('SELECT * FROM session_events WHERE id = ?').get(info.lastInsertRowid);
       return sendJson(res, 201, { data: rec });
     }
@@ -130,15 +148,18 @@ async function handleLocalOps(req, res, actor, resource) {
     }
     if (req.method === 'POST') {
       const body = await readJsonBody(req);
+      const parsed = profileUpdateSchema.safeParse(body);
+      if (!parsed.success) return sendJson(res, 400, { error: parsed.error.issues[0]?.message || 'Invalid profile update' });
+      const d = parsed.data;
       if (row) {
         db.prepare(
           'UPDATE local_users SET full_name = ?, locale = ?, time_zone = ?, language_pairs = ?, weekly_hours = ? WHERE id = ?'
         ).run(
-          String(body.full_name ?? row.full_name).slice(0, 120),
-          ['en', 'bn', 'ar'].includes(body.locale) ? body.locale : 'en',
-          String(body.time_zone ?? row.time_zone).slice(0, 64),
-          String(body.language_pairs ?? row.language_pairs).slice(0, 160),
-          Math.min(100, Math.max(1, Math.round(Number(body.weekly_hours ?? row.weekly_hours)))),
+          d.full_name ?? row.full_name,
+          d.locale ?? row.locale,
+          d.time_zone ?? row.time_zone,
+          d.language_pairs ?? row.language_pairs,
+          d.weekly_hours ?? row.weekly_hours,
           userId
         );
       }
@@ -158,12 +179,9 @@ async function handleLocalOps(req, res, actor, resource) {
     }
     if (req.method === 'POST') {
       const body = await readJsonBody(req);
-      const date = String(body.date || '').trim();
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-        return sendJson(res, 400, { error: 'Valid YYYY-MM-DD date is required.' });
-      }
-      const kind = body.kind === 'custom' ? 'custom' : 'unavailable';
-      const windowLabel = String(body.window_label || '').slice(0, 80);
+      const parsed = availabilityCreateSchema.safeParse(body);
+      if (!parsed.success) return sendJson(res, 400, { error: parsed.error.issues[0]?.message || 'Valid YYYY-MM-DD date is required.' });
+      const { date, kind, window_label: windowLabel } = parsed.data;
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       db.prepare(
@@ -200,18 +218,18 @@ async function handleLocalOps(req, res, actor, resource) {
     }
     if (req.method === 'POST') {
       const body = await readJsonBody(req);
+      const parsed = diagnosticsRunSchema.safeParse(body);
+      if (!parsed.success) return sendJson(res, 400, { error: parsed.error.issues[0]?.message || 'Invalid diagnostics run' });
+      const { profile, score, verdict, payload } = parsed.data;
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
-      const profile = ['voice', 'video', 'full'].includes(body.profile) ? body.profile : 'video';
-      const score = Math.min(100, Math.max(0, Math.round(Number(body.score ?? 0))));
-      const verdict = ['pass', 'warn', 'fail'].includes(body.verdict) ? body.verdict : 'warn';
-      const payloadJson = JSON.stringify(body.payload || {});
+      const payloadJson = JSON.stringify(payload || {});
       db.prepare(
         `INSERT INTO diagnostics_runs (id, user_id, profile, score, verdict, payload_json, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`
       ).run(id, userId, profile, score, verdict, payloadJson, now);
       writeLocalAudit(db, { actorId: userId, area: 'diagnostics', type: `run_${profile}`, objectRef: id, result: verdict });
-      return sendJson(res, 201, { data: { id, profile, score, verdict, payload: body.payload || {}, created_at: now } });
+      return sendJson(res, 201, { data: { id, profile, score, verdict, payload: payload || {}, created_at: now } });
     }
   }
 
@@ -425,15 +443,21 @@ export default async function handler(req, res) {
       }
       if (req.method === 'POST') {
         const body = await readJsonBody(req);
+        const parsed = billingRecordCreateSchema.safeParse(body);
+        if (!parsed.success) return sendJson(res, 400, { error: parsed.error.issues[0]?.message || 'Invalid billing entry' });
+        const d = parsed.data;
         const { data: settings } = await ctx.supabase.from('billing_settings').select('*').eq('user_id', ctx.userId).maybeSingle();
-        const rateCents = Number(body.rate_cents ?? settings?.rate_cents ?? 0);
-        const currency = String(body.currency || settings?.currency || 'USD');
-        const calc = computeBillingAmountCents(body.minutes, rateCents, settings?.rules || {});
+        const rateCents = d.rate_cents ?? settings?.rate_cents ?? 0;
+        const currency = d.currency || settings?.currency || 'USD';
+        const calc = computeBillingAmountCents(d.minutes, rateCents, settings?.rules || {
+          minimum_minutes: d.minimum_minutes,
+          round_to_minutes: d.round_to_minutes,
+        });
         const { data: rec, error } = await ctx.supabase
           .from('billing_records')
           .insert({
             user_id: ctx.userId,
-            assignment_ref: body.assignment_ref || null,
+            assignment_ref: d.assignment_ref || null,
             minutes: calc.minutes,
             rate_cents: rateCents,
             currency,
@@ -444,6 +468,206 @@ export default async function handler(req, res) {
           .single();
         if (error) throw new Error(error.message);
         return sendJson(res, 201, { data: rec });
+      }
+      if (req.method === 'PATCH') {
+        const body = await readJsonBody(req);
+        const parsed = billingMarkPaidSchema.safeParse(body);
+        if (!parsed.success) return sendJson(res, 400, { error: parsed.error.issues[0]?.message || 'Billing record ID required.' });
+        const { data: rec, error } = await ctx.supabase
+          .from('billing_records')
+          .update({ status: 'paid', paid_at: new Date().toISOString() })
+          .eq('id', parsed.data.id)
+          .eq('user_id', ctx.userId)
+          .select('*')
+          .maybeSingle();
+        if (error) throw new Error(error.message);
+        if (!rec) return sendJson(res, 404, { error: 'Billing record not found.' });
+        return sendJson(res, 200, { data: rec });
+      }
+    }
+
+    if (resource === 'device_check') {
+      if (req.method === 'GET') {
+        const { data, error } = await ctx.supabase
+          .from('device_checks')
+          .select('*')
+          .eq('user_id', ctx.userId)
+          .order('created_at', { ascending: false })
+          .limit(20);
+        if (error) throw new Error(error.message);
+        return sendJson(res, 200, { data: data || [] });
+      }
+      if (req.method === 'POST') {
+        const body = await readJsonBody(req);
+        const parsed = deviceCheckCreateSchema.safeParse(body);
+        if (!parsed.success) return sendJson(res, 400, { error: parsed.error.issues[0]?.message || 'Invalid device check' });
+        const { data: rec, error } = await ctx.supabase
+          .from('device_checks')
+          .insert({
+            user_id: ctx.userId,
+            result: parsed.data.result,
+            figures: { latency_ms: parsed.data.latency_ms ?? null, peak_level: parsed.data.peak_level },
+          })
+          .select('*')
+          .single();
+        if (error) throw new Error(error.message);
+        return sendJson(res, 201, { data: rec });
+      }
+    }
+
+    if (resource === 'diagnostics') {
+      if (req.method === 'GET') {
+        const { data, error } = await ctx.supabase
+          .from('device_checks')
+          .select('*')
+          .eq('user_id', ctx.userId)
+          .order('created_at', { ascending: false })
+          .limit(30);
+        if (error) throw new Error(error.message);
+        return sendJson(res, 200, {
+          data: (data || []).map((row) => ({
+            id: row.id,
+            profile: row.figures?.profile || 'video',
+            score: Number(row.figures?.score ?? (row.result === 'pass' ? 100 : 50)),
+            verdict: row.figures?.verdict || (row.result === 'pass' ? 'pass' : 'fail'),
+            payload: row.figures || {},
+            created_at: row.created_at,
+          })),
+        });
+      }
+      if (req.method === 'POST') {
+        const body = await readJsonBody(req);
+        const parsed = diagnosticsRunSchema.safeParse(body);
+        if (!parsed.success) return sendJson(res, 400, { error: parsed.error.issues[0]?.message || 'Invalid diagnostics run' });
+        const { profile, score, verdict, payload } = parsed.data;
+        const { data: rec, error } = await ctx.supabase
+          .from('device_checks')
+          .insert({
+            user_id: ctx.userId,
+            result: verdict === 'fail' ? 'fail' : 'pass',
+            figures: { ...(payload || {}), profile, score, verdict },
+          })
+          .select('*')
+          .single();
+        if (error) throw new Error(error.message);
+        return sendJson(res, 201, { data: { id: rec.id, profile, score, verdict, payload, created_at: rec.created_at } });
+      }
+    }
+
+    if (resource === 'availability') {
+      if (req.method === 'GET') {
+        const { data, error } = await ctx.supabase
+          .from('availability_overrides')
+          .select('*')
+          .eq('user_id', ctx.userId)
+          .order('date', { ascending: true });
+        if (error) throw new Error(error.message);
+        return sendJson(res, 200, {
+          data: (data || []).map((row) => ({
+            ...row,
+            window_label: row.hours?.window_label || '',
+          })),
+        });
+      }
+      if (req.method === 'POST') {
+        const body = await readJsonBody(req);
+        const parsed = availabilityCreateSchema.safeParse(body);
+        if (!parsed.success) return sendJson(res, 400, { error: parsed.error.issues[0]?.message || 'Valid YYYY-MM-DD date is required.' });
+        const { data: saved, error } = await ctx.supabase
+          .from('availability_overrides')
+          .upsert(
+            {
+              user_id: ctx.userId,
+              date: parsed.data.date,
+              kind: parsed.data.kind,
+              hours: { window_label: parsed.data.window_label },
+            },
+            { onConflict: 'user_id,date' }
+          )
+          .select('*')
+          .single();
+        if (error) throw new Error(error.message);
+        return sendJson(res, 201, { data: { ...saved, window_label: saved.hours?.window_label || '' } });
+      }
+      if (req.method === 'DELETE') {
+        const url = new URL(req.url, 'http://localhost');
+        const id = req.query?.id || url.searchParams.get('id');
+        if (!id) return sendJson(res, 400, { error: 'Override ID is required.' });
+        const { error } = await ctx.supabase.from('availability_overrides').delete().eq('id', id).eq('user_id', ctx.userId);
+        if (error) throw new Error(error.message);
+        return sendJson(res, 200, { ok: true });
+      }
+    }
+
+    if (resource === 'profile') {
+      if (req.method === 'GET') {
+        const { data, error } = await ctx.supabase
+          .from('profiles')
+          .select('*')
+          .eq('user_id', ctx.userId)
+          .maybeSingle();
+        if (error) throw new Error(error.message);
+        return sendJson(res, 200, {
+          data: data
+            ? {
+                id: ctx.userId,
+                email: ctx.email,
+                full_name: data.display_name || '',
+                role: ctx.membership?.role || 'interpreter',
+                locale: data.locale || 'en',
+                time_zone: data.time_zone || 'UTC',
+                language_pairs: Array.isArray(data.language_pairs) ? data.language_pairs.join(', ') : '',
+                weekly_hours: data.weekly_hours ?? 30,
+              }
+            : {
+                id: ctx.userId,
+                email: ctx.email,
+                full_name: '',
+                role: ctx.membership?.role || 'interpreter',
+                locale: 'en',
+                time_zone: 'UTC',
+                language_pairs: '',
+                weekly_hours: 30,
+              },
+        });
+      }
+      if (req.method === 'POST') {
+        const body = await readJsonBody(req);
+        const parsed = profileUpdateSchema.safeParse(body);
+        if (!parsed.success) return sendJson(res, 400, { error: parsed.error.issues[0]?.message || 'Invalid profile update' });
+        const d = parsed.data;
+        const pairs = d.language_pairs !== undefined
+          ? d.language_pairs.split(',').map((s) => s.trim()).filter(Boolean)
+          : undefined;
+        const { data: saved, error } = await ctx.supabase
+          .from('profiles')
+          .upsert(
+            {
+              user_id: ctx.userId,
+              ...(d.full_name !== undefined ? { display_name: d.full_name } : {}),
+              ...(d.locale !== undefined ? { locale: d.locale } : {}),
+              ...(d.time_zone !== undefined ? { time_zone: d.time_zone } : {}),
+              ...(pairs !== undefined ? { language_pairs: pairs } : {}),
+              ...(d.weekly_hours !== undefined ? { weekly_hours: d.weekly_hours } : {}),
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: 'user_id' }
+          )
+          .select('*')
+          .single();
+        if (error) throw new Error(error.message);
+        return sendJson(res, 200, {
+          data: {
+            id: ctx.userId,
+            email: ctx.email,
+            full_name: saved.display_name || '',
+            role: ctx.membership?.role || 'interpreter',
+            locale: saved.locale || 'en',
+            time_zone: saved.time_zone || 'UTC',
+            language_pairs: Array.isArray(saved.language_pairs) ? saved.language_pairs.join(', ') : '',
+            weekly_hours: saved.weekly_hours ?? 30,
+          },
+        });
       }
     }
 

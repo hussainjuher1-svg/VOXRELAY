@@ -106,3 +106,48 @@ export const supportTicketSchema = z.object({
   subject: maxCodePoints(160, 'Subject').trim().min(3, 'Subject is required'),
   body: maxCodePoints(1200, 'Message').trim().min(3, 'Message is required'),
 });
+
+export const billingRecordCreateSchema = z.object({
+  assignment_ref: z.string().trim().max(48).nullable().optional(),
+  minutes: z.coerce.number().int().min(1, 'Minutes must be at least 1').max(24 * 60),
+  rate_cents: z.coerce.number().int().min(0).max(500_000).optional(),
+  minimum_minutes: z.coerce.number().int().min(0).max(24 * 60).optional().default(0),
+  round_to_minutes: z.coerce.number().int().min(1).max(120).optional().default(1),
+  currency: z.string().trim().min(3).max(8).optional().default('USD'),
+});
+
+export const billingMarkPaidSchema = z.object({
+  id: z.string().trim().min(1, 'Billing record ID required.'),
+});
+
+export const availabilityCreateSchema = z.object({
+  date: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'Valid YYYY-MM-DD date is required.'),
+  kind: z.enum(['unavailable', 'custom']).default('unavailable'),
+  window_label: maxCodePoints(80, 'Hours window').optional().default(''),
+});
+
+export const profileUpdateSchema = z.object({
+  full_name: maxCodePoints(120, 'Display name').optional(),
+  locale: z.enum(['en', 'bn', 'ar']).optional(),
+  time_zone: z.string().trim().min(1).max(64).optional(),
+  language_pairs: maxCodePoints(160, 'Language pairs').optional(),
+  weekly_hours: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+export const deviceCheckCreateSchema = z.object({
+  result: z.enum(['pass', 'fail']).default('pass'),
+  latency_ms: z.coerce.number().finite().min(0).max(60_000).nullable().optional(),
+  peak_level: z.coerce.number().min(0).max(100).optional().default(0),
+});
+
+export const diagnosticsRunSchema = z.object({
+  profile: z.enum(['voice', 'video', 'full']).default('video'),
+  score: z.coerce.number().int().min(0).max(100).default(0),
+  verdict: z.enum(['pass', 'warn', 'fail']).default('warn'),
+  payload: z.record(z.string(), z.unknown()).optional().default({}),
+});
+
+export const sessionEventCreateSchema = z.object({
+  assignment_id: z.string().trim().min(1).max(80).optional(),
+  type: z.enum(['clarification', 'pace_pause', 'technical_issue']).default('clarification'),
+});
