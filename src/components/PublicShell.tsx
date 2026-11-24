@@ -1,6 +1,6 @@
 import { type ReactNode, useState } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
-import { useLocale } from '../context/hooks';
+import { useAuth, useLocale } from '../context/hooks';
 import { AssistantDock } from './AssistantSheet';
 import { BrandWordmark } from './BrandLogo';
 import { CommandPalette } from './ui/CommandPalette';
@@ -21,6 +21,7 @@ export function PublicShell({
   onClearAssistantPrompt?: () => void;
 }) {
   const { locale, setLocale } = useLocale();
+  const { user } = useAuth();
   const { pathname } = useLocation();
   const [menuPath, setMenuPath] = useState<string | null>(null);
   const menuOpen = menuPath === pathname;
@@ -79,12 +80,12 @@ export function PublicShell({
               {isAr ? 'EN' : 'العربية'}
             </button>
 
-            <Link to="/login" className="hdr-signin-link">
-              {isAr ? 'تسجيل الدخول' : 'Sign in'}
+            <Link to={user ? '/app' : '/login'} className="hdr-signin-link">
+              {user ? (isAr ? 'مساحة العمل' : 'Workspace') : isAr ? 'تسجيل الدخول' : 'Sign in'}
             </Link>
 
-            <Link to="/contact" className="hdr-start-pill">
-              {isAr ? 'ابدأ مجاناً' : 'Start free'}
+            <Link to={user ? '/app/assignments' : '/login?mode=signup'} className="hdr-start-pill">
+              {user ? (isAr ? 'فتح الجدول' : 'Open schedule') : isAr ? 'ابدأ مجاناً' : 'Start free'}
             </Link>
 
             <button
@@ -113,11 +114,11 @@ export function PublicShell({
               <Link to="/status" className="mobile-nav-item">
                 {isAr ? 'حالة النظام' : 'System status'}
               </Link>
-              <Link to="/login" className="mobile-nav-item">
-                {isAr ? 'تسجيل الدخول' : 'Sign in'}
+              <Link to={user ? '/app' : '/login'} className="mobile-nav-item">
+                {user ? (isAr ? 'مساحة العمل' : 'Workspace') : isAr ? 'تسجيل الدخول' : 'Sign in'}
               </Link>
-              <Link to="/contact" className="mobile-nav-cta">
-                {isAr ? 'ابدأ مجاناً' : 'Start free'}
+              <Link to={user ? '/app/assignments' : '/login?mode=signup'} className="mobile-nav-cta">
+                {user ? (isAr ? 'فتح الجدول' : 'Open schedule') : isAr ? 'ابدأ مجاناً' : 'Start free'}
               </Link>
             </nav>
           </div>

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowUpRight, Mic, MicOff, ShieldCheck, X } from 'lucide-react';
-import { useLocale } from '../context/hooks';
+import { useAuth, useLocale } from '../context/hooks';
 import { KNOWLEDGE_BASE } from '../../api/_lib/kb.js';
 import {
   ChapterFollowupIllustration,
@@ -266,9 +266,55 @@ function LiveDeviceCheckCard({ isAr }: { isAr: boolean }) {
   );
 }
 
+interface HomeAssignment {
+  id: string;
+  ref: string;
+  start_at: string;
+  duration_minutes: number;
+  language_pair: string;
+  modality: string;
+  status: string;
+}
+
 export function HomePage() {
   const { locale } = useLocale();
+  const { user, session } = useAuth();
   const isAr = locale === 'ar';
+  const [assignments, setAssignments] = useState<HomeAssignment[]>([]);
+
+  useEffect(() => {
+    if (!user && !session?.access_token) return;
+    let active = true;
+    const headers: Record<string, string> = {};
+    if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`;
+    fetch('/api/assignments', { headers, credentials: 'same-origin' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (active && Array.isArray(json?.data)) {
+          setAssignments(json.data);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [user, session?.access_token]);
+
+  const activeAssignments = user ? assignments : [];
+  const nextAssignment =
+    activeAssignments.find((a) => a.status !== 'completed' && a.status !== 'cancelled') || activeAssignments[0] || null;
+  const userGreetingName =
+    (user && 'full_name' in user && typeof user.full_name === 'string' && user.full_name.trim()) ||
+    (user && 'user_metadata' in user && typeof user.user_metadata?.full_name === 'string' && user.user_metadata.full_name.trim()) ||
+    (user?.email ? user.email.split('@')[0] : '');
+
+  function formatUtcTime(iso: string) {
+    try {
+      return `${new Date(iso).toISOString().slice(11, 16)} UTC`;
+    } catch {
+      return '—';
+    }
+  }
 
   const stages = isAr
     ? [
@@ -530,8 +576,16 @@ export function HomePage() {
             </p>
 
             <div className="vx-hero-ctas">
-              <Link to="/login" className="vx-cta-terracotta">
-                <span>{isAr ? 'أنشئ مساحة عملك' : 'Create your workspace'}</span>
+              <Link to={user ? '/app' : '/login?mode=signup'} className="vx-cta-terracotta">
+                <span>
+                  {user
+                    ? isAr
+                      ? 'افتح مساحة عملك'
+                      : 'Open your workspace'
+                    : isAr
+                      ? 'أنشئ مساحة عملك'
+                      : 'Create your workspace'}
+                </span>
                 <ArrowUpRight size={16} aria-hidden="true" />
               </Link>
               <Link to="/contact" className="vx-cta-outline">
@@ -540,8 +594,8 @@ export function HomePage() {
             </div>
           </div>
 
-          <div className="vx-hero-visual" aria-hidden="true">
-            <div className="vx-blob-circle">
+          <div className="vx-hero-visual">
+            <div className="vx-blob-circle" aria-hidden="true">
               <div className="vx-waveform">
                 {WAVEFORM_HEIGHTS.map((h, idx) => (
                   <span key={idx} style={{ height: `${h}%` }} />
@@ -549,18 +603,43 @@ export function HomePage() {
               </div>
             </div>
 
-            <div className="vx-float-nextup">
-              <span className="vx-float-nextup-tag">{isAr ? 'التالي · 14:30' : 'NEXT UP · 14:30'}</span>
-              <div className="vx-float-nextup-title">{isAr ? 'متابعة القلب' : 'Cardiology follow-up'}</div>
-              <div className="vx-float-nextup-meta">EN → ES · Video</div>
-            </div>
+            <Link
+              to={nextAssignment ? `/app/session/${nextAssignment.id}` : user ? '/app/assignments' : '/login?mode=signup'}
+              className="vx-float-nextup"
+            >
+              <span className="vx-float-nextup-tag">
+                {nextAssignment
+                  ? `${nextAssignment.ref} · ${formatUtcTime(nextAssignment.start_at)}`
+                  : isAr
+                    ? 'التالي · جاهز للجدولة'
+                    : 'NEXT UP · SCHEDULE'}
+              </span>
+              <div className="vx-float-nextup-title">
+                {nextAssignment
+                  ? nextAssignment.language_pair
+                  : user
+                    ? isAr
+                      ? 'أضف أول مهمة'
+                      : 'Add your first assignment'
+                    : isAr
+                      ? 'مساحة عمل بدون تسجيل'
+                      : 'Timing-only schedule'}
+              </div>
+              <div className="vx-float-nextup-meta">
+                {nextAssignment
+                  ? `${nextAssignment.modality} · ${nextAssignment.duration_minutes} min`
+                  : isAr
+                    ? 'افتح الجدول أو استورد .ics ↗'
+                    : 'Open schedule or import .ics ↗'}
+              </div>
+            </Link>
 
             <RotatingSealBadge isAr={isAr} />
 
-            <div className="vx-float-audio-pill">
+            <Link to="/app/device-check" className="vx-float-audio-pill">
               <ShieldCheck size={15} aria-hidden="true" />
               <span>{isAr ? 'الصوت يبقى في متصفحك' : 'Audio stays in your tab'}</span>
-            </div>
+            </Link>
           </div>
         </div>
       </section>
@@ -618,20 +697,59 @@ export function HomePage() {
             <div className="vx-ws-card-cream">
               <div className="vx-ws-top-row">
                 <div>
-                  <span className="vx-ws-greet">{isAr ? 'مساء الخير، أمارا' : 'GOOD AFTERNOON, AMARA'}</span>
-                  <h3>{isAr ? 'مهام اليوم' : "Today's assignments"}</h3>
+                  <span className="vx-ws-greet">
+                    {userGreetingName
+                      ? isAr
+                        ? `مرحباً، ${userGreetingName}`
+                        : `WORKSPACE · ${userGreetingName.toUpperCase()}`
+                      : isAr
+                        ? 'جدول المترجم الفوري'
+                        : 'INTERPRETER SCHEDULE'}
+                  </span>
+                  <h3>{isAr ? 'مهامك المجدولة' : 'Your assignments'}</h3>
                 </div>
-                <span className="vx-ws-count-pill">{isAr ? '2 اليوم' : '2 today'}</span>
+                <Link to={user ? '/app/assignments' : '/login?mode=signup'} className="vx-ws-count-pill">
+                  {isAr ? `${activeAssignments.length} مجدول` : `${activeAssignments.length} scheduled`}
+                </Link>
               </div>
 
-              <div className="vx-ws-row-item">
-                <span className="vx-ws-lang-badge">EN</span>
-                <div className="vx-ws-row-copy">
-                  <strong>{isAr ? 'متابعة القلب' : 'Cardiology follow-up'}</strong>
-                  <span>{isAr ? 'اليوم · 14:30 · فيديو عن بُعد · EN → ES' : 'Today · 14:30 · Video remote · EN → ES'}</span>
-                </div>
-                <span className="vx-ws-status-pill">{isAr ? 'مُحضّر' : 'Prepared'}</span>
-              </div>
+              {nextAssignment ? (
+                <Link to={`/app/session/${nextAssignment.id}`} className="vx-ws-row-item">
+                  <span className="vx-ws-lang-badge">{nextAssignment.language_pair.slice(0, 5)}</span>
+                  <div className="vx-ws-row-copy">
+                    <strong>{nextAssignment.ref} · {nextAssignment.language_pair}</strong>
+                    <span>
+                      {formatUtcTime(nextAssignment.start_at)} · {nextAssignment.modality} · {nextAssignment.duration_minutes} min
+                    </span>
+                  </div>
+                  <span className="vx-ws-status-pill">{nextAssignment.status}</span>
+                </Link>
+              ) : (
+                <Link to={user ? '/app/assignments' : '/login?mode=signup'} className="vx-ws-row-item">
+                  <span className="vx-ws-lang-badge">.ics</span>
+                  <div className="vx-ws-row-copy">
+                    <strong>
+                      {user
+                        ? isAr
+                          ? 'لا توجد مهام مجدولة بعد'
+                          : 'No assignments scheduled yet'
+                        : isAr
+                          ? 'سجّل الدخول أو أنشئ حساباً لبدء الجدول'
+                          : 'Sign in or create an account to save your schedule'}
+                    </strong>
+                    <span>
+                      {user
+                        ? isAr
+                          ? 'اضغط لإضافة مهمة أو استيراد ملف .ics'
+                          : 'Click to create an assignment or import .ics timing slots'
+                        : isAr
+                          ? 'توقيت الجلسات واللغة والمدة فقط — دون هوية العميل'
+                          : 'Timing, modality & language pairs only — zero client identity'}
+                    </span>
+                  </div>
+                  <span className="vx-ws-status-pill">{user ? (isAr ? 'إضافة' : 'Add') : isAr ? 'ابدأ' : 'Open'}</span>
+                </Link>
+              )}
             </div>
 
             <LiveDeviceCheckCard isAr={isAr} />
@@ -709,8 +827,14 @@ export function HomePage() {
               ? 'أنشئ مساحة عملك الشخصية في دقائق. لا يلزمك دعوة مؤسسة لبدء التحضير.'
               : 'Create your personal workspace in minutes. No organization invite required to start preparing.'}
           </p>
-          <Link to="/login" className="vx-closing-btn">
-            {isAr ? 'أنشئ مساحة عملك' : 'Create your workspace'}
+          <Link to={user ? '/app' : '/login?mode=signup'} className="vx-closing-btn">
+            {user
+              ? isAr
+                ? 'افتح مساحة عملك'
+                : 'Open your workspace'
+              : isAr
+                ? 'أنشئ مساحة عملك'
+                : 'Create your workspace'}
           </Link>
         </div>
       </section>

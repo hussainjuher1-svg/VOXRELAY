@@ -158,6 +158,16 @@ export function getLocalDb() {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS availability_overrides (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      date TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'unavailable',
+      window_label TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      UNIQUE (user_id, date)
+    );
+
     CREATE TABLE IF NOT EXISTS audit_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       actor_id TEXT,

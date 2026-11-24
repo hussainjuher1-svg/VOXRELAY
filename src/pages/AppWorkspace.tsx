@@ -271,6 +271,40 @@ export function AssignmentsPage() {
     });
   }
 
+  async function saveImportedIcsSlots() {
+    if (!user && !session?.access_token) {
+      setFeedback({ kind: 'error', text: 'Sign in via /login first to import .ics slots.' });
+      return;
+    }
+    if (icsSlots.length === 0) return;
+    setBusy(true);
+    setFeedback(null);
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+      let savedCount = 0;
+      for (const slot of icsSlots.slice(0, 20)) {
+        const res = await fetch('/api/assignments', {
+          method: 'POST',
+          headers: buildHeaders(session?.access_token, true),
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            start_at: slot.startAt,
+            duration_minutes: slot.durationMinutes,
+            time_zone: tz,
+            language_pair: pair,
+            modality,
+          }),
+        });
+        if (res.ok) savedCount += 1;
+      }
+      setIcsSlots([]);
+      setFeedback({ kind: 'success', text: `Imported ${savedCount} timing slot(s) into schedule.` });
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <AppShell>
       <div className="workspace-header">
@@ -339,13 +373,18 @@ export function AssignmentsPage() {
           <p>Reads DTSTART and DTEND only. Event titles, attendees, and descriptions are discarded.</p>
           <Input type="file" accept=".ics,text/calendar" onChange={handleIcsImport} aria-label="Import ICS file" />
           {icsSlots.length > 0 && (
-            <ul style={{ marginTop: 14, paddingInlineStart: 18 }}>
-              {icsSlots.map((slot, idx) => (
-                <li key={idx} className="mono-ltr">
-                  {slot.startAt} ({slot.durationMinutes} min)
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul style={{ marginTop: 14, paddingInlineStart: 18 }}>
+                {icsSlots.map((slot, idx) => (
+                  <li key={idx} className="mono-ltr">
+                    {slot.startAt} ({slot.durationMinutes} min)
+                  </li>
+                ))}
+              </ul>
+              <Button size="sm" onClick={() => void saveImportedIcsSlots()} loading={busy} style={{ marginTop: 10 }}>
+                Import {icsSlots.length} slot(s) into schedule
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -1469,27 +1508,289 @@ export function RecordsAssistantPage() {
   );
 }
 
-export function WorkspacePlaceholderPage({
-  eyebrow,
-  title,
-  description,
-}: {
-  eyebrow: string;
-  title: string;
-  description: string;
-}) {
+export function OpsDashboardPage() {
+  const { session } = useAuth();
+  const [counts, setCounts] = useState({ assignments: 0, ready: 0, billing: 0, tickets: 0, checks: 0 });
+
+  useEffect(() => {
+    let active = true;
+    const headers = buildHeaders(session?.access_token);
+    Promise.all([
+      fetch('/api/assignments', { headers, credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : null)),
+      fetch('/api/ops?resource=billing', { headers, credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : null)),
+      fetch('/api/support', { headers, credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : null)),
+      fetch('/api/ops?resource=device_check', { headers, credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : null)),
+    ])
+      .then(([a, b, s, d]) => {
+        if (!active) return;
+        const list: AssignmentItem[] = a?.data || [];
+        setCounts({
+          assignments: list.length,
+          ready: list.filter((x) => x.status === 'ready').length,
+          billing: (b?.records || []).length,
+          tickets: (s?.tickets || []).length,
+          checks: (d?.data || []).length,
+        });
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [session?.access_token]);
+
   return (
     <AppShell>
       <div className="workspace-header">
         <div>
-          <span className="eyebrow">{eyebrow}</span>
-          <h1>{title}</h1>
+          <span className="eyebrow">OPS DASHBOARD</span>
+          <h1>Live operational queues</h1>
         </div>
       </div>
-      <article className="subpage-card">
-        <p>{description}</p>
-        <p>Do not enter confidential session content or patient names. Every metric computes from persisted rows.</p>
-      </article>
+      <div className="workspace-grid">
+        <article className="subpage-card">
+          <h2>Assignments</h2>
+          <p className="mono-ltr">{counts.assignments} total · {counts.ready} ready</p>
+          <Link className="inline-link" to="/app/assignments">Open assignments</Link>
+        </article>
+        <article className="subpage-card">
+          <h2>Device checks</h2>
+          <p className="mono-ltr">{counts.checks} recorded check(s)</p>
+          <Link className="inline-link" to="/app/device-check">Run device check</Link>
+        </article>
+        <article className="subpage-card">
+          <h2>Billing records</h2>
+          <p className="mono-ltr">{counts.billing} logged record(s)</p>
+          <Link className="inline-link" to="/app/billing">Open billing</Link>
+        </article>
+        <article className="subpage-card">
+          <h2>Support queue</h2>
+          <p className="mono-ltr">{counts.tickets} ticket(s)</p>
+          <Link className="inline-link" to="/app/support">Open support</Link>
+        </article>
+      </div>
     </AppShell>
   );
+}
+
+export function AvailabilityPage() {
+  const { session, user } = useAuth();
+  const [date, setDate] = useState(() => new Date(Date.now() + 86_400_000).toISOString().slice(0, 10));
+  const [kind, setKind] = useState<'unavailable' | 'custom'>('unavailable');
+  const [windowLabel, setWindowLabel] = useState('09:00–13:00');
+  const [overrides, setOverrides] = useState<Array<{ id: string; date: string; kind: string; window_label: string }>>([]);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const loadAvailability = useCallback(async () => {
+    const res = await fetch('/api/ops?resource=availability', {
+      headers: buildHeaders(session?.access_token),
+      credentials: 'same-origin',
+    });
+    if (res.ok) {
+      const json = await res.json();
+      setOverrides(json.data || []);
+    }
+  }, [session?.access_token]);
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/ops?resource=availability', {
+      headers: buildHeaders(session?.access_token),
+      credentials: 'same-origin',
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (active && json?.data) setOverrides(json.data);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [session?.access_token]);
+
+  async function saveOverride(e: FormEvent) {
+    e.preventDefault();
+    setNotice(null);
+    if (!user && !session?.access_token) {
+      setNotice('Sign in first to save availability overrides.');
+      return;
+    }
+    const res = await fetch('/api/ops?resource=availability', {
+      method: 'POST',
+      headers: buildHeaders(session?.access_token, true),
+      credentials: 'same-origin',
+      body: JSON.stringify({ date, kind, window_label: kind === 'custom' ? windowLabel : '' }),
+    });
+    if (res.ok) {
+      setNotice(`Saved override for ${date}.`);
+      await loadAvailability();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      setNotice(err.error || 'Unable to save override.');
+    }
+  }
+
+  async function removeOverride(id: string) {
+    await fetch(`/api/ops?resource=availability&id=${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: buildHeaders(session?.access_token),
+      credentials: 'same-origin',
+    });
+    await loadAvailability();
+  }
+
+  return (
+    <AppShell>
+      <div className="workspace-header">
+        <div>
+          <span className="eyebrow">AVAILABILITY</span>
+          <h1>Date overrides &amp; capacity windows</h1>
+        </div>
+      </div>
+
+      <div className="workspace-grid">
+        <form className="panel-form" onSubmit={(e) => void saveOverride(e)}>
+          <Field label="Date" htmlFor="avail-date">
+            <Input id="avail-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+          </Field>
+          <Field label="Window type" htmlFor="avail-kind">
+            <Select
+              id="avail-kind"
+              value={kind}
+              onValueChange={(v) => setKind(v === 'custom' ? 'custom' : 'unavailable')}
+              options={[
+                { value: 'unavailable', label: 'Unavailable all day' },
+                { value: 'custom', label: 'Custom hours window' },
+              ]}
+            />
+          </Field>
+          {kind === 'custom' && (
+            <Field label="Hours window" htmlFor="avail-win">
+              <Input id="avail-win" value={windowLabel} onChange={(e) => setWindowLabel(e.target.value)} placeholder="09:00–13:00" />
+            </Field>
+          )}
+          <Button type="submit">Save availability override</Button>
+          {notice && <p className="form-success">{notice}</p>}
+        </form>
+
+        <div>
+          {overrides.length === 0 ? (
+            <EmptyState
+              icon={<CalendarDays size={20} />}
+              title="No date overrides saved"
+              description="Add unavailable dates or custom capacity windows on the left."
+            />
+          ) : (
+            <div style={{ display: 'grid', gap: 12 }}>
+              {overrides.map((o) => (
+                <article key={o.id} className="subpage-card">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <strong className="mono-ltr">{o.date}</strong>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <Badge tone={o.kind === 'custom' ? 'accent' : 'warning'}>{o.kind}</Badge>
+                      <Button size="sm" variant="ghost" onClick={() => void removeOverride(o.id)} aria-label={`Delete ${o.date}`}>
+                        <Trash2 size={14} />
+                      </Button>
+                    </div>
+                  </div>
+                  {o.window_label && <p className="mono-ltr">{o.window_label}</p>}
+                </article>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </AppShell>
+  );
+}
+
+export function QualityPage() {
+  const { session } = useAuth();
+  const [indicators, setIndicators] = useState<
+    Array<{ key: string; label?: string; numerator: number; denominator: number; ratio?: number | null }>
+  >([]);
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/ops?resource=quality', {
+      headers: buildHeaders(session?.access_token),
+      credentials: 'same-origin',
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (!active || !json?.indicators) return;
+        const raw = json.indicators;
+        if (Array.isArray(raw)) {
+          setIndicators(raw);
+        } else {
+          setIndicators(
+            Object.entries(raw).map(([key, val]) => ({
+              key,
+              ...(val as { numerator: number; denominator: number; ratio?: number | null }),
+            }))
+          );
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [session?.access_token]);
+
+  return (
+    <AppShell>
+      <div className="workspace-header">
+        <div>
+          <span className="eyebrow">QUALITY MONITORING</span>
+          <h1>Operational readiness indicators</h1>
+        </div>
+      </div>
+      <div className="workspace-grid">
+        {indicators.length === 0 ? (
+          <article className="subpage-card">
+            <p>Sign in and log assignments or device checks to compute live operational ratios.</p>
+          </article>
+        ) : (
+          indicators.map((ind) => (
+            <article key={ind.key} className="subpage-card">
+              <span className="eyebrow">{ind.key.replace(/_/g, ' ')}</span>
+              <p className="mono-ltr" style={{ fontSize: 22, marginTop: 8 }}>
+                {ind.numerator} / {ind.denominator}
+              </p>
+            </article>
+          ))
+        )}
+      </div>
+    </AppShell>
+  );
+}
+
+export function OrganizationPage() {
+  const { user } = useAuth();
+  return (
+    <AppShell>
+      <div className="workspace-header">
+        <div>
+          <span className="eyebrow">ORGANIZATION</span>
+          <h1>Governance, T0–T3 policy &amp; audit</h1>
+        </div>
+        <Link className="button-primary" to="/app/admin">
+          Open access review queue
+        </Link>
+      </div>
+      <div className="workspace-grid">
+        <article className="subpage-card">
+          <h2>Active operator</h2>
+          <p>{user ? user.email : 'Sign in to inspect organization access'}</p>
+        </article>
+        <article className="subpage-card">
+          <h2>T0–T3 Policy lock</h2>
+          <p>T0 deterministic utilities enabled; T1/T2 opt-in only; T3 decisions locked to humans.</p>
+        </article>
+      </div>
+    </AppShell>
+  );
+}
+
+export function OnboardingPage() {
+  return <SettingsPage />;
 }

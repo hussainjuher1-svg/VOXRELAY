@@ -13,8 +13,11 @@ export function LoginPage() {
   const navigate = useNavigate();
   const returnTo = sanitizeReturnTo(searchParams.get('returnTo'));
   const inviteToken = searchParams.get('invite') || '';
+  const requestedMode = searchParams.get('mode');
 
-  const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>(inviteToken ? 'signup' : 'signin');
+  const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>(
+    inviteToken || requestedMode === 'signup' ? 'signup' : 'signin'
+  );
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

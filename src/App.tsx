@@ -21,19 +21,21 @@ const DesignSystemPage = lazy(() => import('./pages/DesignSystem').then((m) => (
 const LoginPage = lazy(() => import('./pages/Auth').then((m) => ({ default: m.LoginPage })));
 const ResetPasswordPage = lazy(() => import('./pages/Auth').then((m) => ({ default: m.ResetPasswordPage })));
 const OverviewPage = lazy(() => import('./pages/AppWorkspace').then((m) => ({ default: m.OverviewPage })));
+const OpsDashboardPage = lazy(() => import('./pages/AppWorkspace').then((m) => ({ default: m.OpsDashboardPage })));
 const AssignmentsPage = lazy(() => import('./pages/AppWorkspace').then((m) => ({ default: m.AssignmentsPage })));
+const AvailabilityPage = lazy(() => import('./pages/AppWorkspace').then((m) => ({ default: m.AvailabilityPage })));
 const SessionFocusPage = lazy(() => import('./pages/AppWorkspace').then((m) => ({ default: m.SessionFocusPage })));
 const TerminologyPage = lazy(() => import('./pages/AppWorkspace').then((m) => ({ default: m.TerminologyPage })));
 const DeviceCheckPage = lazy(() => import('./pages/AppWorkspace').then((m) => ({ default: m.DeviceCheckPage })));
 const BillingPage = lazy(() => import('./pages/AppWorkspace').then((m) => ({ default: m.BillingPage })));
 const ReportsPage = lazy(() => import('./pages/AppWorkspace').then((m) => ({ default: m.ReportsPage })));
+const QualityPage = lazy(() => import('./pages/AppWorkspace').then((m) => ({ default: m.QualityPage })));
+const OrganizationPage = lazy(() => import('./pages/AppWorkspace').then((m) => ({ default: m.OrganizationPage })));
+const OnboardingPage = lazy(() => import('./pages/AppWorkspace').then((m) => ({ default: m.OnboardingPage })));
 const SettingsPage = lazy(() => import('./pages/AppWorkspace').then((m) => ({ default: m.SettingsPage })));
 const RecordsAssistantPage = lazy(() => import('./pages/AppWorkspace').then((m) => ({ default: m.RecordsAssistantPage })));
 const SupportPage = lazy(() => import('./pages/AppWorkspace').then((m) => ({ default: m.SupportPage })));
 const AdminReviewPage = lazy(() => import('./pages/AppWorkspace').then((m) => ({ default: m.AdminReviewPage })));
-const WorkspacePlaceholderPage = lazy(() =>
-  import('./pages/AppWorkspace').then((m) => ({ default: m.WorkspacePlaceholderPage }))
-);
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
   state = { hasError: false };
@@ -107,42 +109,15 @@ export function AppRoutes() {
 
           <Route path="/login" element={<LoginPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
-          <Route
-            path="/onboarding"
-            element={
-              <WorkspacePlaceholderPage
-                eyebrow="ONBOARDING"
-                title="Workspace setup"
-                description="Configure your time zone, language pairs, and notification preferences in Settings."
-              />
-            }
-          />
+          <Route path="/onboarding" element={<OnboardingPage />} />
 
           <Route path="/app" element={<OverviewPage />} />
-          <Route
-            path="/app/ops"
-            element={
-              <WorkspacePlaceholderPage
-                eyebrow="OPS DASHBOARD"
-                title="Today's sessions and queues"
-                description="Counts link directly to assignments, documentation drafts, follow-ups, billing, and support queues."
-              />
-            }
-          />
+          <Route path="/app/ops" element={<OpsDashboardPage />} />
           <Route path="/app/assignments" element={<AssignmentsPage />} />
           <Route path="/app/assignments/:id" element={<AssignmentsPage />} />
           <Route path="/app/assignments/:id/close" element={<SessionFocusPage />} />
           <Route path="/app/session/:id" element={<SessionFocusPage />} />
-          <Route
-            path="/app/availability"
-            element={
-              <WorkspacePlaceholderPage
-                eyebrow="AVAILABILITY"
-                title="Weekly hours & date overrides"
-                description="Set recurring weekly capacity and date-specific unavailable or custom windows."
-              />
-            }
-          />
+          <Route path="/app/availability" element={<AvailabilityPage />} />
           <Route path="/app/terminology" element={<TerminologyPage />} />
           <Route path="/app/device-check" element={<DeviceCheckPage />} />
           <Route path="/app/billing" element={<BillingPage />} />
@@ -150,26 +125,8 @@ export function AppRoutes() {
           <Route path="/app/support" element={<SupportPage />} />
           <Route path="/app/admin" element={<AdminReviewPage />} />
           <Route path="/app/reports" element={<ReportsPage />} />
-          <Route
-            path="/app/quality"
-            element={
-              <WorkspacePlaceholderPage
-                eyebrow="QUALITY MONITORING"
-                title="Six operational indicators"
-                description="Numerator/denominator ratios across device checks, on-time starts, technical exceptions, documentation, close-out, and follow-ups."
-              />
-            }
-          />
-          <Route
-            path="/app/organization"
-            element={
-              <WorkspacePlaceholderPage
-                eyebrow="ORGANIZATION"
-                title="Directory, offers, policy & audit"
-                description="Manage invitations, role assignments, versioned assistance policy tiers, and metadata-only audit events."
-              />
-            }
-          />
+          <Route path="/app/quality" element={<QualityPage />} />
+          <Route path="/app/organization" element={<OrganizationPage />} />
           <Route path="/app/settings" element={<SettingsPage />} />
           <Route path="*" element={wrapPublic(<NotFoundPage />)} />
         </Routes>

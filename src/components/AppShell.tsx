@@ -53,20 +53,28 @@ export function AppShell({
   const navLinks = isAr
     ? [
         { to: '/app', label: 'نظرة عامة', end: true },
+        { to: '/app/ops', label: 'لوحة العمليات' },
         { to: '/app/assignments', label: 'المواعيد' },
+        { to: '/app/availability', label: 'التوفر' },
         { to: '/app/terminology', label: 'المصطلحات' },
         { to: '/app/device-check', label: 'فحص الصوت' },
         { to: '/app/billing', label: 'الفوترة' },
+        { to: '/app/reports', label: 'التقارير' },
+        { to: '/app/quality', label: 'الجودة' },
         { to: '/app/support', label: 'الدعم البشري' },
         { to: '/app/admin', label: 'مراجعة الطلبات' },
         { to: '/app/settings', label: 'الإعدادات' },
       ]
     : [
         { to: '/app', label: 'Overview', end: true },
+        { to: '/app/ops', label: 'Ops queues' },
         { to: '/app/assignments', label: 'Assignments' },
+        { to: '/app/availability', label: 'Availability' },
         { to: '/app/terminology', label: 'Terminology' },
         { to: '/app/device-check', label: 'Device check' },
         { to: '/app/billing', label: 'Billing' },
+        { to: '/app/reports', label: 'Reports' },
+        { to: '/app/quality', label: 'Quality' },
         { to: '/app/support', label: 'Support' },
         { to: '/app/admin', label: 'Access queue' },
         { to: '/app/settings', label: 'Settings' },

@@ -149,6 +149,39 @@ async function handleLocalOps(req, res, actor, resource) {
     }
   }
 
+  if (resource === 'availability') {
+    if (req.method === 'GET') {
+      const rows = db
+        .prepare('SELECT * FROM availability_overrides WHERE user_id = ? ORDER BY date ASC')
+        .all(userId);
+      return sendJson(res, 200, { data: rows });
+    }
+    if (req.method === 'POST') {
+      const body = await readJsonBody(req);
+      const date = String(body.date || '').trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return sendJson(res, 400, { error: 'Valid YYYY-MM-DD date is required.' });
+      }
+      const kind = body.kind === 'custom' ? 'custom' : 'unavailable';
+      const windowLabel = String(body.window_label || '').slice(0, 80);
+      const id = crypto.randomUUID();
+      const now = new Date().toISOString();
+      db.prepare(
+        `INSERT INTO availability_overrides (id, user_id, date, kind, window_label, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(user_id, date) DO UPDATE SET kind = excluded.kind, window_label = excluded.window_label`
+      ).run(id, userId, date, kind, windowLabel, now);
+      const saved = db.prepare('SELECT * FROM availability_overrides WHERE user_id = ? AND date = ?').get(userId, date);
+      return sendJson(res, 201, { data: saved });
+    }
+    if (req.method === 'DELETE') {
+      const id = req.query?.id || url.searchParams.get('id');
+      if (!id) return sendJson(res, 400, { error: 'Override ID is required.' });
+      db.prepare('DELETE FROM availability_overrides WHERE id = ? AND user_id = ?').run(id, userId);
+      return sendJson(res, 200, { ok: true });
+    }
+  }
+
   return sendJson(res, 404, { error: 'Unknown ops resource.' });
 }
 
