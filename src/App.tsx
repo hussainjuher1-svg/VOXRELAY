@@ -5,6 +5,7 @@ import { CommandPalette } from './components/ui/CommandPalette';
 import { AuthProvider } from './context/AuthContext';
 import { LocaleProvider } from './context/LocaleContext';
 import { ThemeProvider } from './context/ThemeContext';
+import './workspace.css';
 import {
   ContactPage,
   FaqPage,

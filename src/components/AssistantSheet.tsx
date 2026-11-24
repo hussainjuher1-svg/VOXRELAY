@@ -4,6 +4,7 @@ import { useAuth, useLocale } from '../context/hooks';
 import { BrandMark } from './BrandLogo';
 import { Button } from './ui/Button';
 import { Badge } from './ui/Primitives';
+import '../workspace.css';
 
 interface Citation {
   id: string;

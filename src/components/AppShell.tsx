@@ -20,6 +20,7 @@ import { useAuth, useLocale, useTheme } from '../context/hooks';
 import { AssistantDock, AssistantTrigger } from './AssistantSheet';
 import { BrandWordmark } from './BrandLogo';
 import { CommandPalette } from './ui/CommandPalette';
+import '../workspace.css';
 
 export function AppShell({
   children,
