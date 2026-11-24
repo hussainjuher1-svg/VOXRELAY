@@ -830,7 +830,7 @@ export function TerminologyPage() {
               dir="auto"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search Latin, Arabic, Hebrew, Devanagari..."
+              placeholder="Search Latin, Arabic, Hebrew..."
             />
           </Field>
           <Field label="Import UTF-8 / UTF-16 CSV" htmlFor="term-csv">
@@ -1283,12 +1283,10 @@ export function DeviceCheckPage() {
 
       <div className="vx-studio-grid">
         <article className="vx-studio-card vx-studio-card--cream">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className="vx-studio-head">
             <div>
               <span className="eyebrow">AUDIO &amp; SPEAKER STUDIO</span>
-              <h2 style={{ margin: '4px 0 0', fontFamily: 'var(--vr-font-serif)', fontSize: 22, fontWeight: 400 }}>
-                Live microphone &amp; output tone
-              </h2>
+              <h2>Live microphone &amp; tone</h2>
             </div>
             <Badge tone={periph.micPermission === 'granted' ? 'success' : periph.micPermission === 'denied' ? 'danger' : 'neutral'}>
               {periph.micTested ? periph.micPermission : 'Ready'}
@@ -1308,11 +1306,22 @@ export function DeviceCheckPage() {
             ))}
           </div>
 
-          <p className="mono-ltr" style={{ fontSize: 12, margin: 0 }}>
-            Signal: {liveDb ?? periph.micRmsDb ?? '—'} dBFS · Peak: {periph.micPeakPct}% · Sample rate: {periph.micSampleRate ?? '—'} Hz
-          </p>
+          <div className="vx-stat-strip">
+            <div className="vx-stat-cell">
+              <span>Signal</span>
+              <strong>{liveDb ?? periph.micRmsDb ?? '—'} dBFS</strong>
+            </div>
+            <div className="vx-stat-cell">
+              <span>Peak</span>
+              <strong>{periph.micPeakPct}%</strong>
+            </div>
+            <div className="vx-stat-cell">
+              <span>Sample rate</span>
+              <strong>{periph.micSampleRate ?? '—'} Hz</strong>
+            </div>
+          </div>
 
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          <div className="vx-studio-actions">
             <Button size="sm" onClick={() => void runMicProbe()} loading={busyStep === 'mic'}>
               <Mic size={14} />
               <span>Test mic</span>
@@ -1323,7 +1332,7 @@ export function DeviceCheckPage() {
             </Button>
             <Button
               size="sm"
-              variant={periph.speakerConfirmed === true ? 'primary' : 'ghost'}
+              variant={periph.speakerConfirmed === true ? 'primary' : 'secondary'}
               onClick={() => setPeriph((p) => ({ ...p, speakerConfirmed: true }))}
             >
               {periph.speakerConfirmed ? 'Audible ✓' : 'Confirm audible'}
@@ -1332,26 +1341,37 @@ export function DeviceCheckPage() {
         </article>
 
         <article className="vx-studio-card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className="vx-studio-head">
             <div>
               <span className="eyebrow">NETWORK &amp; HARDWARE TELEMETRY</span>
-              <h2 style={{ margin: '4px 0 0', fontFamily: 'var(--vr-font-serif)', fontSize: 22, fontWeight: 400 }}>
-                {envReport ? `${envReport.browserName} · ${envReport.osName}` : 'Detecting environment...'}
-              </h2>
+              <h2>{envReport ? `${envReport.browserName} · ${envReport.osName}` : 'Detecting environment…'}</h2>
             </div>
             <Badge tone={netReport ? 'success' : 'neutral'}>{netReport ? `${netReport.medianMs ?? '—'} ms RTT` : 'Probing'}</Badge>
           </div>
 
-          <p className="mono-ltr" style={{ fontSize: 12, margin: 0 }}>
-            {netReport
-              ? `Median ${netReport.medianMs ?? '—'} ms · p95 ${netReport.p95Ms ?? '—'} ms · Jitter ${netReport.jitterMs ?? '—'} ms · Loss ${netReport.lossPct}% · Down ${netReport.downMbps ?? '—'} Mbps / Up ${netReport.upMbps ?? '—'} Mbps`
-              : 'Measuring RTT, jitter, packet loss & throughput...'}
-          </p>
+          <div className="vx-stat-strip">
+            <div className="vx-stat-cell">
+              <span>Median RTT</span>
+              <strong>{netReport?.medianMs != null ? `${netReport.medianMs} ms` : 'Probing…'}</strong>
+            </div>
+            <div className="vx-stat-cell">
+              <span>Jitter / p95</span>
+              <strong>
+                {netReport ? `${netReport.jitterMs ?? '—'} / ${netReport.p95Ms ?? '—'} ms` : '—'}
+              </strong>
+            </div>
+            <div className="vx-stat-cell">
+              <span>Down / Loss</span>
+              <strong>
+                {netReport ? `${netReport.downMbps ?? '—'} Mbps · ${netReport.lossPct}%` : '—'}
+              </strong>
+            </div>
+          </div>
 
-          <p className="mono-ltr" style={{ fontSize: 12, margin: 0, color: 'var(--vr-ink-2)' }}>
+          <p className="vx-studio-hw">
             {envReport
-              ? `${envReport.hardware.cpuCores ?? '—'} cores · Display ${envReport.display.width}×${envReport.display.height} @ ${envReport.display.refreshHz ?? '—'}Hz · ICE ${envReport.webrtc.iceCandidatesGathered} (${envReport.webrtc.gatheringMs ?? '—'} ms)`
-              : ''}
+              ? `${envReport.hardware.cpuCores ?? '—'} cores · Display ${envReport.display.width}×${envReport.display.height}${envReport.display.refreshHz ? ` · ${envReport.display.refreshHz} Hz` : ''} · ICE ${envReport.webrtc.iceCandidatesGathered} (${envReport.webrtc.gatheringMs ?? '—'} ms)`
+              : 'Scanning CPU, display, and WebRTC ICE candidates…'}
           </p>
 
           {envReport && (
@@ -1370,7 +1390,7 @@ export function DeviceCheckPage() {
             </div>
           )}
 
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          <div className="vx-studio-actions">
             <Button size="sm" onClick={() => void runNetworkProbe()} loading={busyStep === 'network'}>
               <Wifi size={14} />
               <span>Re-run network</span>
@@ -1379,7 +1399,7 @@ export function DeviceCheckPage() {
               <Camera size={14} />
               <span>{periph.cameraResolution ? `Cam ${periph.cameraResolution}` : 'Test camera'}</span>
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => void runEnvRescan()} loading={busyStep === 'env'}>
+            <Button size="sm" variant="secondary" onClick={() => void runEnvRescan()} loading={busyStep === 'env'}>
               <Monitor size={14} />
               <span>Re-scan</span>
             </Button>
@@ -2319,29 +2339,37 @@ export function OpsDashboardPage() {
           <h1>Live operational queues</h1>
         </div>
       </div>
-      <div className="vx-kpi-grid">
-        <article className="vx-kpi-card vx-kpi-card--terracotta">
+      <div className="vx-kpi-grid vx-kpi-grid--4">
+        <article className="vx-kpi-card vx-kpi-card--terracotta is-live-beam">
+          <span className="vox-border-beam-glow" aria-hidden="true" />
+          <span className="vox-border-beam" aria-hidden="true" />
           <span className="eyebrow">Assignments</span>
           <span className="vx-kpi-value">{counts.assignments}</span>
-          <span className="mono-ltr" style={{ fontSize: 12, color: 'var(--vr-ink-2)' }}>{counts.ready} ready</span>
+          <span className="vx-kpi-sub">{counts.ready} ready</span>
           <Link className="inline-link" to="/app/assignments">Open assignments</Link>
         </article>
         <article className="vx-kpi-card vx-kpi-card--forest">
+          <span className="vox-border-beam-glow" aria-hidden="true" />
+          <span className="vox-border-beam" aria-hidden="true" />
           <span className="eyebrow">Device checks</span>
           <span className="vx-kpi-value">{counts.checks}</span>
-          <span className="mono-ltr" style={{ fontSize: 12, color: 'var(--vr-ink-2)' }}>browser audio &amp; RTT</span>
+          <span className="vx-kpi-sub">Audio &amp; network RTT</span>
           <Link className="inline-link" to="/app/device-check">Run device check</Link>
         </article>
         <article className="vx-kpi-card vx-kpi-card--gold">
+          <span className="vox-border-beam-glow" aria-hidden="true" />
+          <span className="vox-border-beam" aria-hidden="true" />
           <span className="eyebrow">Billing records</span>
           <span className="vx-kpi-value">{counts.billing}</span>
-          <span className="mono-ltr" style={{ fontSize: 12, color: 'var(--vr-ink-2)' }}>logged entries</span>
+          <span className="vx-kpi-sub">Logged entries</span>
           <Link className="inline-link" to="/app/billing">Open billing</Link>
         </article>
         <article className="vx-kpi-card vx-kpi-card--sage">
+          <span className="vox-border-beam-glow" aria-hidden="true" />
+          <span className="vox-border-beam" aria-hidden="true" />
           <span className="eyebrow">Support queue</span>
           <span className="vx-kpi-value">{counts.tickets}</span>
-          <span className="mono-ltr" style={{ fontSize: 12, color: 'var(--vr-ink-2)' }}>human coordinator</span>
+          <span className="vx-kpi-sub">Human coordinator</span>
           <Link className="inline-link" to="/app/support">Open support</Link>
         </article>
       </div>
