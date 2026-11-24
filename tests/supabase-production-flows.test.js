@@ -26,12 +26,15 @@ const state = {
     failAuditInsert: false,
     failRateLimitRpc: false,
     failMembershipInsert: false,
+    ambiguousMembershipInsert: false,
+    failMembershipDelete: false,
     failCreateUser: false,
     failDeleteUser: false,
     failResendEmail: false,
     throwResendEmail: false,
     failFinalizeInvite: false,
     failReleaseInvite: false,
+    returnFalseReleaseInvite: false,
     leaseExpiresInMs: 120_000,
   },
   resendCalls: [],
@@ -47,15 +50,19 @@ function resetHarness() {
     failAuditInsert: false,
     failRateLimitRpc: false,
     failMembershipInsert: false,
+    ambiguousMembershipInsert: false,
+    failMembershipDelete: false,
     failCreateUser: false,
     failDeleteUser: false,
     failResendEmail: false,
     throwResendEmail: false,
     failFinalizeInvite: false,
     failReleaseInvite: false,
+    returnFalseReleaseInvite: false,
     leaseExpiresInMs: 120_000,
   };
   state.resendCalls = [];
+  delete process.env.SUPABASE_ANON_KEY;
   process.env.VITE_SUPABASE_ANON_KEY = 'test-anon-key-not-real';
 }
 
@@ -100,6 +107,9 @@ function makeQuery(tableName) {
       if (tableName === 'memberships' && state.faults.failMembershipInsert) {
         return { data: null, error: { message: 'simulated membership failure' } };
       }
+      if (tableName === 'memberships' && state.faults.ambiguousMembershipInsert) {
+        return { data: null, error: null };
+      }
       const items = Array.isArray(insertPayload) ? insertPayload : [insertPayload];
       const inserted = items.map((item) => {
         const row = { ...item };
@@ -131,6 +141,9 @@ function makeQuery(tableName) {
     }
 
     if (mode === 'delete') {
+      if (tableName === 'memberships' && state.faults.failMembershipDelete) {
+        return { data: null, error: { message: 'simulated membership delete failure' } };
+      }
       const kept = [];
       for (const row of rows) {
         if (!matches(row)) kept.push(row);
@@ -411,6 +424,9 @@ vi.mock('@supabase/supabase-js', () => ({
       if (fnName === 'release_access_invite') {
         if (state.faults.failReleaseInvite) {
           return { data: null, error: { message: 'release RPC offline' } };
+        }
+        if (state.faults.returnFalseReleaseInvite) {
+          return { data: false, error: null };
         }
         const row = state.tables.access_requests.find(
           (r) => r.id === args.p_request_id && r.status === 'reserved' && r.claim_token === args.p_claim_token
@@ -991,5 +1007,146 @@ describe('Production Supabase mode (VERCEL=1): reliability, two-phase invites, r
     expect(resendOk.statusCode).toBe(200);
     expect(resendOk.json().confirmationEmailSent).toBe(true);
     expect(state.usersByEmail.size).toBe(userCountBefore);
+  });
+
+  it('Cleanup verification: detects release_access_invite returning false, ambiguous membership failure, independent cleanup steps, and env configuration', async () => {
+    const platformAdmin = registerAuthUser({ email: 'padmin@voxrelay.test', appRole: 'platform_admin' });
+
+    // 1. Ambiguous membership insertion failure ({ data: null, error: null }) triggers full rollback + preserves invite
+    const inv1 = await seedAndApproveOrgInvite({
+      email: 'ambig.mem@clinic.org',
+      orgName: 'Ambig Clinic',
+      adminToken: platformAdmin.token,
+    });
+    state.faults.ambiguousMembershipInsert = true;
+    const ambigRes = createRes();
+    await authHandler(
+      createReq({
+        method: 'POST',
+        url: '/api/auth',
+        ip: '198.51.100.130',
+        body: {
+          action: 'signup',
+          email: 'ambig.mem@clinic.org',
+          password: 'ValidStrongPassword123!',
+          inviteToken: inv1.inviteToken,
+        },
+      }),
+      ambigRes
+    );
+    expect(ambigRes.statusCode).toBe(500);
+    expect(state.usersByEmail.has('ambig.mem@clinic.org')).toBe(false);
+    expect(state.tables.access_requests.find((r) => r.id === inv1.reqId).status).toBe('approved');
+    state.faults.ambiguousMembershipInsert = false;
+
+    // 2. release_access_invite() returning false without RPC error when invite is still 'reserved' reports incomplete cleanup
+    const inv2 = await seedAndApproveOrgInvite({
+      email: 'false.release@clinic.org',
+      orgName: 'False Release Clinic',
+      adminToken: platformAdmin.token,
+    });
+    state.faults.failFinalizeInvite = true;
+    state.faults.returnFalseReleaseInvite = true;
+    const falseRelRes = createRes();
+    await authHandler(
+      createReq({
+        method: 'POST',
+        url: '/api/auth',
+        ip: '198.51.100.131',
+        body: {
+          action: 'signup',
+          email: 'false.release@clinic.org',
+          password: 'ValidStrongPassword123!',
+          inviteToken: inv2.inviteToken,
+        },
+      }),
+      falseRelRes
+    );
+    expect(falseRelRes.statusCode).toBe(500);
+    expect(falseRelRes.json().error).toMatch(/rollback cleanup was incomplete/i);
+    // Earlier cleanup steps STILL ran independently (both membership and auth user removed)
+    expect(state.usersByEmail.has('false.release@clinic.org')).toBe(false);
+    expect(state.tables.memberships.filter((m) => m.org_id === inv2.orgId).length).toBe(0);
+    state.faults.failFinalizeInvite = false;
+    state.faults.returnFalseReleaseInvite = false;
+
+    // 3. Membership cleanup failing does NOT skip Auth-user deletion or invite release
+    const inv3 = await seedAndApproveOrgInvite({
+      email: 'memdel.fail@clinic.org',
+      orgName: 'MemDel Fail Clinic',
+      adminToken: platformAdmin.token,
+    });
+    state.faults.failFinalizeInvite = true;
+    state.faults.failMembershipDelete = true;
+    const memDelFailRes = createRes();
+    await authHandler(
+      createReq({
+        method: 'POST',
+        url: '/api/auth',
+        ip: '198.51.100.132',
+        body: {
+          action: 'signup',
+          email: 'memdel.fail@clinic.org',
+          password: 'ValidStrongPassword123!',
+          inviteToken: inv3.inviteToken,
+        },
+      }),
+      memDelFailRes
+    );
+    expect(memDelFailRes.statusCode).toBe(500);
+    expect(memDelFailRes.json().error).toMatch(/rollback cleanup was incomplete/i);
+    // Auth user deleted AND invite released back to 'approved' despite membership delete failure!
+    expect(state.usersByEmail.has('memdel.fail@clinic.org')).toBe(false);
+    expect(state.tables.access_requests.find((r) => r.id === inv3.reqId).status).toBe('approved');
+    state.faults.failFinalizeInvite = false;
+    state.faults.failMembershipDelete = false;
+
+    // 4. Retry on inv1 after completed rollback succeeds cleanly
+    const retryOk = createRes();
+    await authHandler(
+      createReq({
+        method: 'POST',
+        url: '/api/auth',
+        ip: '198.51.100.133',
+        body: {
+          action: 'signup',
+          email: 'ambig.mem@clinic.org',
+          password: 'ValidStrongPassword123!',
+          inviteToken: inv1.inviteToken,
+        },
+      }),
+      retryOk
+    );
+    expect(retryOk.statusCode).toBe(201);
+    expect(state.tables.access_requests.find((r) => r.id === inv1.reqId).status).toBe('redeemed');
+
+    // 5. Server supports SUPABASE_ANON_KEY fallback and APP_ORIGIN for canonical invite URLs
+    const { getSupabaseConfig } = await import('../api/_lib/supabase.js');
+    delete process.env.VITE_SUPABASE_ANON_KEY;
+    process.env.SUPABASE_ANON_KEY = 'server-only-anon-fallback';
+    expect(getSupabaseConfig().anonKey).toBe('server-only-anon-fallback');
+
+    process.env.APP_ORIGIN = 'https://app.voxrelay.example';
+    const inv4 = await seedAndApproveOrgInvite({
+      email: 'origin.check@clinic.org',
+      orgName: 'Origin Clinic',
+      adminToken: platformAdmin.token,
+    });
+    expect(inv4.inviteToken).toBeTruthy();
+    const lastReq = state.tables.access_requests[state.tables.access_requests.length - 1];
+    const reCheck = createRes();
+    await adminHandler(
+      createReq({
+        method: 'GET',
+        url: '/api/admin',
+        headers: { authorization: `Bearer ${platformAdmin.token}` },
+      }),
+      reCheck
+    );
+    expect(reCheck.statusCode).toBe(200);
+    expect(lastReq.status).toBe('approved');
+    delete process.env.APP_ORIGIN;
+    delete process.env.SUPABASE_ANON_KEY;
+    process.env.VITE_SUPABASE_ANON_KEY = 'test-anon-key-not-real';
   });
 });

@@ -41,6 +41,22 @@ describe('Real PostgreSQL schema, lockdown, migrations & PL/pgSQL RPCs', () => {
     return await pglite.query(sql, params);
   }
 
+  async function withPinnedClient(fn) {
+    if (usePool) {
+      const client = await pool.connect();
+      try {
+        return await fn({
+          query: (sql, params = []) => client.query(sql, params),
+        });
+      } finally {
+        client.release();
+      }
+    }
+    return await fn({
+      query: (sql, params = []) => pglite.query(sql, params),
+    });
+  }
+
   beforeAll(async () => {
     if (usePool) {
       pool = new pg.Pool({ connectionString: databaseUrl, max: 10 });
@@ -118,20 +134,29 @@ describe('Real PostgreSQL schema, lockdown, migrations & PL/pgSQL RPCs', () => {
     );
     const reqId = Number(ins.rows[0].id);
 
-    // Verify rollback leaves zero organizations, zero audit events, and status='pending'
-    await execSql('BEGIN');
-    const rolledBackRes = await querySql(
-      `SELECT voxrelay.review_access_request($1, 'approve', 'note', $2, 'hash-rollback', now() + interval '1 day') AS res`,
-      [reqId, reviewerId]
-    );
-    expect(rolledBackRes.rows[0].res.ok).toBe(true);
-    await execSql('ROLLBACK');
+    // Verify rollback on ONE pinned connection leaves zero organizations, zero approval audit events, and status='pending'
+    await withPinnedClient(async (db) => {
+      await db.query('BEGIN');
+      const rolledBackRes = await db.query(
+        `SELECT voxrelay.review_access_request($1, 'approve', 'note', $2, 'hash-rollback', now() + interval '1 day') AS res`,
+        [reqId, reviewerId]
+      );
+      expect(rolledBackRes.rows[0].res.ok).toBe(true);
+      await db.query('ROLLBACK');
 
-    const afterRollbackReq = await querySql('SELECT status, org_id FROM voxrelay.access_requests WHERE id = $1', [reqId]);
-    expect(afterRollbackReq.rows[0].status).toBe('pending');
-    expect(afterRollbackReq.rows[0].org_id).toBeNull();
-    const orgCountAfterRb = await querySql("SELECT COUNT(*)::int AS c FROM voxrelay.organizations WHERE name = 'Dhaka Health'");
-    expect(orgCountAfterRb.rows[0].c).toBe(0);
+      const afterRollbackReq = await db.query('SELECT status, org_id FROM voxrelay.access_requests WHERE id = $1', [reqId]);
+      expect(afterRollbackReq.rows[0].status).toBe('pending');
+      expect(afterRollbackReq.rows[0].org_id).toBeNull();
+
+      const orgCountAfterRb = await db.query("SELECT COUNT(*)::int AS c FROM voxrelay.organizations WHERE name = 'Dhaka Health'");
+      expect(orgCountAfterRb.rows[0].c).toBe(0);
+
+      const auditCountAfterRb = await db.query(
+        "SELECT COUNT(*)::int AS c FROM voxrelay.audit_events WHERE object_ref = $1 AND type = 'access_request_approved'",
+        [String(reqId)]
+      );
+      expect(auditCountAfterRb.rows[0].c).toBe(0);
+    });
 
     // Commit real approval
     const committed = await querySql(

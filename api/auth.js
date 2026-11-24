@@ -52,29 +52,60 @@ function getClientIp(req) {
   return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
 }
 
-async function cleanupProvisioning({ service, userId, orgId, reserved }) {
+async function cleanupProvisioning({ service, userId, reserved }) {
   const cleanupErrors = [];
 
-  if (userId && orgId) {
-    const { error: delMemErr } = await service
-      .from('memberships')
-      .delete()
-      .eq('user_id', userId)
-      .eq('org_id', orgId);
-    if (delMemErr) cleanupErrors.push(`membership cleanup: ${delMemErr.message}`);
-  }
-
+  // Step 1: Delete ALL membership rows for the created user_id (does not require orgId)
   if (userId) {
-    const { error: delUserErr } = await service.auth.admin.deleteUser(userId);
-    if (delUserErr) cleanupErrors.push(`user cleanup: ${delUserErr.message}`);
+    try {
+      const { error: delMemErr } = await service
+        .from('memberships')
+        .delete()
+        .eq('user_id', userId);
+      if (delMemErr) cleanupErrors.push(`membership cleanup: ${delMemErr.message}`);
+    } catch (err) {
+      cleanupErrors.push(`membership cleanup exception: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
+  // Step 2: Independently delete the Auth user even if membership cleanup failed
+  if (userId) {
+    try {
+      const { error: delUserErr } = await service.auth.admin.deleteUser(userId);
+      if (delUserErr) cleanupErrors.push(`user cleanup: ${delUserErr.message}`);
+    } catch (err) {
+      cleanupErrors.push(`user cleanup exception: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  // Step 3: Independently release the invitation lease and verify both error and returned boolean data
   if (reserved?.id && reserved?.claim_token) {
-    const { error: relErr } = await service.rpc('release_access_invite', {
-      p_request_id: reserved.id,
-      p_claim_token: reserved.claim_token,
-    });
-    if (relErr) cleanupErrors.push(`invite release: ${relErr.message}`);
+    try {
+      const { data: released, error: relErr } = await service.rpc('release_access_invite', {
+        p_request_id: reserved.id,
+        p_claim_token: reserved.claim_token,
+      });
+      if (relErr) {
+        cleanupErrors.push(`invite release: ${relErr.message}`);
+      } else if (released !== true) {
+        const { data: reqState, error: checkErr } = await service
+          .from('access_requests')
+          .select('status, claim_token')
+          .eq('id', reserved.id)
+          .maybeSingle();
+        const isSafeApproved = reqState?.status === 'approved' && !reqState?.claim_token;
+        const isValidTerminal = reqState?.status === 'redeemed' || reqState?.status === 'rejected';
+        if (checkErr || (!isSafeApproved && !isValidTerminal)) {
+          cleanupErrors.push(
+            checkErr
+              ? `invite release returned ${String(released)} and status check failed: ${checkErr.message}`
+              : `invite release returned ${String(released)} (current status: ${reqState?.status || 'unknown'})`
+          );
+        }
+      }
+    } catch (err) {
+      cleanupErrors.push(`invite release exception: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   if (cleanupErrors.length > 0) {
@@ -188,7 +219,7 @@ async function handleSupabaseSignup(data, req, res) {
     if (createErr || !created?.user) {
       const msg = createErr?.message || '';
       if (reserved) {
-        await cleanupProvisioning({ service, userId: null, orgId: null, reserved });
+        await cleanupProvisioning({ service, userId: null, reserved });
       }
       if (/already.*registered|already.*exists|duplicate/i.test(msg)) {
         return sendJson(res, 409, { error: 'Unable to complete signup with this email address.' });
@@ -207,20 +238,24 @@ async function handleSupabaseSignup(data, req, res) {
         .maybeSingle();
 
       if (orgLookupErr || !orgRow?.id) {
-        await cleanupProvisioning({ service, userId: createdUserId, orgId: null, reserved });
+        await cleanupProvisioning({ service, userId: createdUserId, reserved });
         throw new Error(orgLookupErr?.message || 'Provisioned organization record is invalid.');
       }
 
       assignedOrgRole = reserved.approved_role === 'admin' ? 'admin' : 'interpreter';
-      const { error: memErr } = await service.from('memberships').insert({
-        org_id: orgRow.id,
-        user_id: createdUserId,
-        role: assignedOrgRole,
-        status: 'active',
-      });
-      if (memErr) {
-        await cleanupProvisioning({ service, userId: createdUserId, orgId: null, reserved });
-        throw new Error(memErr.message);
+      const { data: memRow, error: memErr } = await service
+        .from('memberships')
+        .insert({
+          org_id: orgRow.id,
+          user_id: createdUserId,
+          role: assignedOrgRole,
+          status: 'active',
+        })
+        .select('id')
+        .single();
+      if (memErr || !memRow?.id) {
+        await cleanupProvisioning({ service, userId: createdUserId, reserved });
+        throw new Error(memErr?.message || 'Unable to verify created organization membership.');
       }
       insertedOrgId = orgRow.id;
     }
@@ -231,7 +266,6 @@ async function handleSupabaseSignup(data, req, res) {
         await cleanupProvisioning({
           service,
           userId: createdUserId,
-          orgId: insertedOrgId,
           reserved,
         });
         return sendJson(res, 503, {
@@ -252,7 +286,6 @@ async function handleSupabaseSignup(data, req, res) {
         await cleanupProvisioning({
           service,
           userId: createdUserId,
-          orgId: insertedOrgId,
           reserved,
         });
         throw new Error(finErr?.message || 'Unable to finalize invitation redemption.');
@@ -284,7 +317,7 @@ async function handleSupabaseSignup(data, req, res) {
       result: 'ok',
     });
     if (auditErr) {
-      await cleanupProvisioning({ service, userId: createdUserId, orgId: null, reserved: null });
+      await cleanupProvisioning({ service, userId: createdUserId, reserved: null });
       throw new Error(auditErr.message);
     }
 
@@ -352,7 +385,10 @@ export default async function handler(req, res) {
       if (data.action === 'resend_confirmation') {
         return await handleSupabaseResend(data, req, res);
       }
-      return sendJson(res, 503, { error: 'Local authentication unavailable in serverless mode; use Supabase Auth.' });
+      return sendJson(res, 503, {
+        error: 'Local authentication unavailable in serverless mode; use Supabase Auth.',
+        allowClientFallback: data.action === 'signin',
+      });
     }
 
     const ua = req.headers['user-agent'] || 'Browser';

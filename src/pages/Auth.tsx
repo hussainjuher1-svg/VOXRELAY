@@ -49,10 +49,12 @@ export function LoginPage() {
           setNeedsConfirmation(false);
           return;
         }
-        if (!serverRes.ok && serverRes.status !== 503) {
+        if (serverRes.status === 429 || serverRes.status >= 500 || !serverRes.ok) {
           setFeedback({ kind: 'error', text: serverData.error || 'Unable to resend confirmation email.' });
           return;
         }
+        setFeedback({ kind: 'info', text: serverData.message || 'Confirmation email status updated.' });
+        return;
       }
 
       if (!supabase) {
@@ -99,7 +101,7 @@ export function LoginPage() {
         return;
       }
 
-      // Try server auth endpoint first (handles local cookie auth AND server-verified Supabase invitation signup)
+      // Try server auth endpoint first (handles local cookie auth AND server-verified Supabase invitation/public signup)
       const localRes = await fetch('/api/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -111,7 +113,7 @@ export function LoginPage() {
         ),
       }).catch(() => null);
 
-      if (localRes && (localRes.status !== 503 || (mode === 'signup' && Boolean(inviteToken)))) {
+      if (localRes) {
         const localData = await localRes.json().catch(() => ({}));
         if (localRes.ok) {
           if (localData.requiresConfirmation) {
@@ -129,11 +131,20 @@ export function LoginPage() {
           navigate(returnTo, { replace: true });
           return;
         }
-        if (mode === 'signup' && inviteToken) {
+
+        // Fail closed on 429 and 5xx for signup; only permit client signin fallback when server explicitly allows it
+        if (localRes.status === 429 || localRes.status >= 500) {
+          if (!(mode === 'signin' && localRes.status === 503 && localData.allowClientFallback === true)) {
+            setFeedback({ kind: 'error', text: localData.error || 'Authentication service is unavailable.' });
+            return;
+          }
+        } else if (mode === 'signup' && inviteToken) {
           setFeedback({ kind: 'error', text: localData.error || 'Unable to verify invitation.' });
           return;
-        }
-        if (localRes.status !== 401 || !supabase) {
+        } else if (mode === 'signup') {
+          setFeedback({ kind: 'error', text: localData.error || 'Authentication failed.' });
+          return;
+        } else if (localRes.status !== 401 || !supabase) {
           setFeedback({ kind: 'error', text: localData.error || 'Authentication failed.' });
           return;
         }

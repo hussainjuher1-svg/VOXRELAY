@@ -21,13 +21,14 @@ Copy `.env.example` to `.env` (`.env` and `.env.*` are ignored by Git):
 
 | Variable | Used by | Purpose |
 |---|---|---|
-| `VITE_SUPABASE_URL` | Browser, API fallback | Supabase project URL |
-| `VITE_SUPABASE_ANON_KEY` | Browser, status probe | Public anon key used for browser sign-in |
-| `SUPABASE_URL` | API only | Server-side Supabase project URL |
-| `SUPABASE_SERVICE_ROLE_KEY` | API only | Server-side database and auth access (falls back to local `node:sqlite` in dev when unset) |
+| `VITE_SUPABASE_URL` | Browser, API fallback | Supabase project URL (required for frontend build) |
+| `VITE_SUPABASE_ANON_KEY` | Browser, API fallback | Public anon key used for browser sign-in (required for frontend build) |
+| `SUPABASE_URL` | API only | Server-side Supabase project URL (falls back to `VITE_SUPABASE_URL`) |
+| `SUPABASE_ANON_KEY` | API only | Server-side Supabase anon key for confirmation email dispatch & RLS probes (falls back to `VITE_SUPABASE_ANON_KEY`) |
+| `SUPABASE_SERVICE_ROLE_KEY` | API only | Server-side database and auth access (never expose to frontend; falls back to local `node:sqlite` in dev when unset) |
 | `ANTHROPIC_API_KEY` | API only | Optional Anthropic model for `/api/assistant` (falls back to grounded local KB + Research synthesizer) |
 | `ANTHROPIC_MODEL` | API only | Optional model override (default `claude-sonnet-4-5`) |
-| `APP_ORIGIN` | API only | Base origin for one-time invite links |
+| `APP_ORIGIN` | API only | Canonical production website origin used to generate one-time invitation URLs (e.g. `https://your-app.vercel.app`) |
 | `SESSION_SECRET` | API only | HMAC secret for local session cookies and invite tokens |
 
 ## Key Routes
