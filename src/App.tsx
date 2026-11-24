@@ -48,9 +48,26 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
   render() {
     if (this.state.hasError) {
       return (
-        <main className="pub-container" style={{ paddingBlock: '64px' }}>
-          <h1>Something went wrong</h1>
-          <p>Reload the page to continue.</p>
+        <main className="pub-container" style={{ paddingBlock: '64px', maxWidth: '540px' }}>
+          <div className="subpage-card">
+            <span className="eyebrow">APPLICATION ERROR</span>
+            <h1 style={{ marginTop: '8px' }}>Something went wrong</h1>
+            <p style={{ color: 'var(--muted)', marginBottom: '16px' }}>
+              An unexpected error interrupted this screen. Your workspace data remains saved.
+            </p>
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => window.location.reload()}
+              >
+                Reload page
+              </button>
+              <a className="btn-ghost" href="/">
+                Back to home
+              </a>
+            </div>
+          </div>
         </main>
       );
     }

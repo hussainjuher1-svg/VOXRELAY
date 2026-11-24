@@ -3039,29 +3039,49 @@ export function SettingsPage() {
 }
 
 export function ReportsPage() {
-  const { session } = useAuth();
+  const { user, session } = useAuth();
+  const isAuthed = Boolean(user || session?.access_token);
   const [summary, setSummary] = useState<{
     sessions?: number;
     totalMinutes?: number;
     byPair?: Record<string, { sessions: number; minutes: number }>;
     byModality?: Record<string, { sessions: number; minutes: number }>;
   } | null>(null);
+  const [loading, setLoading] = useState(isAuthed);
+  const [error, setError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
+    if (!isAuthed) return;
     let active = true;
-    fetch('/api/ops?resource=reports', {
-      headers: buildHeaders(session?.access_token),
-      credentials: 'same-origin',
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((json) => {
+    const load = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const r = await fetch('/api/ops?resource=reports', {
+          headers: buildHeaders(session?.access_token),
+          credentials: 'same-origin',
+        });
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({}));
+          throw new Error(j.error || `Unable to load reports (${r.status}).`);
+        }
+        const json = await r.json();
         if (active && json) setSummary(json);
-      })
-      .catch(() => {});
+      } catch (err) {
+        if (active) setError(err instanceof Error ? err.message : 'Unable to load reports.');
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    void load();
     return () => {
       active = false;
     };
-  }, [session?.access_token]);
+  }, [session?.access_token, isAuthed, reloadKey]);
+
+  const isLoading = isAuthed && loading;
+  const visibleError = isAuthed ? error : '';
 
   const pairsList = Object.entries(summary?.byPair || {});
   const modalityList = Object.entries(summary?.byModality || {});
@@ -3074,14 +3094,20 @@ export function ReportsPage() {
           <h1>Interpreter &amp; organization totals</h1>
         </div>
       </div>
+      {visibleError && (
+        <div className="subpage-card" role="alert" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          <p className="form-error" style={{ margin: 0 }}>{visibleError}</p>
+          <Button type="button" variant="secondary" onClick={() => setReloadKey((k) => k + 1)}>Retry</Button>
+        </div>
+      )}
       <div className="vx-kpi-grid">
         <article className="vx-kpi-card vx-kpi-card--terracotta">
           <span className="eyebrow">Completed sessions</span>
-          <span className="vx-kpi-value">{summary?.sessions ?? 0}</span>
+          <span className="vx-kpi-value">{isLoading ? '—' : (summary?.sessions ?? 0)}</span>
         </article>
         <article className="vx-kpi-card vx-kpi-card--forest">
           <span className="eyebrow">Interpreted minutes</span>
-          <span className="vx-kpi-value">{summary?.totalMinutes ?? 0} min</span>
+          <span className="vx-kpi-value">{isLoading ? '—' : `${summary?.totalMinutes ?? 0} min`}</span>
         </article>
       </div>
 
@@ -3089,7 +3115,14 @@ export function ReportsPage() {
         <div className="vx-ledger-head">
           <h2>Breakdown by language pair &amp; modality</h2>
         </div>
-        {pairsList.length === 0 && modalityList.length === 0 ? (
+        {isLoading ? (
+          <div className="vx-ledger-row">
+            <span className="vx-ledger-cat">LOADING</span>
+            <div className="vx-ledger-title" style={{ width: '100%' }}>
+              <Skeleton width="60%" height="14px" />
+            </div>
+          </div>
+        ) : pairsList.length === 0 && modalityList.length === 0 ? (
           <div className="vx-ledger-row">
             <span className="vx-ledger-cat">EMPTY</span>
             <div className="vx-ledger-title">
@@ -3174,19 +3207,34 @@ export function RecordsAssistantPage() {
 }
 
 export function OpsDashboardPage() {
-  const { session } = useAuth();
-  const [counts, setCounts] = useState({ assignments: 0, ready: 0, billing: 0, tickets: 0, checks: 0 });
+  const { user, session } = useAuth();
+  const isAuthed = Boolean(user || session?.access_token);
+  const [counts, setCounts] = useState<{ assignments: number; ready: number; billing: number; tickets: number; checks: number } | null>(null);
+  const [loading, setLoading] = useState(isAuthed);
+  const [error, setError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
+    if (!isAuthed) return;
     let active = true;
-    const headers = buildHeaders(session?.access_token);
-    Promise.all([
-      fetch('/api/assignments', { headers, credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : null)),
-      fetch('/api/ops?resource=billing', { headers, credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : null)),
-      fetch('/api/support', { headers, credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : null)),
-      fetch('/api/ops?resource=device_check', { headers, credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : null)),
-    ])
-      .then(([a, b, s, d]) => {
+    const load = async () => {
+      setLoading(true);
+      setError('');
+      const headers = buildHeaders(session?.access_token);
+      const readOrThrow = async (res: Response) => {
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          throw new Error(j.error || `Request failed (${res.status}).`);
+        }
+        return res.json();
+      };
+      try {
+        const [a, b, s, d] = await Promise.all([
+          fetch('/api/assignments', { headers, credentials: 'same-origin' }).then(readOrThrow),
+          fetch('/api/ops?resource=billing', { headers, credentials: 'same-origin' }).then(readOrThrow),
+          fetch('/api/support', { headers, credentials: 'same-origin' }).then(readOrThrow),
+          fetch('/api/ops?resource=device_check', { headers, credentials: 'same-origin' }).then(readOrThrow),
+        ]);
         if (!active) return;
         const list: AssignmentItem[] = a?.data || [];
         setCounts({
@@ -3196,12 +3244,21 @@ export function OpsDashboardPage() {
           tickets: (s?.tickets || []).length,
           checks: (d?.data || []).length,
         });
-      })
-      .catch(() => {});
+      } catch (err) {
+        if (active) setError(err instanceof Error ? err.message : 'Unable to load operational queues.');
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    void load();
     return () => {
       active = false;
     };
-  }, [session?.access_token]);
+  }, [session?.access_token, isAuthed, reloadKey]);
+
+  const isLoading = isAuthed && loading;
+  const visibleError = isAuthed ? error : '';
+  const shown = isAuthed ? counts : { assignments: 0, ready: 0, billing: 0, tickets: 0, checks: 0 };
 
   return (
     <AppShell>
@@ -3211,20 +3268,26 @@ export function OpsDashboardPage() {
           <h1>Live operational queues</h1>
         </div>
       </div>
+      {visibleError && (
+        <div className="subpage-card" role="alert" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          <p className="form-error" style={{ margin: 0 }}>{visibleError}</p>
+          <Button type="button" variant="secondary" onClick={() => setReloadKey((k) => k + 1)}>Retry</Button>
+        </div>
+      )}
       <div className="vx-kpi-grid vx-kpi-grid--4">
         <article className="vx-kpi-card vx-kpi-card--terracotta is-live-beam">
           <span className="vox-border-beam-glow" aria-hidden="true" />
           <span className="vox-border-beam" aria-hidden="true" />
           <span className="eyebrow">Assignments</span>
-          <span className="vx-kpi-value">{counts.assignments}</span>
-          <span className="vx-kpi-sub">{counts.ready} ready</span>
+          <span className="vx-kpi-value">{isLoading ? '—' : (shown?.assignments ?? '—')}</span>
+          <span className="vx-kpi-sub">{isLoading ? 'Loading...' : `${shown?.ready ?? 0} ready`}</span>
           <Link className="inline-link" to="/app/assignments">Open assignments</Link>
         </article>
         <article className="vx-kpi-card vx-kpi-card--forest">
           <span className="vox-border-beam-glow" aria-hidden="true" />
           <span className="vox-border-beam" aria-hidden="true" />
           <span className="eyebrow">Device checks</span>
-          <span className="vx-kpi-value">{counts.checks}</span>
+          <span className="vx-kpi-value">{isLoading ? '—' : (shown?.checks ?? '—')}</span>
           <span className="vx-kpi-sub">Audio &amp; network RTT</span>
           <Link className="inline-link" to="/app/device-check">Run device check</Link>
         </article>
@@ -3232,7 +3295,7 @@ export function OpsDashboardPage() {
           <span className="vox-border-beam-glow" aria-hidden="true" />
           <span className="vox-border-beam" aria-hidden="true" />
           <span className="eyebrow">Billing records</span>
-          <span className="vx-kpi-value">{counts.billing}</span>
+          <span className="vx-kpi-value">{isLoading ? '—' : (shown?.billing ?? '—')}</span>
           <span className="vx-kpi-sub">Logged entries</span>
           <Link className="inline-link" to="/app/billing">Open billing</Link>
         </article>
@@ -3240,7 +3303,7 @@ export function OpsDashboardPage() {
           <span className="vox-border-beam-glow" aria-hidden="true" />
           <span className="vox-border-beam" aria-hidden="true" />
           <span className="eyebrow">Support queue</span>
-          <span className="vx-kpi-value">{counts.tickets}</span>
+          <span className="vx-kpi-value">{isLoading ? '—' : (shown?.tickets ?? '—')}</span>
           <span className="vx-kpi-sub">Human coordinator</span>
           <Link className="inline-link" to="/app/support">Open support</Link>
         </article>
@@ -3386,18 +3449,30 @@ export function AvailabilityPage() {
 
 export function QualityPage() {
   const { session, user } = useAuth();
+  const isAuthed = Boolean(user || session?.access_token);
   const [indicators, setIndicators] = useState<
     Array<{ key: string; label?: string; numerator: number; denominator: number; ratio?: number | null }>
   >([]);
+  const [loading, setLoading] = useState(isAuthed);
+  const [error, setError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
+    if (!isAuthed) return;
     let active = true;
-    fetch('/api/ops?resource=quality', {
-      headers: buildHeaders(session?.access_token),
-      credentials: 'same-origin',
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((json) => {
+    const load = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const r = await fetch('/api/ops?resource=quality', {
+          headers: buildHeaders(session?.access_token),
+          credentials: 'same-origin',
+        });
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({}));
+          throw new Error(j.error || `Unable to load quality indicators (${r.status}).`);
+        }
+        const json = await r.json();
         if (!active || !json?.indicators) return;
         const raw = json.indicators;
         if (Array.isArray(raw)) {
@@ -3410,12 +3485,20 @@ export function QualityPage() {
             }))
           );
         }
-      })
-      .catch(() => {});
+      } catch (err) {
+        if (active) setError(err instanceof Error ? err.message : 'Unable to load quality indicators.');
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    void load();
     return () => {
       active = false;
     };
-  }, [session?.access_token]);
+  }, [session?.access_token, isAuthed, reloadKey]);
+
+  const isLoading = isAuthed && loading;
+  const visibleError = isAuthed ? error : '';
 
   const defaultMetrics = [
     { key: 'device_checks_passed', title: 'Device check pass rate', link: '/app/device-check', cta: 'Run device check' },
@@ -3468,6 +3551,13 @@ export function QualityPage() {
         </div>
       )}
 
+      {user && visibleError && (
+        <div className="subpage-card" role="alert" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          <p className="form-error" style={{ margin: 0 }}>{visibleError}</p>
+          <Button type="button" variant="secondary" onClick={() => setReloadKey((k) => k + 1)}>Retry</Button>
+        </div>
+      )}
+
       <div className="vx-kpi-grid">
         {cards.map((ind, idx) => {
           const pct = ind.denominator > 0 ? Math.round((ind.numerator / ind.denominator) * 100) : 0;
@@ -3476,13 +3566,13 @@ export function QualityPage() {
             <article key={ind.key} className={`vx-kpi-card ${accentClass}`}>
               <span className="eyebrow">{ind.title}</span>
               <span className="vx-kpi-value">
-                {ind.denominator > 0 ? `${pct}%` : '0 / 0'}
+                {isLoading ? '—' : ind.denominator > 0 ? `${pct}%` : '0 / 0'}
               </span>
               <div className="meter-track" aria-label={ind.title}>
-                <div className="meter-fill" style={{ width: `${pct}%` }} />
+                <div className="meter-fill" style={{ width: `${isLoading ? 0 : pct}%` }} />
               </div>
               <span className="mono-ltr" style={{ fontSize: 12, color: 'var(--vr-ink-2)' }}>
-                {ind.numerator} of {ind.denominator} recorded
+                {isLoading ? 'Loading...' : `${ind.numerator} of ${ind.denominator} recorded`}
               </span>
               <Link className="inline-link" to={ind.link}>
                 {ind.cta}
