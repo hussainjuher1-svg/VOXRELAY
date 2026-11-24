@@ -5,6 +5,7 @@ import path from 'node:path';
 
 const require = createRequire(import.meta.url);
 let dbInstance = null;
+let dbInstancePath = '';
 
 export function isLocalDbAllowed() {
   return process.env.VERCEL !== '1';
@@ -12,9 +13,9 @@ export function isLocalDbAllowed() {
 
 export function getLocalDb() {
   if (!isLocalDbAllowed()) return null;
-  const dataDir = path.join(process.cwd(), '.data');
-  const dbPath = path.join(dataDir, 'voxrelay.sqlite');
-  if (dbInstance && fs.existsSync(dbPath)) return dbInstance;
+  const dbPath = process.env.VOXRELAY_LOCAL_DB || path.join(process.cwd(), '.data', 'voxrelay.sqlite');
+  const dataDir = path.dirname(dbPath);
+  if (dbInstance && dbInstancePath === dbPath && fs.existsSync(dbPath)) return dbInstance;
 
   let DatabaseSync;
   try {
@@ -25,6 +26,7 @@ export function getLocalDb() {
 
   fs.mkdirSync(dataDir, { recursive: true });
   const db = new DatabaseSync(dbPath);
+  dbInstancePath = dbPath;
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
 
   db.exec(`

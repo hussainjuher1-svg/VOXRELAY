@@ -120,7 +120,8 @@ export default async function handler(req, res) {
         return sendJson(res, 409, { error: 'An account with that email already exists.' });
       }
 
-      let assignedRole = data.role;
+      let assignedRole = 'interpreter';
+      let redeemedInviteId = null;
       if (data.inviteToken) {
         const tokenHash = hashSecret(data.inviteToken);
         const invite = db
@@ -130,6 +131,7 @@ export default async function handler(req, res) {
           return sendJson(res, 400, { error: 'Invite link is invalid or expired.' });
         }
         assignedRole = invite.role === 'organization' ? 'org_admin' : 'interpreter';
+        redeemedInviteId = invite.id;
       } else {
         // First local user gets platform_admin capability so admin review queue can be tested immediately
         const totalUsers = db.prepare('SELECT COUNT(*) AS c FROM local_users').get()?.c || 0;
@@ -142,6 +144,12 @@ export default async function handler(req, res) {
         `INSERT INTO local_users (id, email, full_name, role, password_hash, locale, created_at)
          VALUES (?, ?, ?, ?, ?, 'en', ?)`
       ).run(id, email, data.fullName || '', assignedRole, hashPassword(data.password), now);
+
+      if (redeemedInviteId) {
+        db.prepare("UPDATE access_requests SET status = 'redeemed', invite_token_hash = NULL WHERE id = ?").run(
+          redeemedInviteId
+        );
+      }
 
       const session = createLocalSession(db, id, ua);
       setSessionCookie(res, session.rawToken);

@@ -29,25 +29,26 @@ export default async function handler(req, res) {
 
     const service = getServiceClient();
     if (service) {
-      try {
-        await enforceRateLimit(service, `contact:${ip}`, { maxRequests: 6, windowMs: 3600_000 });
-        const { error } = await service.from('access_requests').insert({
-          name: fullName,
-          email,
-          audience,
-          message,
-        });
-        if (!error) {
-          return sendJson(res, 201, {
-            ok: true,
-            storage: 'supabase',
-            message: 'Request recorded. Confirmation prepared.',
-          });
-        }
-      } catch (err) {
-        if (err instanceof HttpError) return sendJson(res, err.status, { error: err.message });
-        // Fall through to local SQLite if Supabase egress is unreachable in local/sandbox
+      await enforceRateLimit(service, `contact:${ip}`, { maxRequests: 6, windowMs: 3600_000 });
+      const { error } = await service.from('access_requests').insert({
+        name: fullName,
+        email,
+        audience,
+        organization: organization || '',
+        country: country || '',
+        languages: languages || '',
+        consent: Boolean(consent),
+        status: 'pending',
+        message,
+      });
+      if (error) {
+        throw new Error(error.message);
       }
+      return sendJson(res, 201, {
+        ok: true,
+        storage: 'supabase',
+        message: 'Request recorded. Confirmation prepared.',
+      });
     }
 
     const db = getLocalDb();
