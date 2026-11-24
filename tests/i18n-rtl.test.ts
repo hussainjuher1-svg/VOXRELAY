@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 import en from '../src/locales/en/common.json';
 import ar from '../src/locales/ar/common.json';
+import bn from '../src/locales/bn/common.json';
 
 function flattenKeys(obj: Record<string, unknown>, prefix = ''): Record<string, string> {
   const out: Record<string, string> = {};
@@ -22,12 +23,15 @@ function placeholders(str: string): string[] {
 }
 
 describe('i18n & RTL guards', () => {
-  it('en and ar locale files have identical keys and placeholders', () => {
+  it('en, bn, and ar locale files have identical keys and placeholders', () => {
     const enFlat = flattenKeys(en);
     const arFlat = flattenKeys(ar);
+    const bnFlat = flattenKeys(bn);
     expect(Object.keys(arFlat).sort()).toEqual(Object.keys(enFlat).sort());
+    expect(Object.keys(bnFlat).sort()).toEqual(Object.keys(enFlat).sort());
     for (const key of Object.keys(enFlat)) {
       expect(placeholders(arFlat[key])).toEqual(placeholders(enFlat[key]));
+      expect(placeholders(bnFlat[key])).toEqual(placeholders(enFlat[key]));
     }
   });
 

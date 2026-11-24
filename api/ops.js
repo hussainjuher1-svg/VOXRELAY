@@ -182,6 +182,74 @@ async function handleLocalOps(req, res, actor, resource) {
     }
   }
 
+  if (resource === 'diagnostics') {
+    if (req.method === 'GET') {
+      const rows = db
+        .prepare('SELECT id, profile, score, verdict, payload_json, created_at FROM diagnostics_runs WHERE user_id = ? ORDER BY created_at DESC LIMIT 30')
+        .all(userId)
+        .map((r) => {
+          let payload = {};
+          try {
+            payload = JSON.parse(r.payload_json || '{}');
+          } catch {
+            payload = {};
+          }
+          return { ...r, payload };
+        });
+      return sendJson(res, 200, { data: rows });
+    }
+    if (req.method === 'POST') {
+      const body = await readJsonBody(req);
+      const id = crypto.randomUUID();
+      const now = new Date().toISOString();
+      const profile = ['voice', 'video', 'full'].includes(body.profile) ? body.profile : 'video';
+      const score = Math.min(100, Math.max(0, Math.round(Number(body.score ?? 0))));
+      const verdict = ['pass', 'warn', 'fail'].includes(body.verdict) ? body.verdict : 'warn';
+      const payloadJson = JSON.stringify(body.payload || {});
+      db.prepare(
+        `INSERT INTO diagnostics_runs (id, user_id, profile, score, verdict, payload_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      ).run(id, userId, profile, score, verdict, payloadJson, now);
+      writeLocalAudit(db, { actorId: userId, area: 'diagnostics', type: `run_${profile}`, objectRef: id, result: verdict });
+      return sendJson(res, 201, { data: { id, profile, score, verdict, payload: body.payload || {}, created_at: now } });
+    }
+  }
+
+  if (resource === 'audit' && req.method === 'GET') {
+    const isAdmin = actor.user.role === 'platform_admin' || actor.user.role === 'org_admin';
+    const rows = isAdmin
+      ? db.prepare('SELECT * FROM audit_events ORDER BY id DESC LIMIT 100').all()
+      : db.prepare('SELECT * FROM audit_events WHERE actor_id = ? ORDER BY id DESC LIMIT 100').all(userId);
+    return sendJson(res, 200, { data: rows });
+  }
+
+  if (resource === 'gdpr_export' && req.method === 'GET') {
+    const profile = db
+      .prepare('SELECT id, email, full_name, role, locale, time_zone, language_pairs, weekly_hours, created_at FROM local_users WHERE id = ?')
+      .get(userId);
+    const assignments = db.prepare('SELECT * FROM assignments WHERE owner_id = ?').all(userId);
+    const terms = db.prepare('SELECT * FROM terms WHERE owner_id = ?').all(userId);
+    const deviceChecks = db.prepare('SELECT * FROM device_checks WHERE user_id = ?').all(userId);
+    const diagnostics = db.prepare('SELECT * FROM diagnostics_runs WHERE user_id = ?').all(userId);
+    const billing = db.prepare('SELECT * FROM billing_records WHERE user_id = ?').all(userId);
+    const availability = db.prepare('SELECT * FROM availability_overrides WHERE user_id = ?').all(userId);
+    const tickets = db.prepare('SELECT * FROM support_tickets WHERE requester_id = ?').all(userId);
+    const audit = db.prepare('SELECT * FROM audit_events WHERE actor_id = ? ORDER BY id DESC LIMIT 200').all(userId);
+    writeLocalAudit(db, { actorId: userId, area: 'privacy', type: 'gdpr_export', result: 'ok' });
+    return sendJson(res, 200, {
+      exportedAt: new Date().toISOString(),
+      profile,
+      assignments,
+      terms,
+      deviceChecks,
+      diagnostics,
+      billing,
+      availability,
+      tickets,
+      audit,
+    });
+  }
+
   return sendJson(res, 404, { error: 'Unknown ops resource.' });
 }
 
@@ -189,6 +257,22 @@ export default async function handler(req, res) {
   try {
     const url = new URL(req.url, 'http://localhost');
     const resource = req.query?.resource || url.searchParams.get('resource') || 'dashboard';
+
+    if (resource === 'network_probe') {
+      if (req.method === 'GET') {
+        const size = Math.min(262144, Math.max(1024, Number(url.searchParams.get('bytes') || 65536)));
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-store');
+        res.end('V'.repeat(size));
+        return;
+      }
+      if (req.method === 'POST') {
+        const body = await readJsonBody(req, 512 * 1024);
+        const receivedBytes = typeof body?.payload === 'string' ? body.payload.length : 0;
+        return sendJson(res, 200, { ok: true, receivedBytes, serverTs: Date.now() });
+      }
+    }
 
     const actor = await resolveActor(req);
     if (actor?.mode === 'local') {

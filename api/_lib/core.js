@@ -1,7 +1,14 @@
 import crypto from 'node:crypto';
 import { HttpError } from './authz.js';
 
+export function applySecurityHeaders(res) {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+}
+
 export function sendJson(res, status, payload) {
+  applySecurityHeaders(res);
   res.statusCode = status;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.end(JSON.stringify(payload));

@@ -168,6 +168,16 @@ export function getLocalDb() {
       UNIQUE (user_id, date)
     );
 
+    CREATE TABLE IF NOT EXISTS diagnostics_runs (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      profile TEXT NOT NULL DEFAULT 'video',
+      score INTEGER NOT NULL DEFAULT 0,
+      verdict TEXT NOT NULL DEFAULT 'warn',
+      payload_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS audit_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       actor_id TEXT,

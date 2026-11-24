@@ -1,8 +1,9 @@
 import en from '../locales/en/common.json';
 import ar from '../locales/ar/common.json';
+import bn from '../locales/bn/common.json';
 
-export type Locale = 'en' | 'ar';
-export const LOCALES: Record<Locale, typeof en> = { en, ar };
+export type Locale = 'en' | 'bn' | 'ar';
+export const LOCALES: Record<Locale, typeof en> = { en, bn, ar };
 
 export function isRtl(locale: Locale): boolean {
   return locale === 'ar';

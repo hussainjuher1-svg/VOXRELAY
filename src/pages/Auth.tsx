@@ -144,6 +144,18 @@ export function LoginPage() {
     }
   }
 
+  const passwordStrength = (() => {
+    if (!password) return { score: 0, label: 'Enter 12+ characters' };
+    let score = 0;
+    if (password.length >= 12) score += 25;
+    if (password.length >= 16) score += 15;
+    if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score += 20;
+    if (/\d/.test(password)) score += 20;
+    if (/[^A-Za-z0-9]/.test(password)) score += 20;
+    const label = score >= 80 ? 'Strong' : score >= 50 ? 'Good' : 'Weak — add length, digits & symbols';
+    return { score, label };
+  })();
+
   return (
     <PublicShell>
       <section className="subpage section-wrap">
@@ -203,20 +215,36 @@ export function LoginPage() {
             />
           </Field>
           {mode !== 'forgot' && (
-            <Field
-              label="Password"
-              htmlFor="auth-password"
-              hint={mode === 'signup' ? 'Minimum 12 characters.' : undefined}
-            >
-              <Input
-                id="auth-password"
-                type="password"
-                required
-                minLength={mode === 'signup' ? 12 : 1}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </Field>
+            <div>
+              <Field
+                label="Password"
+                htmlFor="auth-password"
+                hint={mode === 'signup' ? 'Minimum 12 characters, breached passwords blocked.' : undefined}
+              >
+                <Input
+                  id="auth-password"
+                  type="password"
+                  required
+                  minLength={mode === 'signup' ? 12 : 1}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </Field>
+              {mode === 'signup' && password.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <div className="meter-track" aria-label="Password strength">
+                    <div
+                      className="meter-fill"
+                      style={{
+                        width: `${passwordStrength.score}%`,
+                        background: passwordStrength.score >= 80 ? '#184d42' : passwordStrength.score >= 50 ? '#f2b632' : '#de4e26',
+                      }}
+                    />
+                  </div>
+                  <span style={{ fontSize: 12, color: 'var(--vr-ink-2)' }}>{passwordStrength.label}</span>
+                </div>
+              )}
+            </div>
           )}
           <Button type="submit" loading={busy}>
             {busy

@@ -35,7 +35,7 @@ export function AppShell({
   onAssistantOpenChange?: (next: boolean) => void;
 }) {
   const { user, signOut } = useAuth();
-  const { locale, setLocale } = useLocale();
+  const { locale, toggleLocale } = useLocale();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const { pathname } = useLocation();
@@ -241,9 +241,10 @@ export function AppShell({
             <button
               type="button"
               className="hdr-util-btn"
-              onClick={() => setLocale(isAr ? 'en' : 'ar')}
+              onClick={toggleLocale}
+              title="Switch language (EN / BN / AR)"
             >
-              {isAr ? 'EN' : 'AR'}
+              {locale.toUpperCase()}
             </button>
             <button type="button" className="hdr-util-btn" onClick={toggleTheme}>
               {theme === 'dark' ? 'Light' : 'Dark'}

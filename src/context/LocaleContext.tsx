@@ -6,7 +6,7 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   const [locale, setLocale] = useState<Locale>(() => {
     try {
       const saved = localStorage.getItem('voxrelay_locale');
-      return saved === 'ar' ? 'ar' : 'en';
+      return saved === 'ar' || saved === 'bn' ? saved : 'en';
     } catch {
       return 'en';
     }
@@ -29,7 +29,7 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
       locale,
       rtl,
       setLocale,
-      toggleLocale: () => setLocale((prev) => (prev === 'en' ? 'ar' : 'en')),
+      toggleLocale: () => setLocale((prev) => (prev === 'en' ? 'bn' : prev === 'bn' ? 'ar' : 'en')),
       tr: (key, vars) => translate(locale, key, vars),
     }),
     [locale, rtl]

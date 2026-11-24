@@ -1,6 +1,21 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { BookOpen, CalendarDays, Check, Headset, Inbox, Mic, ShieldCheck, Trash2 } from 'lucide-react';
+import {
+  Activity,
+  BookOpen,
+  CalendarDays,
+  Camera,
+  Check,
+  Download,
+  Headset,
+  Inbox,
+  Mic,
+  Monitor,
+  ShieldCheck,
+  Trash2,
+  Volume2,
+  Wifi,
+} from 'lucide-react';
 import { AppShell } from '../components/AppShell';
 import { EmptyAssignmentsIllustration, EmptyTerminologyIllustration } from '../components/EditorialIllustrations';
 import { Button } from '../components/ui/Button';
@@ -9,6 +24,15 @@ import { Badge, EmptyState, Skeleton } from '../components/ui/Primitives';
 import { Select } from '../components/ui/Select';
 import { useAuth, useLocale } from '../context/hooks';
 import { streamAssistantQuestion, type StreamEvent } from '../lib/assistantStream';
+import {
+  detectEnvironment,
+  probeNetworkDiagnostics,
+  scoreReadiness,
+  type EnvironmentReport,
+  type NetworkReport,
+  type PeripheralReport,
+  type ReadinessProfile,
+} from '../lib/diagnostics';
 import { decodeCsvBytes, exportCsv, matchesSearch, parseIcsTimingOnly } from '../lib/text';
 
 interface AssignmentItem {
@@ -790,12 +814,36 @@ export function TerminologyPage() {
 }
 
 export function DeviceCheckPage() {
-  const { session } = useAuth();
-  const [result, setResult] = useState<'idle' | 'pass' | 'fail'>('idle');
+  const { session, user } = useAuth();
+  const [profile, setProfile] = useState<ReadinessProfile>('video');
+  const [envReport, setEnvReport] = useState<EnvironmentReport | null>(null);
+  const [netReport, setNetReport] = useState<NetworkReport | null>(null);
+  const [periph, setPeriph] = useState<PeripheralReport>({
+    micTested: false,
+    micPermission: 'prompt',
+    micRmsDb: null,
+    micPeakPct: 0,
+    micClipping: false,
+    micSampleRate: null,
+    cameraTested: false,
+    cameraPermission: 'prompt',
+    cameraResolution: null,
+    cameraFps: null,
+    speakerConfirmed: null,
+    screenShareSupported: typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getDisplayMedia),
+    screenShareTested: false,
+  });
+
   const [level, setLevel] = useState(0);
-  const [latencyMs, setLatencyMs] = useState<number | null>(null);
-  const [history, setHistory] = useState<Array<{ id: string; result: string; latency_ms: number | null; peak_level: number; created_at: string }>>([]);
-  const [message, setMessage] = useState<string>('Verifies browser microphone permission, live signal level, and round-trip latency without recording.');
+  const [liveDb, setLiveDb] = useState<number | null>(null);
+  const [busyStep, setBusyStep] = useState<string | null>(null);
+  const [message, setMessage] = useState<string>(
+    'Every number below is measured live in your browser or against the server. Zero fake values.'
+  );
+  const [history, setHistory] = useState<
+    Array<{ id: string; profile: string; score: number; verdict: string; created_at: string }>
+  >([]);
+
   const rafRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const ctxRef = useRef<AudioContext | null>(null);
@@ -817,132 +865,403 @@ export function DeviceCheckPage() {
 
   useEffect(() => {
     let active = true;
-    fetch('/api/ops?resource=device_check', {
-      headers: buildHeaders(session?.access_token),
-      credentials: 'same-origin',
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((json) => {
-        if (active && json?.data) setHistory(json.data);
+    void detectEnvironment().then((r) => {
+      if (active) setEnvReport(r);
+    });
+    if (user || session?.access_token) {
+      fetch('/api/ops?resource=diagnostics', {
+        headers: buildHeaders(session?.access_token),
+        credentials: 'same-origin',
       })
-      .catch(() => {});
+        .then((r) => (r.ok ? r.json() : null))
+        .then((json) => {
+          if (active && Array.isArray(json?.data)) setHistory(json.data);
+        })
+        .catch(() => {});
+    }
     return () => {
       active = false;
       stopStream();
     };
-  }, [session?.access_token, stopStream]);
+  }, [user, session?.access_token, stopStream]);
 
-  async function saveCheck(status: 'pass' | 'fail', rtt: number | null, peak: number) {
-    const res = await fetch('/api/ops?resource=device_check', {
+  const readiness = scoreReadiness(envReport, netReport, periph, profile);
+
+  async function persistDiagnostics(scoreVal: number, verdictVal: string, payloadObj: unknown) {
+    if (!user && !session?.access_token) return;
+    const res = await fetch('/api/ops?resource=diagnostics', {
       method: 'POST',
       headers: buildHeaders(session?.access_token, true),
       credentials: 'same-origin',
-      body: JSON.stringify({ result: status, latency_ms: rtt, peak_level: peak }),
+      body: JSON.stringify({
+        profile,
+        score: scoreVal,
+        verdict: verdictVal,
+        payload: payloadObj,
+      }),
     }).catch(() => null);
     if (res?.ok) {
       const json = await res.json();
-      if (json.data) setHistory((prev) => [json.data, ...prev]);
+      if (json.data) {
+        setHistory((prev) => [json.data, ...prev]);
+      }
     }
   }
 
-  async function runCheck() {
-    stopStream();
-    const t0 = performance.now();
-    let rtt: number | null = null;
-    try {
-      const ping = await fetch('/api/health', { cache: 'no-store' });
-      if (ping.ok) rtt = Math.max(1, Math.round(performance.now() - t0));
-    } catch {
-      rtt = null;
-    }
-    setLatencyMs(rtt);
+  async function runNetworkProbe() {
+    setBusyStep('network');
+    setMessage('Running 12 sequenced latency probes & 3-run payload throughput check...');
+    const net = await probeNetworkDiagnostics(12);
+    setNetReport(net);
+    setBusyStep(null);
+    setMessage(
+      `Network measured: median ${net.medianMs ?? '—'} ms, p95 ${net.p95Ms ?? '—'} ms, jitter ${net.jitterMs ?? '—'} ms, loss ${net.lossPct}%.`
+    );
+    return net;
+  }
 
+  async function runMicProbe() {
+    stopStream();
+    setBusyStep('mic');
     if (!navigator.mediaDevices?.getUserMedia) {
-      setResult('fail');
-      setMessage('Microphone API is unavailable in this browser.');
-      await saveCheck('fail', rtt, 0);
+      setPeriph((p) => ({ ...p, micTested: true, micPermission: 'unavailable' }));
+      setMessage('Microphone API unavailable in this browser.');
+      setBusyStep(null);
       return;
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      let peak = 0;
+      const AudioCtx =
+        window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      let peakPct = 0;
+      let clipping = false;
+      let lastDb: number | null = null;
+      let sampleRate: number | null = null;
+
       if (AudioCtx) {
         const ctx = new AudioCtx();
+        sampleRate = ctx.sampleRate;
         const src = ctx.createMediaStreamSource(stream);
         const analyser = ctx.createAnalyser();
-        analyser.fftSize = 256;
+        analyser.fftSize = 512;
         src.connect(analyser);
         streamRef.current = stream;
         ctxRef.current = ctx;
 
         const data = new Uint8Array(analyser.fftSize);
         const startedAt = performance.now();
-        const tick = () => {
-          analyser.getByteTimeDomainData(data);
-          let sumSq = 0;
-          for (let i = 0; i < data.length; i += 1) {
-            const v = (data[i] - 128) / 128;
-            sumSq += v * v;
-          }
-          const pct = Math.min(100, Math.round(Math.sqrt(sumSq / data.length) * 280));
-          peak = Math.max(peak, pct);
-          setLevel(pct);
-          if (performance.now() - startedAt < 3000) {
-            rafRef.current = requestAnimationFrame(tick);
-          } else {
-            stopStream();
-            void saveCheck('pass', rtt, peak);
-          }
-        };
-        rafRef.current = requestAnimationFrame(tick);
+        await new Promise<void>((resolve) => {
+          const tick = () => {
+            analyser.getByteTimeDomainData(data);
+            let sumSq = 0;
+            let maxSample = 0;
+            for (let i = 0; i < data.length; i += 1) {
+              const v = (data[i] - 128) / 128;
+              sumSq += v * v;
+              maxSample = Math.max(maxSample, Math.abs(v));
+            }
+            const rms = Math.sqrt(sumSq / data.length);
+            const db = Math.max(-60, Math.round(20 * Math.log10(Math.max(rms, 0.001))));
+            const pct = Math.min(100, Math.round(rms * 280));
+            if (maxSample >= 0.98) clipping = true;
+            peakPct = Math.max(peakPct, pct);
+            lastDb = db;
+            setLevel(pct);
+            setLiveDb(db);
+
+            if (performance.now() - startedAt < 2500) {
+              rafRef.current = requestAnimationFrame(tick);
+            } else {
+              stopStream();
+              resolve();
+            }
+          };
+          rafRef.current = requestAnimationFrame(tick);
+        });
       } else {
-        stream.getTracks().forEach((track) => track.stop());
-        await saveCheck('pass', rtt, 0);
+        stream.getTracks().forEach((t) => t.stop());
       }
-      setResult('pass');
-      setMessage(`Microphone active (live 3s meter) · Measured RTT: ${rtt ?? '—'} ms (zero audio stored).`);
+
+      setPeriph((p) => ({
+        ...p,
+        micTested: true,
+        micPermission: 'granted',
+        micRmsDb: lastDb,
+        micPeakPct: peakPct,
+        micClipping: clipping,
+        micSampleRate: sampleRate,
+      }));
+      setMessage(`Microphone checked (${sampleRate ?? '—'} Hz · ${lastDb ?? '—'} dBFS · peak ${peakPct}%).`);
     } catch {
-      setResult('fail');
-      setMessage('Microphone access failed or was denied.');
-      await saveCheck('fail', rtt, 0);
+      setPeriph((p) => ({ ...p, micTested: true, micPermission: 'denied' }));
+      setMessage('Microphone permission denied or unavailable.');
+    } finally {
+      setBusyStep(null);
     }
+  }
+
+  async function runCameraProbe() {
+    setBusyStep('camera');
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setPeriph((p) => ({ ...p, cameraTested: true, cameraPermission: 'unavailable' }));
+      setBusyStep(null);
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 } } });
+      const track = stream.getVideoTracks()[0];
+      const settings = track?.getSettings?.() || {};
+      const resLabel = settings.width && settings.height ? `${settings.width}×${settings.height}` : 'Active';
+      const fps = settings.frameRate ? Math.round(settings.frameRate) : null;
+      stream.getTracks().forEach((t) => t.stop());
+      setPeriph((p) => ({
+        ...p,
+        cameraTested: true,
+        cameraPermission: 'granted',
+        cameraResolution: resLabel,
+        cameraFps: fps,
+      }));
+      setMessage(`Camera active: ${resLabel}${fps ? ` @ ${fps} fps` : ''}.`);
+    } catch {
+      setPeriph((p) => ({ ...p, cameraTested: true, cameraPermission: 'denied', cameraResolution: 'Denied' }));
+      setMessage('Camera access denied or no camera connected.');
+    } finally {
+      setBusyStep(null);
+    }
+  }
+
+  function playSpeakerTone() {
+    try {
+      const AudioCtx =
+        window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = 440;
+      gain.gain.value = 0.08;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      window.setTimeout(() => {
+        osc.stop();
+        void ctx.close().catch(() => {});
+      }, 650);
+      setMessage('Played 440 Hz test tone — confirm below whether you heard it.');
+    } catch {
+      setMessage('Audio output tone could not be played in this browser.');
+    }
+  }
+
+  async function runFullSuite() {
+    setBusyStep('all');
+    const [env, net] = await Promise.all([detectEnvironment(), probeNetworkDiagnostics(12)]);
+    setEnvReport(env);
+    setNetReport(net);
+    await runMicProbe();
+    const finalScore = scoreReadiness(env, net, periph, profile);
+    await persistDiagnostics(finalScore.score, finalScore.verdict, { env, net, periph, checks: finalScore.checks });
+    setBusyStep(null);
+  }
+
+  function exportReportJson() {
+    const blob = new Blob([JSON.stringify({ readiness, envReport, netReport, periph }, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `voxrelay-readiness-${profile}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportReportCsv() {
+    const csv = exportCsv(
+      ['category', 'check', 'measured', 'threshold', 'status', 'points', 'max_points'],
+      readiness.checks.map((c) => [c.category, c.label, c.measured, c.threshold, c.status, String(c.impactPoints), String(c.maxPoints)])
+    );
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `voxrelay-readiness-${profile}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   return (
     <AppShell>
       <div className="workspace-header">
         <div>
-          <span className="eyebrow">DEVICE CHECK</span>
-          <h1>Audio readiness check</h1>
+          <span className="eyebrow">DEVICE &amp; NETWORK READINESS LAB</span>
+          <h1>Live browser, hardware &amp; network diagnostics</h1>
         </div>
-      </div>
-      <div className="subpage-card" style={{ maxWidth: 580 }}>
-        <p>{message}</p>
-        <div className="meter-track" aria-label="Microphone signal level">
-          <div className="meter-fill" style={{ width: `${level}%` }} />
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 16 }}>
-          <Button onClick={() => void runCheck()}>
-            <Mic size={15} />
-            <span>Run microphone &amp; latency check</span>
+        <div className="hero-actions">
+          <Select
+            id="diag-profile"
+            ariaLabel="Readiness threshold profile"
+            value={profile}
+            onValueChange={(v) => setProfile((v as ReadinessProfile) || 'video')}
+            options={[
+              { value: 'voice', label: 'Profile: Voice-only' },
+              { value: 'video', label: 'Profile: Voice + Video' },
+              { value: 'full', label: 'Profile: Full (Screen share)' },
+            ]}
+          />
+          <Button onClick={() => void runFullSuite()} loading={busyStep === 'all'}>
+            <Activity size={15} />
+            <span>Run full readiness suite</span>
           </Button>
-          <Badge tone={result === 'pass' ? 'success' : result === 'fail' ? 'danger' : 'neutral'}>
-            {result === 'pass' ? `Passed (${latencyMs ?? '—'} ms)` : result === 'fail' ? 'Failed' : 'Not tested'}
-          </Badge>
+          <Button variant="secondary" onClick={exportReportJson}>
+            <Download size={14} />
+            <span>JSON</span>
+          </Button>
+          <Button variant="secondary" onClick={exportReportCsv}>
+            <Download size={14} />
+            <span>CSV</span>
+          </Button>
         </div>
       </div>
 
+      <p style={{ color: 'var(--vr-ink-2)', marginBottom: 18 }}>{message}</p>
+
+      <div className="vx-kpi-grid">
+        <article className="vx-kpi-card vx-kpi-card--terracotta">
+          <span className="eyebrow">Readiness score ({profile})</span>
+          <span className="vx-kpi-value">{readiness.score} / 100</span>
+          <Badge tone={readiness.verdict === 'pass' ? 'success' : readiness.verdict === 'warn' ? 'warning' : 'danger'}>
+            {readiness.verdict.toUpperCase()}
+          </Badge>
+        </article>
+        <article className="vx-kpi-card vx-kpi-card--forest">
+          <span className="eyebrow">Network RTT / jitter</span>
+          <span className="vx-kpi-value" style={{ fontSize: 28 }}>
+            {netReport?.medianMs !== null && netReport?.medianMs !== undefined ? `${netReport.medianMs} ms` : '—'}
+          </span>
+          <span className="mono-ltr" style={{ fontSize: 12, color: 'var(--vr-ink-2)' }}>
+            {netReport
+              ? `p95 ${netReport.p95Ms ?? '—'} ms · jitter ${netReport.jitterMs ?? '—'} ms · ${netReport.lossPct}% loss`
+              : 'Click Run network probes below'}
+          </span>
+        </article>
+        <article className="vx-kpi-card vx-kpi-card--gold">
+          <span className="eyebrow">Throughput (down / up)</span>
+          <span className="vx-kpi-value" style={{ fontSize: 28 }}>
+            {netReport?.downMbps !== null && netReport?.downMbps !== undefined ? `${netReport.downMbps} Mbps` : '—'}
+          </span>
+          <span className="mono-ltr" style={{ fontSize: 12, color: 'var(--vr-ink-2)' }}>
+            {netReport ? `Up: ${netReport.upMbps ?? '—'} Mbps · DNS: ${netReport.dnsEstimateMs ?? '—'} ms` : '3-run median probe'}
+          </span>
+        </article>
+        <article className="vx-kpi-card vx-kpi-card--sage">
+          <span className="eyebrow">Browser &amp; OS</span>
+          <span className="vx-kpi-value" style={{ fontSize: 22, paddingTop: 4 }}>
+            {envReport ? `${envReport.browserName} ${envReport.browserVersion.split('.')[0]}` : 'Probing...'}
+          </span>
+          <span className="mono-ltr" style={{ fontSize: 12, color: 'var(--vr-ink-2)' }}>
+            {envReport ? `${envReport.osName} · ${envReport.hardware.cpuCores ?? '—'} cores` : ''}
+          </span>
+        </article>
+      </div>
+
+      <div className="workspace-grid" style={{ marginBottom: 24 }}>
+        <article className="subpage-card">
+          <h2>Microphone &amp; Speaker</h2>
+          <div className="meter-track" aria-label="Microphone signal level" style={{ margin: '10px 0' }}>
+            <div className="meter-fill" style={{ width: `${level}%` }} />
+          </div>
+          <p className="mono-ltr" style={{ fontSize: 12 }}>
+            Live dB: {liveDb ?? periph.micRmsDb ?? '—'} dBFS · Peak: {periph.micPeakPct}% · Sample rate: {periph.micSampleRate ?? '—'} Hz
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+            <Button size="sm" onClick={() => void runMicProbe()} loading={busyStep === 'mic'}>
+              <Mic size={14} />
+              <span>Test mic</span>
+            </Button>
+            <Button size="sm" variant="secondary" onClick={playSpeakerTone}>
+              <Volume2 size={14} />
+              <span>Play 440Hz tone</span>
+            </Button>
+            <Button
+              size="sm"
+              variant={periph.speakerConfirmed === true ? 'primary' : 'ghost'}
+              onClick={() => setPeriph((p) => ({ ...p, speakerConfirmed: true }))}
+            >
+              I heard it
+            </Button>
+          </div>
+        </article>
+
+        <article className="subpage-card">
+          <h2>Camera, Display &amp; Network</h2>
+          <p className="mono-ltr" style={{ fontSize: 12 }}>
+            Camera: {periph.cameraResolution || `${envReport?.devices.cameras ?? 0} detected`}
+            {periph.cameraFps ? ` @ ${periph.cameraFps} fps` : ''}
+          </p>
+          <p className="mono-ltr" style={{ fontSize: 12 }}>
+            Display: {envReport ? `${envReport.display.width}×${envReport.display.height} (${envReport.display.dpr}x @ ${envReport.display.refreshHz ?? '—'}Hz)` : '—'}
+          </p>
+          <p className="mono-ltr" style={{ fontSize: 12 }}>
+            Storage: {envReport?.storage.quotaMb ? `${envReport.storage.usageMb ?? 0} / ${envReport.storage.quotaMb} MB` : '—'}
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+            <Button size="sm" onClick={() => void runNetworkProbe()} loading={busyStep === 'network'}>
+              <Wifi size={14} />
+              <span>Run network probes</span>
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => void runCameraProbe()} loading={busyStep === 'camera'}>
+              <Camera size={14} />
+              <span>Test camera</span>
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => void detectEnvironment().then(setEnvReport)}
+            >
+              <Monitor size={14} />
+              <span>Re-scan device</span>
+            </Button>
+          </div>
+        </article>
+      </div>
+
+      <article className="subpage-card" style={{ marginBottom: 24 }}>
+        <h2>WebRTC, Codecs &amp; Score Breakdown</h2>
+        {envReport && (
+          <p className="mono-ltr" style={{ fontSize: 12, marginBottom: 12 }}>
+            Codecs: Opus {envReport.codecs.opus ? '✓' : '✗'} · VP8 {envReport.codecs.vp8 ? '✓' : '✗'} · VP9 {envReport.codecs.vp9 ? '✓' : '✗'} · H.264 {envReport.codecs.h264 ? '✓' : '✗'} · AV1 {envReport.codecs.av1 ? '✓' : '✗'} | ICE candidates: {envReport.webrtc.iceCandidatesGathered} ({envReport.webrtc.gatheringMs ?? '—'} ms) | GPU: {envReport.hardware.gpuRenderer || '—'}
+          </p>
+        )}
+        <div className="workspace-grid">
+          {readiness.checks.map((c) => (
+            <div key={c.id} className="subpage-card" style={{ padding: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <strong style={{ fontSize: 13 }}>{c.label}</strong>
+                <Badge tone={c.status === 'pass' ? 'success' : c.status === 'warn' ? 'warning' : 'danger'}>
+                  {c.impactPoints}/{c.maxPoints}
+                </Badge>
+              </div>
+              <p className="mono-ltr" style={{ fontSize: 12 }}>{c.measured}</p>
+              <p style={{ fontSize: 11, color: 'var(--vr-ink-2)' }}>Target: {c.threshold}</p>
+            </div>
+          ))}
+        </div>
+      </article>
+
       {history.length > 0 && (
-        <div style={{ marginTop: 24 }}>
-          <h2 style={{ marginBottom: 12 }}>Recent checks ({history.length})</h2>
+        <div>
+          <h2 style={{ marginBottom: 12 }}>Saved readiness history ({history.length})</h2>
           <div className="workspace-grid">
             {history.slice(0, 6).map((h) => (
               <article key={h.id} className="subpage-card">
-                <Badge tone={h.result === 'pass' ? 'success' : 'danger'}>{h.result}</Badge>
-                <p className="mono-ltr" style={{ marginTop: 8 }}>
-                  RTT: {h.latency_ms ?? '—'} ms · Peak: {h.peak_level}%
-                </p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span className="eyebrow">{h.profile}</span>
+                  <Badge tone={h.verdict === 'pass' ? 'success' : h.verdict === 'warn' ? 'warning' : 'danger'}>
+                    {h.score}/100 · {h.verdict}
+                  </Badge>
+                </div>
+                <p className="mono-ltr" style={{ fontSize: 12, marginTop: 8 }}>{h.created_at}</p>
               </article>
             ))}
           </div>
@@ -1215,33 +1534,42 @@ export function AdminReviewPage() {
   const [outbox, setOutbox] = useState<
     Array<{ id: string; to_email: string; kind: string; subject: string; text_body: string; created_at: string }>
   >([]);
+  const [auditEvents, setAuditEvents] = useState<
+    Array<{ id: number; actor_id: string | null; area: string; type: string; result: string; created_at: string }>
+  >([]);
   const [loading, setLoading] = useState(true);
   const [inviteBanner, setInviteBanner] = useState<string | null>(null);
 
   const loadAdmin = useCallback(async () => {
-    const res = await fetch('/api/admin', {
-      headers: buildHeaders(session?.access_token),
-      credentials: 'same-origin',
-    });
+    const [res, auditRes] = await Promise.all([
+      fetch('/api/admin', { headers: buildHeaders(session?.access_token), credentials: 'same-origin' }),
+      fetch('/api/ops?resource=audit', { headers: buildHeaders(session?.access_token), credentials: 'same-origin' }),
+    ]);
     if (res.ok) {
       const json = await res.json();
       setRequests(json.requests || []);
       setOutbox(json.outbox || []);
+    }
+    if (auditRes.ok) {
+      const aJson = await auditRes.json();
+      setAuditEvents(aJson.data || []);
     }
     setLoading(false);
   }, [session?.access_token]);
 
   useEffect(() => {
     let active = true;
-    fetch('/api/admin', {
-      headers: buildHeaders(session?.access_token),
-      credentials: 'same-origin',
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((json) => {
+    Promise.all([
+      fetch('/api/admin', { headers: buildHeaders(session?.access_token), credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : null)),
+      fetch('/api/ops?resource=audit', { headers: buildHeaders(session?.access_token), credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : null)),
+    ])
+      .then(([json, aJson]) => {
         if (active && json) {
           setRequests(json.requests || []);
           setOutbox(json.outbox || []);
+        }
+        if (active && aJson?.data) {
+          setAuditEvents(aJson.data);
         }
         if (active) setLoading(false);
       })
@@ -1252,6 +1580,20 @@ export function AdminReviewPage() {
       active = false;
     };
   }, [session?.access_token]);
+
+  function exportAuditCsv() {
+    const csv = exportCsv(
+      ['id', 'actor_id', 'area', 'type', 'result', 'created_at'],
+      auditEvents.map((e) => [String(e.id), e.actor_id || '', e.area, e.type, e.result, e.created_at])
+    );
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'voxrelay-audit-log.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   async function decide(id: string, decision: 'approve' | 'reject') {
     const res = await fetch('/api/admin', {
@@ -1337,7 +1679,7 @@ export function AdminReviewPage() {
           )}
 
           <h2 style={{ marginBottom: 12 }}>Email outbox inspector ({outbox.length})</h2>
-          <div className="workspace-grid">
+          <div className="workspace-grid" style={{ marginBottom: 32 }}>
             {outbox.map((mail) => (
               <article key={mail.id} className="subpage-card">
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -1351,6 +1693,26 @@ export function AdminReviewPage() {
               </article>
             ))}
           </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h2>Immutable audit log ({auditEvents.length})</h2>
+            <Button size="sm" variant="secondary" onClick={exportAuditCsv}>
+              <Download size={14} />
+              <span>Export audit CSV</span>
+            </Button>
+          </div>
+          <div className="workspace-grid">
+            {auditEvents.slice(0, 12).map((ev) => (
+              <article key={ev.id} className="subpage-card">
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span className="eyebrow">{ev.area}</span>
+                  <Badge tone={ev.result === 'ok' || ev.result === 'pass' ? 'success' : 'warning'}>{ev.result}</Badge>
+                </div>
+                <strong className="mono-ltr" style={{ fontSize: 13 }}>{ev.type}</strong>
+                <p className="mono-ltr" style={{ fontSize: 11, marginTop: 4 }}>{ev.created_at}</p>
+              </article>
+            ))}
+          </div>
         </>
       )}
     </AppShell>
@@ -1358,28 +1720,44 @@ export function AdminReviewPage() {
 }
 
 export function SettingsPage() {
-  const { user, session } = useAuth();
+  const { user, session, signOut } = useAuth();
   const { locale, setLocale } = useLocale();
   const [fullName, setFullName] = useState('');
   const [timeZone, setTimeZone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
   const [languagePairs, setLanguagePairs] = useState('EN-AR, EN-ES');
   const [weeklyHours, setWeeklyHours] = useState(30);
+  const [sessionsList, setSessionsList] = useState<
+    Array<{ id: string; user_agent: string; created_at: string; expires_at: string; isCurrent?: boolean }>
+  >([]);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
+
+  const loadSessions = useCallback(async () => {
+    const res = await fetch('/api/auth', { credentials: 'same-origin' });
+    if (res.ok) {
+      const json = await res.json();
+      setSessionsList(json.sessions || []);
+    }
+  }, []);
 
   useEffect(() => {
     if (!user && !session?.access_token) return;
     let active = true;
-    fetch('/api/ops?resource=profile', {
-      headers: buildHeaders(session?.access_token),
-      credentials: 'same-origin',
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((json) => {
+    Promise.all([
+      fetch('/api/ops?resource=profile', {
+        headers: buildHeaders(session?.access_token),
+        credentials: 'same-origin',
+      }).then((r) => (r.ok ? r.json() : null)),
+      fetch('/api/auth', { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : null)),
+    ])
+      .then(([json, authJson]) => {
         if (active && json?.data) {
           setFullName(json.data.full_name || '');
           if (json.data.time_zone) setTimeZone(json.data.time_zone);
           if (json.data.language_pairs) setLanguagePairs(json.data.language_pairs);
           if (json.data.weekly_hours) setWeeklyHours(Number(json.data.weekly_hours));
+        }
+        if (active && Array.isArray(authJson?.sessions)) {
+          setSessionsList(authJson.sessions);
         }
       })
       .catch(() => {});
@@ -1387,6 +1765,42 @@ export function SettingsPage() {
       active = false;
     };
   }, [user, session?.access_token]);
+
+  async function revokeSession(sessionId: string) {
+    await fetch('/api/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ action: 'revoke_session', sessionId }),
+    });
+    await loadSessions();
+  }
+
+  async function revokeAllSessions() {
+    await fetch('/api/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ action: 'revoke_all' }),
+    });
+    await signOut();
+  }
+
+  async function downloadGdprExport() {
+    const res = await fetch('/api/ops?resource=gdpr_export', {
+      headers: buildHeaders(session?.access_token),
+      credentials: 'same-origin',
+    });
+    if (!res.ok) return;
+    const payload = await res.json();
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'voxrelay-gdpr-export.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   async function saveProfile(e: FormEvent) {
     e.preventDefault();
@@ -1414,47 +1828,89 @@ export function SettingsPage() {
     <AppShell>
       <div className="workspace-header">
         <div>
-          <span className="eyebrow">SETTINGS</span>
-          <h1>Profile, locale &amp; capacity</h1>
+          <span className="eyebrow">SETTINGS &amp; SECURITY</span>
+          <h1>Profile, sessions &amp; GDPR export</h1>
         </div>
+        {user && (
+          <Button variant="secondary" onClick={() => void downloadGdprExport()}>
+            <Download size={14} />
+            <span>Export my data (JSON)</span>
+          </Button>
+        )}
       </div>
 
-      <form className="panel-form" onSubmit={(e) => void saveProfile(e)}>
-        <Field label="Display name" htmlFor="set-name">
-          <Input id="set-name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
-        </Field>
-        <Field label="Interface language" htmlFor="set-locale">
-          <Select
-            id="set-locale"
-            value={locale}
-            onValueChange={(v) => setLocale(v === 'ar' ? 'ar' : 'en')}
-            options={[
-              { value: 'en', label: 'English (LTR)' },
-              { value: 'ar', label: 'العربية (RTL)' },
-            ]}
-          />
-        </Field>
-        <div className="form-row-2">
-          <Field label="Time zone" htmlFor="set-tz">
-            <Input id="set-tz" value={timeZone} onChange={(e) => setTimeZone(e.target.value)} />
+      <div className="workspace-grid">
+        <form className="panel-form" onSubmit={(e) => void saveProfile(e)}>
+          <Field label="Display name" htmlFor="set-name">
+            <Input id="set-name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
           </Field>
-          <Field label="Weekly hours" htmlFor="set-hours">
-            <Input
-              id="set-hours"
-              type="number"
-              min={1}
-              max={100}
-              value={weeklyHours}
-              onChange={(e) => setWeeklyHours(Number(e.target.value))}
+          <Field label="Interface language" htmlFor="set-locale">
+            <Select
+              id="set-locale"
+              value={locale}
+              onValueChange={(v) => setLocale(v === 'ar' || v === 'bn' ? v : 'en')}
+              options={[
+                { value: 'en', label: 'English (LTR)' },
+                { value: 'bn', label: 'বাংলা (Bengali)' },
+                { value: 'ar', label: 'العربية (RTL)' },
+              ]}
             />
           </Field>
-        </div>
-        <Field label="Language pairs" htmlFor="set-pairs">
-          <Input id="set-pairs" value={languagePairs} onChange={(e) => setLanguagePairs(e.target.value)} />
-        </Field>
-        <Button type="submit">Save settings</Button>
-        {savedNotice && <p className="form-success">{savedNotice}</p>}
-      </form>
+          <div className="form-row-2">
+            <Field label="Time zone" htmlFor="set-tz">
+              <Input id="set-tz" value={timeZone} onChange={(e) => setTimeZone(e.target.value)} />
+            </Field>
+            <Field label="Weekly hours" htmlFor="set-hours">
+              <Input
+                id="set-hours"
+                type="number"
+                min={1}
+                max={100}
+                value={weeklyHours}
+                onChange={(e) => setWeeklyHours(Number(e.target.value))}
+              />
+            </Field>
+          </div>
+          <Field label="Language pairs" htmlFor="set-pairs">
+            <Input id="set-pairs" value={languagePairs} onChange={(e) => setLanguagePairs(e.target.value)} />
+          </Field>
+          <Button type="submit">Save settings</Button>
+          {savedNotice && <p className="form-success">{savedNotice}</p>}
+        </form>
+
+        <article className="subpage-card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h2>Active sessions ({sessionsList.length})</h2>
+            {sessionsList.length > 0 && (
+              <Button size="sm" variant="secondary" onClick={() => void revokeAllSessions()}>
+                Revoke all
+              </Button>
+            )}
+          </div>
+          {sessionsList.length === 0 ? (
+            <p>Sign in with email &amp; password to view and manage active sessions.</p>
+          ) : (
+            <div style={{ display: 'grid', gap: 10 }}>
+              {sessionsList.map((s) => (
+                <div key={s.id} className="subpage-card" style={{ padding: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                    <strong style={{ fontSize: 12 }}>{s.user_agent.slice(0, 48)}</strong>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      {s.isCurrent && <Badge tone="success">Current</Badge>}
+                      <Button size="sm" variant="ghost" onClick={() => void revokeSession(s.id)}>
+                        Revoke
+                      </Button>
+                    </div>
+                  </div>
+                  <p className="mono-ltr" style={{ fontSize: 11, marginTop: 4 }}>
+                    Started: {s.created_at}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </article>
+      </div>
     </AppShell>
   );
 }
