@@ -55,6 +55,34 @@ function getClientIp(req) {
 async function cleanupProvisioning({ service, userId, reserved }) {
   const cleanupErrors = [];
 
+  // Safety guard: never delete a user/membership if the invite was already finalized for this user.
+  if (reserved?.id && userId) {
+    try {
+      const { data: reqState, error: checkErr } = await service
+        .from('access_requests')
+        .select('status, provisioned_user_id')
+        .eq('id', reserved.id)
+        .maybeSingle();
+      if (checkErr) {
+        cleanupErrors.push(`pre-cleanup state check failed: ${checkErr.message}`);
+        console.error('[VOXRELAY] Provisioning cleanup aborted; could not confirm invite state.', cleanupErrors.join('; '));
+        throw new HttpError(503, 'Account provisioning failed and automatic rollback was skipped because invite state could not be confirmed.');
+      }
+      if (reqState?.status === 'redeemed' && reqState?.provisioned_user_id === userId) {
+        console.error('[VOXRELAY] Provisioning cleanup aborted; invite already finalized for this user.', {
+          requestId: reserved.id,
+          userId,
+        });
+        throw new HttpError(503, 'Account provisioning is already finalized; automatic rollback was skipped.');
+      }
+    } catch (err) {
+      if (err instanceof HttpError) throw err;
+      cleanupErrors.push(`pre-cleanup state check exception: ${err instanceof Error ? err.message : String(err)}`);
+      console.error('[VOXRELAY] Provisioning cleanup aborted; could not confirm invite state.', cleanupErrors.join('; '));
+      throw new HttpError(503, 'Account provisioning failed and automatic rollback was skipped because invite state could not be confirmed.');
+    }
+  }
+
   // Step 1: Delete ALL membership rows for the created user_id (does not require orgId)
   if (userId) {
     try {
@@ -90,12 +118,13 @@ async function cleanupProvisioning({ service, userId, reserved }) {
       } else if (released !== true) {
         const { data: reqState, error: checkErr } = await service
           .from('access_requests')
-          .select('status, claim_token')
+          .select('status, claim_token, provisioned_user_id')
           .eq('id', reserved.id)
           .maybeSingle();
         const isSafeApproved = reqState?.status === 'approved' && !reqState?.claim_token;
-        const isValidTerminal = reqState?.status === 'redeemed' || reqState?.status === 'rejected';
-        if (checkErr || (!isSafeApproved && !isValidTerminal)) {
+        const isRedeemedByOther = reqState?.status === 'redeemed' && reqState?.provisioned_user_id && reqState?.provisioned_user_id !== userId;
+        const isRejected = reqState?.status === 'rejected';
+        if (checkErr || (!isSafeApproved && !isRedeemedByOther && !isRejected)) {
           cleanupErrors.push(
             checkErr
               ? `invite release returned ${String(released)} and status check failed: ${checkErr.message}`
@@ -277,18 +306,71 @@ async function handleSupabaseSignup(data, req, res) {
         });
       }
 
-      const { data: finRes, error: finErr } = await service.rpc('finalize_access_invite', {
+      const finalizeArgs = {
         p_request_id: reserved.id,
         p_claim_token: reserved.claim_token,
         p_user_id: createdUserId,
-      });
+      };
+      let finRes = null;
+      let finErr = null;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        ({ data: finRes, error: finErr } = await service.rpc('finalize_access_invite', finalizeArgs));
+        if (!finErr && finRes?.ok) break;
+      }
+
       if (finErr || !finRes?.ok) {
-        await cleanupProvisioning({
-          service,
-          userId: createdUserId,
-          reserved,
-        });
-        throw new Error(finErr?.message || 'Unable to finalize invitation redemption.');
+        // Reconcile uncertain outcome: check DB state before any destructive cleanup.
+        let reqState = null;
+        let reqStateErr = null;
+        try {
+          const lookup = await service
+            .from('access_requests')
+            .select('status, provisioned_user_id, claim_token')
+            .eq('id', reserved.id)
+            .maybeSingle();
+          reqState = lookup.data;
+          reqStateErr = lookup.error;
+        } catch (err) {
+          reqStateErr = err;
+        }
+
+        if (!reqStateErr && reqState?.status === 'redeemed' && reqState?.provisioned_user_id === createdUserId) {
+          // Commit succeeded but the RPC response was lost/ambiguous; treat as success.
+          console.warn('[VOXRELAY] Finalize RPC response was ambiguous but DB confirms redemption for this user.', {
+            requestId: reserved.id,
+            userId: createdUserId,
+          });
+        } else if (
+          !reqStateErr
+          && reqState?.status === 'reserved'
+          && reqState?.claim_token === reserved.claim_token
+        ) {
+          // DB confirms finalization did not commit and reservation is still owned by this operation.
+          await cleanupProvisioning({
+            service,
+            userId: createdUserId,
+            reserved,
+          });
+          throw new Error(finErr?.message || finRes?.code || 'Unable to finalize invitation redemption.');
+        } else {
+          // State cannot be established or is ambiguous. Do not blindly delete a potentially committed account.
+          console.error('[VOXRELAY] Finalize outcome uncertain; manual reconciliation required.', {
+            requestId: reserved.id,
+            userId: createdUserId,
+            finalizeError: finErr?.message || null,
+            finalizeResult: finRes || null,
+            stateError: reqStateErr?.message || String(reqStateErr || '') || null,
+            state: reqState || null,
+          });
+          return sendJson(res, 503, {
+            ok: false,
+            accountCreated: true,
+            confirmationEmailSent: true,
+            provisioningStatus: 'uncertain',
+            error:
+              'Account provisioning outcome is uncertain after a transient failure. Your account may already be active; please sign in or contact support before retrying. No automatic rollback was performed.',
+          });
+        }
       }
 
       return sendJson(res, 201, {

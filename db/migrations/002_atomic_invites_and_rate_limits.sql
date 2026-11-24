@@ -226,6 +226,8 @@ $$;
 
 -- Phase 2 of two-phase invite redemption: finalize to 'redeemed' and write audit_events atomically
 -- only after Auth user and membership provisioning succeed.
+-- Idempotent: if the same p_user_id already finalized this invitation, return success
+-- with already_finalized=true and do not insert a duplicate audit event.
 CREATE OR REPLACE FUNCTION voxrelay.finalize_access_invite(
   p_request_id BIGINT,
   p_claim_token UUID,
@@ -239,6 +241,36 @@ AS $$
 DECLARE
   v_row voxrelay.access_requests%ROWTYPE;
 BEGIN
+  SELECT * INTO v_row
+  FROM voxrelay.access_requests
+  WHERE id = p_request_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', false, 'code', 'not_found');
+  END IF;
+
+  IF v_row.status = 'redeemed' THEN
+    IF v_row.provisioned_user_id = p_user_id THEN
+      RETURN jsonb_build_object(
+        'ok', true,
+        'already_finalized', true,
+        'id', v_row.id,
+        'org_id', v_row.org_id,
+        'status', 'redeemed'
+      );
+    END IF;
+    RETURN jsonb_build_object('ok', false, 'code', 'already_redeemed_other_user');
+  END IF;
+
+  IF v_row.status <> 'reserved' THEN
+    RETURN jsonb_build_object('ok', false, 'code', 'invalid_reservation', 'status', v_row.status);
+  END IF;
+
+  IF v_row.claim_token IS DISTINCT FROM p_claim_token THEN
+    RETURN jsonb_build_object('ok', false, 'code', 'lease_lost');
+  END IF;
+
   UPDATE voxrelay.access_requests
   SET
     status = 'redeemed',
@@ -247,13 +279,7 @@ BEGIN
     claim_expires_at = NULL,
     provisioned_user_id = p_user_id
   WHERE id = p_request_id
-    AND status = 'reserved'
-    AND claim_token = p_claim_token
   RETURNING * INTO v_row;
-
-  IF NOT FOUND THEN
-    RETURN jsonb_build_object('ok', false, 'code', 'lease_lost');
-  END IF;
 
   INSERT INTO voxrelay.audit_events (actor_id, org_id, area, type, object_ref, result)
   VALUES (
@@ -267,6 +293,7 @@ BEGIN
 
   RETURN jsonb_build_object(
     'ok', true,
+    'already_finalized', false,
     'id', v_row.id,
     'org_id', v_row.org_id,
     'status', v_row.status
