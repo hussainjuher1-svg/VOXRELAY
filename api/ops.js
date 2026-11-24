@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { resolveActor } from './_lib/auth-session.js';
 import { evaluateAssistantRequest, matchTopic } from './_lib/assistant.js';
-import { can, canReadDoc, canReviewDoc, HttpError, isAdminActor, requireCapability } from './_lib/authz.js';
+import { can, canReadDoc, canReviewDoc, HttpError, isPlatformAdminActor, requireCapability } from './_lib/authz.js';
 import { enforceRateLimit, readJsonBody, sendJson, streamRoute } from './_lib/core.js';
 import { getLocalDb, writeLocalAudit } from './_lib/local-db.js';
 import { computeBillingAmountCents, computeQualityIndicators, summarizeReports } from './_lib/ops-metrics.js';
@@ -234,7 +234,7 @@ async function handleLocalOps(req, res, actor, resource) {
   }
 
   if (resource === 'audit' && req.method === 'GET') {
-    const rows = isAdminActor(actor)
+    const rows = isPlatformAdminActor(actor)
       ? db.prepare('SELECT * FROM audit_events ORDER BY id DESC LIMIT 100').all()
       : db.prepare('SELECT * FROM audit_events WHERE actor_id = ? ORDER BY id DESC LIMIT 100').all(userId);
     return sendJson(res, 200, { data: rows });
@@ -675,9 +675,11 @@ export default async function handler(req, res) {
 
     if (resource === 'audit' && req.method === 'GET') {
       let query = ctx.supabase.from('audit_events').select('*').order('id', { ascending: false }).limit(100);
-      if (ctx.membership && can(ctx.membership.role, 'org.audit.view')) {
+      if (isPlatformAdminActor(ctx)) {
+        // Platform administrators may inspect global audit logs
+      } else if (ctx.membership && can(ctx.membership.role, 'org.audit.view')) {
         query = query.eq('org_id', ctx.membership.org_id);
-      } else if (!isAdminActor(ctx)) {
+      } else {
         query = query.eq('actor_id', ctx.userId);
       }
       const { data, error } = await query;

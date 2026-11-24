@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { z } from 'zod';
 import { resolveActor } from './_lib/auth-session.js';
-import { HttpError, isAdminActor } from './_lib/authz.js';
+import { HttpError, isPlatformAdminActor } from './_lib/authz.js';
 import { readJsonBody, sendJson } from './_lib/core.js';
 import { buildInviteEmail } from './_lib/email-templates.js';
 import { enqueueOutboxEmail, getLocalDb, hashSecret, writeLocalAudit } from './_lib/local-db.js';
@@ -22,14 +22,14 @@ export default async function handler(req, res) {
       if (!actor) {
         return sendJson(res, 401, { error: 'Sign in to access the review queue.' });
       }
-      if (!isAdminActor(actor)) {
-        return sendJson(res, 403, { error: 'Administrator permission required.' });
+      if (!isPlatformAdminActor(actor)) {
+        return sendJson(res, 403, { error: 'Platform administrator permission required.' });
       }
 
       if (req.method === 'GET') {
         const requests = db
           .prepare(
-            `SELECT id, full_name, work_email, role, organization, country, languages, message, status, reviewer_note, created_at
+            `SELECT id, full_name, work_email, role, organization, country, languages, message, status, reviewer_note, org_id, created_at
              FROM access_requests ORDER BY created_at DESC LIMIT 100`
           )
           .all();
@@ -52,76 +52,113 @@ export default async function handler(req, res) {
           return sendJson(res, 400, { error: parsed.error.issues[0]?.message || 'Invalid review request' });
         }
 
-        const reqRow = db.prepare('SELECT * FROM access_requests WHERE id = ?').get(parsed.data.id);
-        if (!reqRow) return sendJson(res, 404, { error: 'Access request not found.' });
+        const rawInvite = parsed.data.decision === 'approve' ? crypto.randomBytes(24).toString('base64url') : null;
+        const inviteHash = rawInvite ? hashSecret(rawInvite) : null;
+        const expiresAt = rawInvite ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() : null;
+        const origin = process.env.APP_ORIGIN || 'http://localhost:5173';
+        const inviteUrl = rawInvite ? `${origin}/login?invite=${encodeURIComponent(rawInvite)}` : null;
 
-        if (parsed.data.decision === 'reject') {
-          db.prepare("UPDATE access_requests SET status = 'rejected', reviewer_note = ? WHERE id = ?").run(
-            parsed.data.note,
-            reqRow.id
-          );
+        db.exec('BEGIN IMMEDIATE');
+        let reqRow;
+        let provisionedOrgId = null;
+        try {
+          reqRow = db.prepare('SELECT * FROM access_requests WHERE id = ?').get(parsed.data.id);
+          if (!reqRow) {
+            db.exec('ROLLBACK');
+            return sendJson(res, 404, { error: 'Access request not found.' });
+          }
+          if (reqRow.status !== 'pending') {
+            db.exec('ROLLBACK');
+            return sendJson(res, 409, { error: `Access request has already been ${reqRow.status}.` });
+          }
+
+          if (parsed.data.decision === 'reject') {
+            const upd = db
+              .prepare(
+                "UPDATE access_requests SET status = 'rejected', reviewer_note = ?, invite_token_hash = NULL, invite_expires_at = NULL WHERE id = ? AND status = 'pending'"
+              )
+              .run(parsed.data.note, reqRow.id);
+            if (upd.changes !== 1) {
+              db.exec('ROLLBACK');
+              return sendJson(res, 409, { error: 'Access request has already been reviewed.' });
+            }
+            writeLocalAudit(db, {
+              actorId: actor.user.id,
+              area: 'admin',
+              type: 'access_request_rejected',
+              objectRef: reqRow.id,
+              result: 'rejected',
+            });
+            db.exec('COMMIT');
+            return sendJson(res, 200, { ok: true, status: 'rejected' });
+          }
+
+          if (reqRow.role === 'organization') {
+            provisionedOrgId = reqRow.org_id || crypto.randomUUID();
+          }
+
+          const upd = db
+            .prepare(
+              "UPDATE access_requests SET status = 'approved', reviewer_note = ?, invite_token_hash = ?, invite_expires_at = ?, org_id = ? WHERE id = ? AND status = 'pending'"
+            )
+            .run(parsed.data.note, inviteHash, expiresAt, provisionedOrgId, reqRow.id);
+          if (upd.changes !== 1) {
+            db.exec('ROLLBACK');
+            return sendJson(res, 409, { error: 'Access request has already been reviewed.' });
+          }
+
+          const inviteEmail = buildInviteEmail({
+            locale: 'en',
+            fullName: reqRow.full_name,
+            inviteUrl,
+            role: reqRow.role,
+          });
+          enqueueOutboxEmail(db, {
+            toEmail: reqRow.work_email,
+            locale: 'en',
+            kind: 'invite',
+            ...inviteEmail,
+          });
+
           writeLocalAudit(db, {
             actorId: actor.user.id,
             area: 'admin',
-            type: 'access_request_rejected',
+            type: 'access_request_approved',
             objectRef: reqRow.id,
-            result: 'rejected',
+            result: 'approved',
           });
-          return sendJson(res, 200, { ok: true, status: 'rejected' });
+
+          db.exec('COMMIT');
+        } catch (err) {
+          try {
+            db.exec('ROLLBACK');
+          } catch {
+            // already rolled back
+          }
+          throw err;
         }
 
-        const rawInvite = crypto.randomBytes(24).toString('base64url');
-        const inviteHash = hashSecret(rawInvite);
-        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-        const origin = process.env.APP_ORIGIN || 'http://localhost:5173';
-        const inviteUrl = `${origin}/login?invite=${encodeURIComponent(rawInvite)}`;
-
-        db.prepare(
-          "UPDATE access_requests SET status = 'approved', reviewer_note = ?, invite_token_hash = ?, invite_expires_at = ? WHERE id = ?"
-        ).run(parsed.data.note, inviteHash, expiresAt, reqRow.id);
-
-        const inviteEmail = buildInviteEmail({
-          locale: 'en',
-          fullName: reqRow.full_name,
-          inviteUrl,
-          role: reqRow.role,
-        });
-        enqueueOutboxEmail(db, {
-          toEmail: reqRow.work_email,
-          locale: 'en',
-          kind: 'invite',
-          ...inviteEmail,
-        });
-
-        writeLocalAudit(db, {
-          actorId: actor.user.id,
-          area: 'admin',
-          type: 'access_request_approved',
-          objectRef: reqRow.id,
-          result: 'approved',
-        });
-
-        return sendJson(res, 200, { ok: true, status: 'approved', inviteUrl });
+        return sendJson(res, 200, { ok: true, status: 'approved', inviteUrl, orgId: provisionedOrgId });
       }
 
       return sendJson(res, 405, { error: 'Method not allowed' });
     }
 
     const ctx = await authenticateRequest(req);
-    if (!isAdminActor(ctx)) {
-      return sendJson(res, 403, { error: 'Administrator permission required.' });
+    if (!isPlatformAdminActor(ctx)) {
+      return sendJson(res, 403, { error: 'Platform administrator permission required.' });
     }
 
     if (req.method === 'GET') {
       const [{ data: requests, error: reqErr }, { data: audit, error: auditErr }] = await Promise.all([
         ctx.supabase
           .from('access_requests')
-          .select('id, name, email, audience, organization, country, languages, message, consent, status, reviewer_note, reviewed_at, created_at')
+          .select('id, name, email, audience, organization, country, languages, message, consent, status, reviewer_note, reviewed_at, org_id, created_at')
           .order('created_at', { ascending: false })
           .limit(100),
         ctx.supabase
           .from('audit_events')
-          .select('id, actor_id, area, type, object_ref, result, created_at')
+          .select('id, actor_id, org_id, area, type, object_ref, result, created_at')
           .order('id', { ascending: false })
           .limit(50),
       ]);
@@ -139,9 +176,11 @@ export default async function handler(req, res) {
           message: r.message,
           status: r.status,
           reviewer_note: r.reviewer_note,
+          org_id: r.org_id || null,
           created_at: r.created_at,
         })),
         outbox: [],
+        emailDelivery: 'manual',
         audit: audit || [],
       });
     }
@@ -160,68 +199,71 @@ export default async function handler(req, res) {
 
       const { data: reqRow, error: lookupErr } = await ctx.supabase
         .from('access_requests')
-        .select('*')
+        .select('id, audience, organization, status, org_id')
         .eq('id', numericId)
         .maybeSingle();
       if (lookupErr) throw new Error(lookupErr.message);
       if (!reqRow) return sendJson(res, 404, { error: 'Access request not found.' });
+      if (reqRow.status !== 'pending') {
+        return sendJson(res, 409, { error: `Access request has already been ${reqRow.status}.` });
+      }
 
-      const now = new Date().toISOString();
+      let provisionOrgId = reqRow.org_id || null;
+      if (parsed.data.decision === 'approve' && reqRow.audience === 'organization' && !provisionOrgId) {
+        const orgName = String(reqRow.organization || '').trim() || `Organization #${numericId}`;
+        const { data: orgRow, error: orgErr } = await ctx.supabase
+          .from('organizations')
+          .insert({ name: orgName.slice(0, 120), created_by: ctx.userId })
+          .select('id')
+          .single();
+        if (orgErr || !orgRow?.id) {
+          throw new Error(orgErr?.message || 'Unable to provision organization record.');
+        }
+        provisionOrgId = orgRow.id;
+      }
+
+      const rawInvite = parsed.data.decision === 'approve' ? crypto.randomBytes(24).toString('base64url') : null;
+      const inviteHash = rawInvite ? hashSecret(rawInvite) : null;
+      const expiresAt = rawInvite ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() : null;
+      const origin = process.env.APP_ORIGIN || 'https://voxrelay.vercel.app';
+      const inviteUrl = rawInvite ? `${origin}/login?invite=${encodeURIComponent(rawInvite)}` : null;
+
+      const { data: rpcResult, error: rpcErr } = await ctx.supabase.rpc('review_access_request', {
+        p_request_id: numericId,
+        p_decision: parsed.data.decision,
+        p_note: parsed.data.note,
+        p_reviewer_id: ctx.userId,
+        p_invite_hash: inviteHash,
+        p_invite_expires_at: expiresAt,
+        p_provision_org_id: provisionOrgId,
+      });
+
+      if (rpcErr) {
+        throw new Error(rpcErr.message);
+      }
+
+      if (!rpcResult?.ok) {
+        if (rpcResult?.code === 'not_found') {
+          return sendJson(res, 404, { error: 'Access request not found.' });
+        }
+        if (rpcResult?.code === 'already_reviewed') {
+          return sendJson(res, 409, { error: 'Access request has already been reviewed.' });
+        }
+        throw new Error('Unable to complete review transition.');
+      }
 
       if (parsed.data.decision === 'reject') {
-        const { error: updErr } = await ctx.supabase
-          .from('access_requests')
-          .update({
-            status: 'rejected',
-            reviewer_note: parsed.data.note,
-            reviewed_by: ctx.userId,
-            reviewed_at: now,
-            invite_token_hash: null,
-          })
-          .eq('id', numericId);
-        if (updErr) throw new Error(updErr.message);
-
-        await ctx.supabase.from('audit_events').insert({
-          actor_id: ctx.userId,
-          org_id: ctx.membership?.org_id || null,
-          area: 'admin',
-          type: 'access_request_rejected',
-          object_ref: String(numericId),
-          result: 'rejected',
-        });
-
         return sendJson(res, 200, { ok: true, status: 'rejected' });
       }
 
-      const rawInvite = crypto.randomBytes(24).toString('base64url');
-      const inviteHash = hashSecret(rawInvite);
-      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-      const origin = process.env.APP_ORIGIN || 'https://voxrelay.vercel.app';
-      const inviteUrl = `${origin}/login?invite=${encodeURIComponent(rawInvite)}`;
-
-      const { error: updErr } = await ctx.supabase
-        .from('access_requests')
-        .update({
-          status: 'approved',
-          reviewer_note: parsed.data.note,
-          reviewed_by: ctx.userId,
-          reviewed_at: now,
-          invite_token_hash: inviteHash,
-          invite_expires_at: expiresAt,
-        })
-        .eq('id', numericId);
-      if (updErr) throw new Error(updErr.message);
-
-      await ctx.supabase.from('audit_events').insert({
-        actor_id: ctx.userId,
-        org_id: ctx.membership?.org_id || null,
-        area: 'admin',
-        type: 'access_request_approved',
-        object_ref: String(numericId),
-        result: 'approved',
+      return sendJson(res, 200, {
+        ok: true,
+        status: 'approved',
+        inviteUrl,
+        orgId: rpcResult.org_id || null,
+        emailDispatched: false,
+        note: 'Share the generated invite URL manually; automated email delivery is not configured.',
       });
-
-      return sendJson(res, 200, { ok: true, status: 'approved', inviteUrl });
     }
 
     return sendJson(res, 405, { error: 'Method not allowed' });

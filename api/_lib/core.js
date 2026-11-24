@@ -38,26 +38,52 @@ export function hashKey(raw) {
 }
 
 export async function enforceRateLimit(supabase, bucketKey, { maxRequests = 15, windowMs = 60_000 } = {}) {
-  if (!supabase) return;
+  if (!supabase) {
+    throw new HttpError(503, 'Rate limit verification unavailable.');
+  }
   const keyHash = hashKey(bucketKey);
-  const since = new Date(Date.now() - windowMs).toISOString();
 
-  const { count, error: countError } = await supabase
-    .from('rate_events')
-    .select('id', { count: 'exact', head: true })
-    .eq('key_hash', keyHash)
-    .gte('created_at', since);
+  const { data: allowed, error } = await supabase.rpc('consume_rate_limit', {
+    p_key_hash: keyHash,
+    p_max_requests: maxRequests,
+    p_window_ms: windowMs,
+  });
 
-  if (countError) {
+  if (error || typeof allowed !== 'boolean') {
     throw new HttpError(503, 'Rate limit verification unavailable.');
   }
 
-  if ((count || 0) >= maxRequests) {
+  if (!allowed) {
     throw new HttpError(429, 'Too many requests. Please wait a moment and try again.');
   }
+}
 
-  const { error: insertError } = await supabase.from('rate_events').insert({ key_hash: keyHash });
-  if (insertError) {
+export function enforceLocalRateLimit(db, bucketKey, { maxRequests = 15, windowMs = 60_000 } = {}) {
+  if (!db) {
+    throw new HttpError(503, 'Rate limit verification unavailable.');
+  }
+  const keyHash = hashKey(bucketKey);
+  const since = new Date(Date.now() - windowMs).toISOString();
+  const now = new Date().toISOString();
+
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const row = db
+      .prepare('SELECT COUNT(*) AS count FROM rate_events WHERE key_hash = ? AND created_at >= ?')
+      .get(keyHash, since);
+    if ((row?.count || 0) >= maxRequests) {
+      db.exec('ROLLBACK');
+      throw new HttpError(429, 'Too many requests. Please wait a moment and try again.');
+    }
+    db.prepare('INSERT INTO rate_events (key_hash, created_at) VALUES (?, ?)').run(keyHash, now);
+    db.exec('COMMIT');
+  } catch (err) {
+    try {
+      db.exec('ROLLBACK');
+    } catch {
+      // already rolled back
+    }
+    if (err instanceof HttpError) throw err;
     throw new HttpError(503, 'Rate limit verification unavailable.');
   }
 }

@@ -74,7 +74,7 @@ export function LoginPage() {
         return;
       }
 
-      // Try local cookie auth endpoint first so local/sandbox workspace works immediately
+      // Try server auth endpoint first (handles local cookie auth AND server-verified Supabase invitation signup)
       const localRes = await fetch('/api/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -86,19 +86,23 @@ export function LoginPage() {
         ),
       }).catch(() => null);
 
-      if (localRes && localRes.status !== 503) {
+      if (localRes && (localRes.status !== 503 || (mode === 'signup' && Boolean(inviteToken)))) {
         const localData = await localRes.json().catch(() => ({}));
         if (localRes.ok) {
-          if (mode === 'signup' && supabase) {
-            // Mirror signup to Supabase Auth when configured so future Supabase sign-ins also work
-            void supabase.auth.signUp({
-              email,
-              password,
-              options: { data: { full_name: fullName } },
+          if (localData.requiresConfirmation) {
+            setNeedsConfirmation(true);
+            setFeedback({
+              kind: 'info',
+              text: 'Account created. Check your inbox to confirm your email before signing in.',
             });
+            return;
           }
           await refreshSession();
           navigate(returnTo, { replace: true });
+          return;
+        }
+        if (mode === 'signup' && inviteToken) {
+          setFeedback({ kind: 'error', text: localData.error || 'Unable to verify invitation.' });
           return;
         }
         if (localRes.status !== 401 || !supabase) {
@@ -113,6 +117,10 @@ export function LoginPage() {
       }
 
       if (mode === 'signup') {
+        if (inviteToken) {
+          setFeedback({ kind: 'error', text: 'Invitation verification requires server connectivity.' });
+          return;
+        }
         const { data, error } = await supabase.auth.signUp({
           email,
           password,

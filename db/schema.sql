@@ -234,6 +234,8 @@ CREATE TABLE IF NOT EXISTS voxrelay.access_requests (
   reviewed_at TIMESTAMPTZ,
   invite_token_hash TEXT,
   invite_expires_at TIMESTAMPTZ,
+  org_id UUID REFERENCES voxrelay.organizations(id) ON DELETE SET NULL,
+  approved_role TEXT NOT NULL DEFAULT 'interpreter' CHECK (approved_role IN ('interpreter', 'admin')),
   message TEXT NOT NULL DEFAULT '',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
