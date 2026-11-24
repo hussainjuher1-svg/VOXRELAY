@@ -39,10 +39,13 @@ describe('Public homepage layout, accessibility, Radix primitives, and routing',
       screen.getByRole('heading', { level: 1, name: /infrastructure for the humans between languages/i })
     ).toBeInTheDocument();
     expect(screen.getByText(/HUMAN-LED · NEVER AI-REPLACED/i)).toBeInTheDocument();
-    expect(screen.getByText(/Audio stays in your tab/i)).toBeInTheDocument();
+    expect(screen.getByText('Audio stays in your tab')).toBeInTheDocument();
 
     expect(screen.getByRole('heading', { level: 2, name: /one workflow, four honest stages/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: /calm on the inside\. alive where it counts/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /test mic live/i })).toBeInTheDocument();
+    expect(screen.getByRole('progressbar', { name: /live microphone input level/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /round-trip \(live\)/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: /built against real friction/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: /what voxrelay will not do/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: /ai, on your terms/i })).toBeInTheDocument();

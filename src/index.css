@@ -734,81 +734,81 @@ p {
   font-size: 16px;
 }
 
-/* 3. One workflow, four honest stages (Matching Screenshot 3) */
+/* 3. One workflow, four honest stages (Compact, calm lower-contrast cards) */
 .vx-stages-band {
-  padding: 48px 0 80px;
+  padding: 40px 0 64px;
   background: var(--vr-paper);
 }
 
 .vx-section-title {
   font-family: var(--vr-font-serif);
-  font-size: clamp(38px, 4.4vw, 56px);
+  font-size: clamp(34px, 4vw, 48px);
   font-weight: 400;
   line-height: 1.05;
   letter-spacing: -0.02em;
   color: var(--vr-ink);
-  margin-bottom: 34px;
+  margin-bottom: 28px;
   max-width: 16ch;
 }
 
 .vx-stages-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 18px;
+  gap: 14px;
 }
 
 .vx-stage-card {
-  border-radius: 22px;
-  padding: 26px 24px 28px;
+  border-radius: 18px;
+  padding: 20px 18px 22px;
   display: flex;
   flex-direction: column;
-  min-height: 290px;
+  min-height: 206px;
 }
 
 .vx-stage-card--terracotta {
-  background: var(--vr-accent-brand);
-  color: var(--vr-ink);
-  transform: rotate(-1.5deg);
+  background: #e99a82;
+  color: #1f332f;
+  transform: rotate(-1deg);
 }
 
 .vx-stage-card--gold {
-  background: var(--vr-gold);
-  color: var(--vr-ink);
-  transform: rotate(1.5deg);
+  background: #f4d88c;
+  color: #1f332f;
+  transform: rotate(1deg);
 }
 
 .vx-stage-card--forest {
-  background: var(--vr-forest);
-  color: #ffffff;
-  transform: rotate(-1.2deg);
+  background: #2f5b51;
+  color: #eef3f1;
+  transform: rotate(-0.8deg);
 }
 
 .vx-stage-card--sage {
-  background: var(--vr-sage);
-  color: var(--vr-ink);
-  transform: rotate(1.2deg);
+  background: #bccfc8;
+  color: #1f332f;
+  transform: rotate(0.8deg);
 }
 
 .vx-stage-num {
   font-family: var(--vr-font-serif);
-  font-size: 62px;
+  font-size: 46px;
   line-height: 0.95;
-  opacity: 0.35;
+  opacity: 0.28;
   margin-bottom: auto;
 }
 
 .vx-stage-card h3 {
   font-family: var(--vr-font-serif);
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 400;
-  margin: 24px 0 8px;
+  margin: 18px 0 6px;
 }
 
 .vx-stage-card p {
-  font-size: 13.5px;
-  line-height: 1.5;
+  font-size: 13px;
+  line-height: 1.48;
   margin: 0;
-  opacity: 0.92;
+  opacity: 0.86;
 }
 
 /* 4. Dark Forest Workspace Preview Band (Matching Screenshot 4) */
@@ -956,6 +956,7 @@ p {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
 }
 
 .vx-ws-device-head h3 {
@@ -963,6 +964,30 @@ p {
   font-size: 28px;
   font-weight: 400;
   margin: 0;
+}
+
+.vx-ws-mic-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border-radius: 9999px;
+  border: 1.5px solid rgba(255, 255, 255, 0.72);
+  background: rgba(17, 42, 36, 0.2);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 140ms var(--ease);
+}
+
+.vx-ws-mic-btn:hover {
+  background: rgba(17, 42, 36, 0.42);
+}
+
+.vx-ws-meter-wrap {
+  display: grid;
+  gap: 8px;
 }
 
 .vx-ws-meter {
@@ -974,23 +999,37 @@ p {
 }
 
 .vx-ws-meter-fill {
-  width: 72%;
   height: 100%;
+  min-width: 6px;
   border-radius: 9999px;
   background: #ffffff;
+  transition: width 60ms linear;
+}
+
+.vx-ws-meter-meta {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.9);
+  font-variant-numeric: tabular-nums;
 }
 
 .vx-ws-device-foot {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
+  gap: 12px;
 }
 
-.vx-ws-device-foot span {
+.vx-ws-rtt-btn {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: rgba(255, 255, 255, 0.92);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
-  opacity: 0.9;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .vx-ws-device-foot strong {
@@ -998,6 +1037,7 @@ p {
   font-size: 46px;
   font-weight: 400;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .vx-ws-device-foot strong span {
@@ -2574,10 +2614,13 @@ p {
 }
 
 /* Responsive */
-@media (max-width: 960px) {
+@media (max-width: 720px) {
   .vx-stages-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+@media (max-width: 960px) {
   .vx-workspace-cards,
   .vx-friction-grid,
   .vx-guardrails-grid {

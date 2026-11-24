@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowUpRight, Mic, ShieldCheck, X } from 'lucide-react';
+import { ArrowUpRight, Mic, MicOff, ShieldCheck, X } from 'lucide-react';
 import { useLocale } from '../context/hooks';
 import { KNOWLEDGE_BASE } from '../../api/_lib/kb.js';
 import {
@@ -76,6 +76,195 @@ const MARQUEE_LANGS = [
   'Français',
   'العربية',
 ];
+
+function LiveDeviceCheckCard({ isAr }: { isAr: boolean }) {
+  const [micActive, setMicActive] = useState(false);
+  const [micLevel, setMicLevel] = useState(0);
+  const [peakLevel, setPeakLevel] = useState(0);
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
+  const [pinging, setPinging] = useState(false);
+  const [micError, setMicError] = useState<string | null>(null);
+
+  const streamRef = useRef<MediaStream | null>(null);
+  const ctxRef = useRef<AudioContext | null>(null);
+  const rafRef = useRef<number | null>(null);
+
+  const measureLatency = useCallback(async (showSpinner = false) => {
+    if (typeof window === 'undefined' || typeof fetch !== 'function') return;
+    if (window.location.origin === 'null') return;
+    if (showSpinner) setPinging(true);
+    try {
+      const t0 = performance.now();
+      const res = await fetch('/api/health', { cache: 'no-store' });
+      const elapsed = Math.max(1, Math.round(performance.now() - t0));
+      if (res.ok) {
+        setLatencyMs(elapsed);
+      }
+    } catch {
+      // Leave latency as null if offline / unreachable
+    } finally {
+      if (showSpinner) setPinging(false);
+    }
+  }, []);
+
+  const stopMic = useCallback(() => {
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    if (ctxRef.current) {
+      void ctxRef.current.close().catch(() => {});
+      ctxRef.current = null;
+    }
+    setMicActive(false);
+    setMicLevel(0);
+  }, []);
+
+  async function toggleMic() {
+    if (micActive) {
+      stopMic();
+      return;
+    }
+    setMicError(null);
+    void measureLatency();
+
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      setMicError(isAr ? 'واجهة الميكروفون غير متاحة في هذا المتصفح.' : 'Microphone API is unavailable in this browser.');
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AudioCtx) {
+        stream.getTracks().forEach((t) => t.stop());
+        setMicError(isAr ? 'محرك Web Audio غير مدعوم.' : 'Web Audio is not supported.');
+        return;
+      }
+
+      const ctx = new AudioCtx();
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+
+      streamRef.current = stream;
+      ctxRef.current = ctx;
+      setMicActive(true);
+      setPeakLevel(0);
+
+      const data = new Uint8Array(analyser.fftSize);
+      const tick = () => {
+        analyser.getByteTimeDomainData(data);
+        let sumSq = 0;
+        for (let i = 0; i < data.length; i += 1) {
+          const v = (data[i] - 128) / 128;
+          sumSq += v * v;
+        }
+        const rms = Math.sqrt(sumSq / data.length);
+        const pct = Math.min(100, Math.round(rms * 280));
+        setMicLevel(pct);
+        setPeakLevel((prev) => Math.max(prev, pct));
+        rafRef.current = requestAnimationFrame(tick);
+      };
+      rafRef.current = requestAnimationFrame(tick);
+    } catch {
+      setMicError(
+        isAr ? 'تم رفض إذن الميكروفون أو لا يوجد ميكروفون متصل.' : 'Microphone permission denied or no device found.'
+      );
+    }
+  }
+
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      void measureLatency(false);
+    }, 0);
+    return () => {
+      window.clearTimeout(id);
+      stopMic();
+    };
+  }, [measureLatency, stopMic]);
+
+  useEffect(() => {
+    if (!micActive) return;
+    const id = window.setInterval(() => {
+      void measureLatency(false);
+    }, 2500);
+    return () => window.clearInterval(id);
+  }, [micActive, measureLatency]);
+
+  return (
+    <div className="vx-ws-card-terracotta">
+      <div className="vx-ws-device-head">
+        <h3>{isAr ? 'فحص الجهاز' : 'Device check'}</h3>
+        <button
+          type="button"
+          className="vx-ws-mic-btn"
+          onClick={toggleMic}
+          aria-pressed={micActive}
+        >
+          {micActive ? <MicOff size={15} aria-hidden="true" /> : <Mic size={15} aria-hidden="true" />}
+          <span>
+            {micActive
+              ? isAr
+                ? 'إيقاف الميكروفون'
+                : 'Stop mic test'
+              : isAr
+                ? 'اختبار الميكروفون'
+                : 'Test mic live'}
+          </span>
+        </button>
+      </div>
+
+      <div className="vx-ws-meter-wrap">
+        <div
+          className="vx-ws-meter"
+          role="progressbar"
+          aria-label={isAr ? 'مستوى إشارة الميكروفون' : 'Live microphone input level'}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={micLevel}
+        >
+          <div className="vx-ws-meter-fill" style={{ width: `${micLevel}%` }} />
+        </div>
+        <div className="vx-ws-meter-meta">
+          <span>
+            {micError
+              ? micError
+              : micActive
+                ? isAr
+                  ? `بث مباشر من المتصفح · المستوى ${micLevel}% (الذروة ${peakLevel}%)`
+                  : `Live in-tab input · Level ${micLevel}% (peak ${peakLevel}%)`
+                : isAr
+                  ? 'اضغط لاختبار الميكروفون محلياً دون إرسال أي صوت'
+                  : 'Click Test mic live — audio stays in your tab'}
+          </span>
+        </div>
+      </div>
+
+      <div className="vx-ws-device-foot">
+        <button
+          type="button"
+          className="vx-ws-rtt-btn"
+          onClick={() => void measureLatency(true)}
+          disabled={pinging}
+        >
+          {isAr ? 'زمن الاستجابة الفعلي ↻' : 'ROUND-TRIP (LIVE) ↻'}
+        </button>
+        <strong>
+          {latencyMs !== null ? latencyMs : '—'}
+          <span>ms</span>
+        </strong>
+      </div>
+    </div>
+  );
+}
 
 export function HomePage() {
   const { locale } = useLocale();
@@ -445,19 +634,7 @@ export function HomePage() {
               </div>
             </div>
 
-            <div className="vx-ws-card-terracotta">
-              <div className="vx-ws-device-head">
-                <h3>{isAr ? 'فحص الجهاز' : 'Device check'}</h3>
-                <Mic size={18} aria-hidden="true" />
-              </div>
-              <div className="vx-ws-meter">
-                <div className="vx-ws-meter-fill" />
-              </div>
-              <div className="vx-ws-device-foot">
-                <span>{isAr ? 'زمن الاستجابة' : 'ROUND-TRIP'}</span>
-                <strong>46<span>ms</span></strong>
-              </div>
-            </div>
+            <LiveDeviceCheckCard isAr={isAr} />
           </div>
         </div>
       </section>

@@ -19,6 +19,7 @@ export function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [feedback, setFeedback] = useState<{ kind: 'error' | 'info'; text: string } | null>(null);
+  const [needsConfirmation, setNeedsConfirmation] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -27,10 +28,26 @@ export function LoginPage() {
     }
   }, [loading, user, navigate, returnTo]);
 
+  async function handleResendConfirmation() {
+    if (!supabase || !email) return;
+    setBusy(true);
+    try {
+      const { error } = await supabase.auth.resend({ type: 'signup', email });
+      if (error) setFeedback({ kind: 'error', text: error.message });
+      else {
+        setFeedback({ kind: 'info', text: `Confirmation link re-sent to ${email}. Check your inbox and spam folder.` });
+        setNeedsConfirmation(false);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
     setFeedback(null);
+    setNeedsConfirmation(false);
 
     try {
       if (mode === 'forgot') {
@@ -69,6 +86,14 @@ export function LoginPage() {
       if (localRes && localRes.status !== 503) {
         const localData = await localRes.json().catch(() => ({}));
         if (localRes.ok) {
+          if (mode === 'signup' && supabase) {
+            // Mirror signup to Supabase Auth when configured so future Supabase sign-ins also work
+            void supabase.auth.signUp({
+              email,
+              password,
+              options: { data: { full_name: fullName } },
+            });
+          }
           await refreshSession();
           navigate(returnTo, { replace: true });
           return;
@@ -85,14 +110,32 @@ export function LoginPage() {
       }
 
       if (mode === 'signup') {
-        const { error } = await supabase.auth.signUp({ email, password });
-        if (error) setFeedback({ kind: 'error', text: error.message });
-        else setFeedback({ kind: 'info', text: 'Account created. Verify your email if required, then continue.' });
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { full_name: fullName } },
+        });
+        if (error) {
+          setFeedback({ kind: 'error', text: error.message });
+        } else if (data.session) {
+          navigate(returnTo, { replace: true });
+        } else {
+          setNeedsConfirmation(true);
+          setFeedback({
+            kind: 'info',
+            text: 'Account created. Check your inbox to confirm your email, or resend confirmation below.',
+          });
+        }
         return;
       }
 
       const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) setFeedback({ kind: 'error', text: error.message });
+      if (error) {
+        if (/email not confirmed/i.test(error.message)) {
+          setNeedsConfirmation(true);
+        }
+        setFeedback({ kind: 'error', text: error.message });
+      }
     } finally {
       setBusy(false);
     }
@@ -182,9 +225,14 @@ export function LoginPage() {
                   : 'Send reset link'}
           </Button>
           {feedback && (
-            <p className={feedback.kind === 'error' ? 'form-error' : 'form-success'} role="status">
-              {feedback.text}
-            </p>
+            <div role="status">
+              <p className={feedback.kind === 'error' ? 'form-error' : 'form-success'}>{feedback.text}</p>
+              {needsConfirmation && supabase && email && (
+                <Button type="button" size="sm" variant="secondary" onClick={handleResendConfirmation} disabled={busy}>
+                  Resend confirmation email
+                </Button>
+              )}
+            </div>
           )}
         </form>
       </section>
