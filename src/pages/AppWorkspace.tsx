@@ -153,6 +153,7 @@ export function OverviewPage() {
         <>
           <div className="vx-kpi-grid">
             <article className={`vx-kpi-card${assignments.length > 0 ? ' is-live-beam' : ''}`}>
+              <span className="vox-border-beam-glow" aria-hidden="true" />
               <span className="vox-border-beam" aria-hidden="true" />
               <span className="eyebrow">Scheduled</span>
               <span className="vx-kpi-value">{assignments.length}</span>
@@ -161,6 +162,7 @@ export function OverviewPage() {
               </Link>
             </article>
             <article className={`vx-kpi-card${readyCount > 0 ? ' is-live-beam' : ''}`}>
+              <span className="vox-border-beam-glow" aria-hidden="true" />
               <span className="vox-border-beam" aria-hidden="true" />
               <span className="eyebrow">Ready / active</span>
               <span className="vx-kpi-value">{readyCount}</span>
@@ -169,6 +171,7 @@ export function OverviewPage() {
               </Link>
             </article>
             <article className="vx-kpi-card">
+              <span className="vox-border-beam-glow" aria-hidden="true" />
               <span className="vox-border-beam" aria-hidden="true" />
               <span className="eyebrow">Glossary terms</span>
               <span className="vx-kpi-value">{termsCount}</span>
@@ -178,6 +181,7 @@ export function OverviewPage() {
             </article>
             {!user && (
               <article className="vx-kpi-card is-live-beam">
+                <span className="vox-border-beam-glow" aria-hidden="true" />
                 <span className="vox-border-beam" aria-hidden="true" />
                 <span className="eyebrow">Session status</span>
                 <span className="vx-kpi-value" style={{ fontSize: 22, paddingTop: 6 }}>
@@ -192,6 +196,7 @@ export function OverviewPage() {
 
           <div className="workspace-grid">
             <article className={`subpage-card vx-kpi-card${nextUp ? ' is-live-beam' : ''}`}>
+              <span className="vox-border-beam-glow" aria-hidden="true" />
               <span className="vox-border-beam" aria-hidden="true" />
               <span className="eyebrow">NEXT SESSION</span>
               <h2 style={{ marginTop: 6 }}>{nextUp ? `${nextUp.ref} · ${nextUp.language_pair}` : 'No upcoming assignments'}</h2>
@@ -236,6 +241,8 @@ export function AssignmentsPage() {
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [icsDragOver, setIcsDragOver] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [searchFilter, setSearchFilter] = useState<string>('');
 
   const refresh = useCallback(async () => {
     const res = await fetch('/api/assignments', {
@@ -395,6 +402,7 @@ export function AssignmentsPage() {
 
       <div className="workspace-grid">
         <form className="panel-form vx-beam-focus-card" onSubmit={createAssignment}>
+          <span className="vox-border-beam-glow" aria-hidden="true" />
           <span className="vox-border-beam" aria-hidden="true" />
           <Field label="Language pair" htmlFor="assign-pair">
             <Input id="assign-pair" value={pair} onChange={(e) => setPair(e.target.value)} required />
@@ -464,6 +472,7 @@ export function AssignmentsPage() {
             }
           }}
         >
+          <span className="vox-border-beam-glow" aria-hidden="true" />
           <span className="vox-border-beam" aria-hidden="true" />
           <h2>Timing-only .ics import</h2>
           <p>Reads DTSTART and DTEND only. Event titles, attendees, and descriptions are discarded.</p>
@@ -491,6 +500,30 @@ export function AssignmentsPage() {
       </div>
 
       <div style={{ marginTop: 24 }}>
+        {items.length > 0 && (
+          <div className="vx-filter-row">
+            <div className="vx-filter-chips" role="group" aria-label="Filter assignments by status">
+              {['all', 'scheduled', 'preparing', 'ready', 'in_session', 'completed'].map((st) => (
+                <button
+                  key={st}
+                  type="button"
+                  className={`vx-filter-chip${statusFilter === st ? ' is-active' : ''}`}
+                  onClick={() => setStatusFilter(st)}
+                >
+                  {st === 'all' ? `All (${items.length})` : st.replace(/_/g, ' ')}
+                </button>
+              ))}
+            </div>
+            <Input
+              type="search"
+              value={searchFilter}
+              onChange={(e) => setSearchFilter(e.target.value)}
+              placeholder="Filter ref, pair, modality..."
+              aria-label="Filter assignments"
+              style={{ maxWidth: 240 }}
+            />
+          </div>
+        )}
         {loading ? (
           <Skeleton height={80} />
         ) : items.length === 0 ? (
@@ -502,7 +535,10 @@ export function AssignmentsPage() {
           />
         ) : (
           <div className="workspace-grid">
-            {items.map((a) => (
+            {items
+              .filter((a) => statusFilter === 'all' || a.status === statusFilter)
+              .filter((a) => !searchFilter.trim() || matchesSearch(`${a.ref} ${a.language_pair} ${a.modality}`, searchFilter))
+              .map((a) => (
               <article key={a.id} className="subpage-card">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                   <span className="mono-ltr eyebrow">{a.ref}</span>
@@ -1154,6 +1190,8 @@ export function DeviceCheckPage() {
       </div>
 
       <section className="vx-diag-hero" aria-label="Readiness score summary">
+        <span className="vox-border-beam-glow vox-border-beam-glow--hero vox-border-beam-glow--always" aria-hidden="true" />
+        <span className="vox-border-beam vox-border-beam--hero vox-border-beam--always" aria-hidden="true" />
         <div className="vx-score-ring">
           <svg viewBox="0 0 124 124" aria-hidden="true">
             <circle cx="62" cy="62" r="54" fill="none" stroke="#1e4239" strokeWidth="10" />

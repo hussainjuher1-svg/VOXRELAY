@@ -1127,6 +1127,16 @@ export function FaqPage({ onOpenAssistant }: { onOpenAssistant?: (q?: string) =>
   const { locale } = useLocale();
   const isAr = locale === 'ar';
   const [openId, setOpenId] = useState<string>(KNOWLEDGE_BASE[0]?.id || 'KB-01');
+  const [search, setSearch] = useState('');
+  const [topic, setTopic] = useState<'all' | 'privacy' | 'audio' | 'workflow'>('all');
+
+  const filteredKb = KNOWLEDGE_BASE.filter((item) => {
+    const text = `${item.id} ${item.title.en} ${item.summary.en} ${item.title.ar} ${item.summary.ar}`.toLowerCase();
+    if (topic === 'privacy' && !/privacy|zero|pii|rls|ai|t3/.test(text)) return false;
+    if (topic === 'audio' && !/audio|mic|device|latency|check/.test(text)) return false;
+    if (topic === 'workflow' && !/schedule|ics|glossary|support|billing|assign/.test(text)) return false;
+    return !search.trim() || text.includes(search.trim().toLowerCase());
+  });
 
   return (
     <div className="pub-page">
@@ -1141,8 +1151,33 @@ export function FaqPage({ onOpenAssistant }: { onOpenAssistant?: (q?: string) =>
 
       <section className="band-vellum">
         <div className="pub-container narrow-measure">
+          <div className="vx-filter-row">
+            <div className="vx-filter-chips" role="group" aria-label="Knowledge base topics">
+              {(['all', 'workflow', 'privacy', 'audio'] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  className={`vx-filter-chip${topic === t ? ' is-active' : ''}`}
+                  onClick={() => setTopic(t)}
+                >
+                  {t === 'all' ? `All (${KNOWLEDGE_BASE.length})` : t}
+                </button>
+              ))}
+            </div>
+            <input
+              type="search"
+              dir="auto"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={isAr ? 'ابحث في الأسئلة...' : 'Filter knowledge base...'}
+              aria-label="Filter FAQ articles"
+              className="ui-input"
+              style={{ maxWidth: 240 }}
+            />
+          </div>
+
           <div className="faq-accordion">
-            {KNOWLEDGE_BASE.map((item) => {
+            {filteredKb.map((item) => {
               const expanded = openId === item.id;
               const qTitle = isAr ? item.title.ar : item.title.en;
               const qSummary = isAr ? item.summary.ar : item.summary.en;
@@ -1199,15 +1234,29 @@ export function StatusPage() {
     aiProviderEnabled: boolean;
     checkedAt: string;
   } | null>(null);
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetch('/api/status')
-      .then((r) => r.json())
-      .then((d) => setStatusData(d))
-      .catch(() => setStatusData(null))
-      .finally(() => setLoading(false));
+  const fetchStatus = useCallback(async () => {
+    const t0 = performance.now();
+    try {
+      const r = await fetch('/api/status', { cache: 'no-store' });
+      const d = await r.json();
+      setStatusData(d);
+      setLatencyMs(Math.max(1, Math.round(performance.now() - t0)));
+    } catch {
+      setStatusData(null);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      void fetchStatus();
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [fetchStatus]);
 
   return (
     <div className="pub-page">
@@ -1215,6 +1264,19 @@ export function StatusPage() {
         <div className="pub-container narrow-measure">
           <p className="eyebrow">{isAr ? 'حالة النظام الحية' : 'Live diagnostics'}</p>
           <h1 className="page-display">{isAr ? 'حالة المنصة والجاهزية' : 'System status'}</h1>
+          <div style={{ marginTop: 14 }}>
+            <button
+              type="button"
+              className="vx-filter-chip is-active"
+              onClick={() => {
+                setLoading(true);
+                void fetchStatus();
+              }}
+            >
+              {isAr ? 'إعادة فحص الآن' : 'Run live re-check'}
+              {latencyMs !== null ? ` · ${latencyMs} ms` : ''}
+            </button>
+          </div>
         </div>
       </section>
 
