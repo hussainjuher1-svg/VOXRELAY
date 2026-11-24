@@ -141,6 +141,33 @@ describe('Assistant Eval (40+ golden, adversarial, and research cases)', () => {
     }
   });
 
+  it('answers identity questions and handles casual words in Research Prep gracefully', async () => {
+    const idEvents = [];
+    await runAssistantStream({
+      mode: 'ask',
+      question: 'what is your name',
+      locale: 'en',
+      db: null,
+      userId: null,
+      emit: (ev) => idEvents.push(ev),
+    });
+    const idText = idEvents.filter((e) => e.type === 'delta').map((e) => e.text).join('');
+    expect(idText).toContain('VOXRELAY Work Assistant');
+    expect(idText).toContain('\n- ');
+
+    const broEvents = [];
+    await runAssistantStream({
+      mode: 'research',
+      question: 'bro',
+      locale: 'en',
+      db: null,
+      userId: null,
+      emit: (ev) => broEvents.push(ev),
+    });
+    const broText = broEvents.filter((e) => e.type === 'delta').map((e) => e.text).join('');
+    expect(broText).toContain('Share a Session Topic');
+  });
+
   it('redacts emails, phones, and SSNs before processing', () => {
     const cleaned = redactPii('Contact john@example.com or 555-234-5678, SSN 123-45-6789');
     expect(cleaned).not.toContain('john@example.com');

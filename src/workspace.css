@@ -972,11 +972,21 @@
   position: relative;
   display: grid;
   grid-template-columns: 112px minmax(0, 1.35fr) minmax(165px, 1fr) auto;
-  gap: 16px;
+  gap: 14px;
   align-items: center;
-  padding: 16px 24px;
+  padding: 15px 24px;
   border-bottom: 1px solid #e7e5e4;
   transition: background 140ms ease;
+}
+
+.vx-ledger-row--live {
+  grid-template-columns: 112px minmax(0, 1.35fr) minmax(150px, 1fr) 104px 72px;
+}
+
+.vx-ledger-action-col {
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
 }
 
 .vx-ledger-row:hover {
@@ -1543,12 +1553,13 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
+  padding: 12px 14px;
   border-top: 1px solid #e7e5e4;
   background: #faf9f6;
 }
 
 .assistant-form input {
+  box-sizing: border-box;
   flex: 1;
   min-width: 0;
   padding: 9px 12px;
@@ -1562,6 +1573,7 @@
 
 .assistant-form input:focus {
   border-color: #e0522a;
+  box-shadow: 0 0 0 3px rgba(224, 82, 42, 0.14);
 }
 
 .assistant-send-btn {
@@ -1728,6 +1740,9 @@
     gap: 12px;
     padding: 14px 18px;
   }
+  .vx-ledger-row--live {
+    grid-template-columns: 100px minmax(0, 1.2fr) minmax(0, 0.9fr) 96px 68px;
+  }
 }
 
 @media (max-width: 640px) {
@@ -1754,10 +1769,15 @@
   .vx-ledger-val-stack {
     grid-column: 1;
   }
+  .vx-ledger-action-col {
+    grid-column: 2;
+    grid-row: 2;
+    justify-content: flex-end;
+  }
   .vx-ledger-end,
   .vx-ledger .ui-badge {
     grid-column: 2;
-    grid-row: 1 / span 3;
+    grid-row: 1;
     align-self: center;
     justify-self: end;
     flex-direction: column;

@@ -2281,7 +2281,11 @@ export function DeviceCheckPage() {
             }
 
             return (
-              <div key={c.id} className={`vx-ledger-row vx-ledger-row--${scoreTier}${isRunningRow ? ' is-running' : ''}`}>
+              <div
+                key={c.id}
+                className={`vx-ledger-row vx-ledger-row--live vx-ledger-row--${scoreTier}${isRunningRow ? ' is-running' : ''}`}
+                title={c.threshold}
+              >
                 {isRunningRow && (
                   <>
                     <span className="vox-border-beam-glow vox-border-beam-glow--row vox-border-beam-glow--always" aria-hidden="true" />
@@ -2300,16 +2304,16 @@ export function DeviceCheckPage() {
                     )}
                     <span>{c.label}</span>
                   </strong>
-                  {c.status !== 'pass' && <span>{c.threshold}</span>}
                 </div>
                 <div className="vx-ledger-val-stack">
                   <span className="vx-ledger-val">{c.measured}</span>
-                  <div className="vx-row-meter" aria-hidden="true">
-                    <div className={`vx-row-meter-fill vx-row-meter-fill--${scoreTier}`} style={{ width: `${rowPct}%` }} />
-                  </div>
-                  {c.measuredDetail && <span className="vx-ledger-val-sub">{c.measuredDetail}</span>}
+                  {rowPct > 0 && (
+                    <div className="vx-row-meter" aria-hidden="true">
+                      <div className={`vx-row-meter-fill vx-row-meter-fill--${scoreTier}`} style={{ width: `${rowPct}%` }} />
+                    </div>
+                  )}
                 </div>
-                <div className="vx-ledger-end">
+                <div className="vx-ledger-action-col">
                   {actionLabel && actionKind && (
                     <button
                       type="button"
@@ -2320,6 +2324,8 @@ export function DeviceCheckPage() {
                       {actionLabel}
                     </button>
                   )}
+                </div>
+                <div className="vx-ledger-end">
                   <span className={`vx-score-pill vx-score-pill--${scoreTier}`}>
                     {c.impactPoints}/{c.maxPoints}
                   </span>

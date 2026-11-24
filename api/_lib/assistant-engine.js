@@ -10,7 +10,8 @@ export function redactPii(text) {
 
 const LIVE_INTERPRET_RE = /\b(translate|interpret|transcribe|record\s+session|patient\s+said|doctor\s+said|diagnose|prescribe|legal\s+advice|medical\s+advice|verdict|lawsuit)\b/i;
 const HUMAN_ESCALATE_RE = /\b(human|person|agent|staff|coordinator|escalate|ticket|support\s+team|talk\s+to\s+someone|بشر|دعم|تذكرة)\b/i;
-const GREETING_RE = /^(hi|hello|hey|good\s+(morning|afternoon|evening)|greetings|salam|assalamu\s+alaikum|hola|مرحبا|أهلا|السلام\s+عليكم|হ্যালো|হাই)[\s!.,?]*$/i;
+const GREETING_RE = /^(hi|hello|hey|yo|bro|mate|friend|good\s+(morning|afternoon|evening)|greetings|salam|assalamu\s+alaikum|hola|thanks|thank\s+you|ok|okay|cool|test|مرحبا|أهلا|السلام\s+عليكم|شكرا|হ্যালো|হাই|ধন্যবাদ)[\s!.,?]*$/i;
+const IDENTITY_RE = /^(what\s+is\s+(your|ur)\s+name|who\s+are\s+you|what\s+are\s+you|what\s+can\s+you\s+do|about\s+you|introduce\s+yourself|ما\s+اسمك|من\s+أنت|তোমার\s+নাম\s+কি|তুমি\s+কে)[\s!.,?]*$/i;
 
 const DOMAIN_RESEARCH_BRIEFS = [
   {
@@ -123,7 +124,31 @@ export async function runAssistantStream({ mode = 'ask', question, locale = 'en'
     return;
   }
 
+  if (IDENTITY_RE.test(sanitized)) {
+    const identityText =
+      lang === 'ar'
+        ? '### مساعد عمل VOXRELAY\n\n- **الاسم:** مساعد عمل VOXRELAY (Grounded KB).\n- **المهام:** المساعدة في الجدولة واستيراد `.ics`، فحص الجهاز، القاموس، وقواعد الخصوصية.\n- **حدود الأمان:** لا أسجل الصوت ولا أترجم المحادثات الحية (المستوى T3 للبشر فقط).'
+        : lang === 'bn'
+          ? '### VOXRELAY কর্মক্ষেত্র সহকারী\n\n- **নাম:** VOXRELAY কর্মক্ষেত্র সহকারী (Grounded KB)।\n- **কাজ:** সময়সূচী ও `.ics` আমদানি, ডিভাইস পরীক্ষা, পরিভাষা এবং গোপনীয়তা নীতিতে সাহায্য করা।\n- **সীমা:** আমি কোনো অডিও রেকর্ড করি না বা লাইভ অনুবাদ করি না (T3 মানব-বিচারসীমা)।'
+          : "### VOXRELAY Work Assistant\n\n- **Name:** VOXRELAY Work Assistant (grounded workspace & KB helper).\n- **How I help:** Scheduling & `.ics` imports, terminology prep, device readiness, and T0–T3 privacy rules.\n- **Safety boundary:** Zero audio recording and no live translation (T3 human-only).";
+    emit({ type: 'delta', text: identityText });
+    emit({ type: 'quick_chips', show: true });
+    return;
+  }
+
   if (GREETING_RE.test(sanitized)) {
+    if (mode === 'research') {
+      const researchPrompt =
+        lang === 'ar'
+          ? '### أدخل موضوع الجلسة للتحضير\n\n- اكتب مجال الجلسة مثل: **استقبال أمراض القلب** أو **جلسة هجرة** أو **فحص الفيديو (VRI)**.\n- سأجهز لك ملخص التحضير والمصطلحات المقترحة لحفظها في القاموس.'
+          : lang === 'bn'
+            ? '### প্রস্তুতির জন্য সেশনের বিষয় লিখুন\n\n- যেমন: **cardiology intake**, **immigration hearing**, অথবা **video remote setup**।\n- আমি পরিভাষা ও প্রস্তুতির সংক্ষিপ্তসার তৈরি করে দেব।'
+            : '### Share a Session Topic for Prep\n\n- Enter a domain or encounter topic (for example: **cardiology intake**, **immigration hearing**, or **VRI audio setup**).\n- I will generate a concise prep brief and suggested glossary terms.';
+      emit({ type: 'delta', text: researchPrompt });
+      emit({ type: 'quick_chips', show: true });
+      return;
+    }
+
     const greetingText =
       lang === 'ar'
         ? 'مرحباً! أنا مساعد عمل VOXRELAY. كيف يمكنني مساعدتك اليوم؟ يمكنك سؤالي عن الجدولة واستيراد .ics، الخصوصية وعدم التسجيل، فحص الجهاز، أو مستويات T0–T3 — أو اختيار موضوع سريع أدناه.'
