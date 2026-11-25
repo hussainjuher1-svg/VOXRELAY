@@ -44,6 +44,7 @@ export function getLocalDb() {
       reviewer_note TEXT NOT NULL DEFAULT '',
       invite_token_hash TEXT,
       invite_expires_at TEXT,
+      org_id TEXT,
       created_at TEXT NOT NULL
     );
 
@@ -63,6 +64,7 @@ export function getLocalDb() {
       email TEXT NOT NULL UNIQUE,
       full_name TEXT NOT NULL DEFAULT '',
       role TEXT NOT NULL DEFAULT 'interpreter',
+      org_id TEXT,
       password_hash TEXT NOT NULL,
       locale TEXT NOT NULL DEFAULT 'en',
       time_zone TEXT NOT NULL DEFAULT 'UTC',
@@ -79,6 +81,13 @@ export function getLocalDb() {
       token_hash TEXT NOT NULL UNIQUE,
       user_agent TEXT NOT NULL DEFAULT '',
       expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS organizations (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      created_by TEXT NOT NULL,
       created_at TEXT NOT NULL
     );
 
@@ -211,6 +220,8 @@ export function getLocalDb() {
     "ALTER TABLE local_users ADD COLUMN time_zone TEXT NOT NULL DEFAULT 'UTC'",
     "ALTER TABLE local_users ADD COLUMN language_pairs TEXT NOT NULL DEFAULT ''",
     'ALTER TABLE local_users ADD COLUMN weekly_hours INTEGER NOT NULL DEFAULT 30',
+    'ALTER TABLE local_users ADD COLUMN org_id TEXT',
+    'ALTER TABLE access_requests ADD COLUMN org_id TEXT',
   ];
   for (const stmt of safeAlters) {
     try {
@@ -222,6 +233,27 @@ export function getLocalDb() {
 
   dbInstance = db;
   return dbInstance;
+}
+
+// Explicit server-side administrator bootstrap (never exposed to public signup).
+export function bootstrapLocalAdmin(db, { email, password, fullName = 'Platform Admin' }) {
+  if (!db) throw new Error('Local database unavailable.');
+  const normalized = String(email || '').trim().toLowerCase();
+  if (!normalized || !password || String(password).length < 12) {
+    throw new Error('Valid admin email and 12+ character password are required.');
+  }
+  const existing = db.prepare('SELECT id, role FROM local_users WHERE email = ?').get(normalized);
+  if (existing) {
+    db.prepare("UPDATE local_users SET role = 'platform_admin' WHERE id = ?").run(existing.id);
+    return { id: existing.id, email: normalized, role: 'platform_admin' };
+  }
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO local_users (id, email, full_name, role, password_hash, locale, created_at)
+     VALUES (?, ?, ?, 'platform_admin', ?, 'en', ?)`
+  ).run(id, normalized, fullName, hashPassword(password), now);
+  return { id, email: normalized, role: 'platform_admin' };
 }
 
 export function hashSecret(raw) {
@@ -257,7 +289,7 @@ export function enqueueOutboxEmail(db, { toEmail, locale = 'en', kind = 'notific
 }
 
 export function writeLocalAudit(db, { actorId = null, area, type, objectRef = null, result = 'ok' }) {
-  if (!db) return;
+  if (!db) throw new Error('Audit storage unavailable.');
   db.prepare(
     `INSERT INTO audit_events (actor_id, area, type, object_ref, result, created_at)
      VALUES (?, ?, ?, ?, ?, ?)`

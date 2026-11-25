@@ -32,9 +32,36 @@ export function LoginPage() {
   }, [loading, user, navigate, returnTo]);
 
   async function handleResendConfirmation() {
-    if (!supabase || !email) return;
+    if (!email) return;
     setBusy(true);
     try {
+      const serverRes = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ action: 'resend_confirmation', email }),
+      }).catch(() => null);
+
+      if (serverRes) {
+        const serverData = await serverRes.json().catch(() => ({}));
+        if (serverRes.ok && serverData.confirmationEmailSent) {
+          setFeedback({ kind: 'info', text: `Confirmation link re-sent to ${email}. Check your inbox and spam folder.` });
+          setNeedsConfirmation(false);
+          return;
+        }
+        if (serverRes.status === 429 || serverRes.status >= 500 || !serverRes.ok) {
+          setFeedback({ kind: 'error', text: serverData.error || 'Unable to resend confirmation email.' });
+          return;
+        }
+        setFeedback({ kind: 'info', text: serverData.message || 'Confirmation email status updated.' });
+        return;
+      }
+
+      if (!supabase) {
+        setFeedback({ kind: 'error', text: 'Confirmation email delivery is unavailable.' });
+        return;
+      }
+
       const { error } = await supabase.auth.resend({ type: 'signup', email });
       if (error) setFeedback({ kind: 'error', text: error.message });
       else {
@@ -74,7 +101,7 @@ export function LoginPage() {
         return;
       }
 
-      // Try local cookie auth endpoint first so local/sandbox workspace works immediately
+      // Try server auth endpoint first (handles local cookie auth AND server-verified Supabase invitation/public signup)
       const localRes = await fetch('/api/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -86,22 +113,38 @@ export function LoginPage() {
         ),
       }).catch(() => null);
 
-      if (localRes && localRes.status !== 503) {
+      if (localRes) {
         const localData = await localRes.json().catch(() => ({}));
         if (localRes.ok) {
-          if (mode === 'signup' && supabase) {
-            // Mirror signup to Supabase Auth when configured so future Supabase sign-ins also work
-            void supabase.auth.signUp({
-              email,
-              password,
-              options: { data: { full_name: fullName } },
+          if (localData.requiresConfirmation) {
+            setNeedsConfirmation(true);
+            setFeedback({
+              kind: localData.confirmationEmailSent === false ? 'error' : 'info',
+              text:
+                localData.confirmationEmailSent === false
+                  ? localData.confirmationWarning || 'Account created, but confirmation email could not be sent. Retry below.'
+                  : 'Account created. Check your inbox to confirm your email before signing in.',
             });
+            return;
           }
           await refreshSession();
           navigate(returnTo, { replace: true });
           return;
         }
-        if (localRes.status !== 401 || !supabase) {
+
+        // Fail closed on 429 and 5xx for signup; only permit client signin fallback when server explicitly allows it
+        if (localRes.status === 429 || localRes.status >= 500) {
+          if (!(mode === 'signin' && localRes.status === 503 && localData.allowClientFallback === true)) {
+            setFeedback({ kind: 'error', text: localData.error || 'Authentication service is unavailable.' });
+            return;
+          }
+        } else if (mode === 'signup' && inviteToken) {
+          setFeedback({ kind: 'error', text: localData.error || 'Unable to verify invitation.' });
+          return;
+        } else if (mode === 'signup') {
+          setFeedback({ kind: 'error', text: localData.error || 'Authentication failed.' });
+          return;
+        } else if (localRes.status !== 401 || !supabase) {
           setFeedback({ kind: 'error', text: localData.error || 'Authentication failed.' });
           return;
         }
@@ -113,6 +156,10 @@ export function LoginPage() {
       }
 
       if (mode === 'signup') {
+        if (inviteToken) {
+          setFeedback({ kind: 'error', text: 'Invitation verification requires server connectivity.' });
+          return;
+        }
         const { data, error } = await supabase.auth.signUp({
           email,
           password,

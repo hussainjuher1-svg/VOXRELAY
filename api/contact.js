@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { HttpError } from './_lib/authz.js';
-import { enforceRateLimit, hashKey, readJsonBody, sendJson } from './_lib/core.js';
+import { enforceLocalRateLimit, enforceRateLimit, readJsonBody, sendJson } from './_lib/core.js';
 import { buildAccessConfirmationEmail } from './_lib/email-templates.js';
 import { enqueueOutboxEmail, getLocalDb, writeLocalAudit } from './_lib/local-db.js';
 import { getServiceClient } from './_lib/supabase.js';
@@ -47,7 +47,8 @@ export default async function handler(req, res) {
       return sendJson(res, 201, {
         ok: true,
         storage: 'supabase',
-        message: 'Request recorded. Confirmation prepared.',
+        emailDispatched: false,
+        message: 'Request recorded in the review queue.',
       });
     }
 
@@ -56,16 +57,8 @@ export default async function handler(req, res) {
       return sendJson(res, 503, { error: 'Contact service is not configured yet.' });
     }
 
-    // Local SQLite rate limit (6 per hour per IP)
-    const keyHash = hashKey(`contact:${ip}`);
-    const since = new Date(Date.now() - 3600_000).toISOString();
-    const row = db
-      .prepare('SELECT COUNT(*) AS count FROM rate_events WHERE key_hash = ? AND created_at >= ?')
-      .get(keyHash, since);
-    if ((row?.count || 0) >= 6) {
-      return sendJson(res, 429, { error: 'Too many requests. Please wait before trying again.' });
-    }
-    db.prepare('INSERT INTO rate_events (key_hash, created_at) VALUES (?, ?)').run(keyHash, new Date().toISOString());
+    // Atomic local SQLite rate limit (6 per hour per IP)
+    enforceLocalRateLimit(db, `contact:${ip}`, { maxRequests: 6, windowMs: 3600_000 });
 
     const id = crypto.randomUUID();
     const now = new Date().toISOString();

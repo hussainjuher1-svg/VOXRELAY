@@ -228,12 +228,17 @@ CREATE TABLE IF NOT EXISTS voxrelay.access_requests (
   country TEXT NOT NULL DEFAULT '',
   languages TEXT NOT NULL DEFAULT '',
   consent BOOLEAN NOT NULL DEFAULT false,
-  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'redeemed')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'reserved', 'rejected', 'redeemed')),
   reviewer_note TEXT NOT NULL DEFAULT '',
   reviewed_by UUID,
   reviewed_at TIMESTAMPTZ,
   invite_token_hash TEXT,
   invite_expires_at TIMESTAMPTZ,
+  org_id UUID REFERENCES voxrelay.organizations(id) ON DELETE SET NULL,
+  approved_role TEXT NOT NULL DEFAULT 'interpreter' CHECK (approved_role IN ('interpreter', 'admin')),
+  claim_token UUID,
+  claim_expires_at TIMESTAMPTZ,
+  provisioned_user_id UUID,
   message TEXT NOT NULL DEFAULT '',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

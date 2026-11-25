@@ -37,12 +37,18 @@ export function requireCapability(ctx, capability) {
   }
 }
 
-export function isAdminActor(actorOrCtx) {
+export function isPlatformAdminActor(actorOrCtx) {
   if (!actorOrCtx) return false;
-  const appRole = actorOrCtx.appRole || actorOrCtx.user?.app_metadata?.role || actorOrCtx.user?.role;
-  if (appRole === 'platform_admin' || appRole === 'org_admin') return true;
-  const orgRole = actorOrCtx.membership?.role;
-  return Boolean(orgRole && ['owner', 'admin'].includes(orgRole));
+  if (actorOrCtx.mode === 'local') {
+    return actorOrCtx.user?.role === 'platform_admin';
+  }
+  const appRole = actorOrCtx.appRole || actorOrCtx.user?.app_metadata?.role;
+  return appRole === 'platform_admin';
+}
+
+export function isOrgAdminActor(actorOrCtx) {
+  if (!actorOrCtx?.membership) return false;
+  return ['owner', 'admin'].includes(actorOrCtx.membership.role) && actorOrCtx.membership.status === 'active';
 }
 
 export function serializeAssignment(row, viewerUserId) {
