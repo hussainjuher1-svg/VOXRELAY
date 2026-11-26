@@ -1,6 +1,7 @@
 import { Component, lazy, Suspense, useState, type ReactNode } from 'react';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { PublicShell } from './components/PublicShell';
+import { RequireWorkspaceSession } from './components/RequireWorkspaceSession';
 import { CommandPalette } from './components/ui/CommandPalette';
 import { AuthProvider } from './context/AuthContext';
 import { LocaleProvider } from './context/LocaleContext';
@@ -127,25 +128,27 @@ export function AppRoutes() {
 
           <Route path="/login" element={<LoginPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
-          <Route path="/onboarding" element={<OnboardingPage />} />
+          <Route element={<RequireWorkspaceSession />}>
+            <Route path="/onboarding" element={<OnboardingPage />} />
 
-          <Route path="/app" element={<OverviewPage />} />
-          <Route path="/app/ops" element={<OpsDashboardPage />} />
-          <Route path="/app/assignments" element={<AssignmentsPage />} />
-          <Route path="/app/assignments/:id" element={<AssignmentsPage />} />
-          <Route path="/app/assignments/:id/close" element={<SessionFocusPage />} />
-          <Route path="/app/session/:id" element={<SessionFocusPage />} />
-          <Route path="/app/availability" element={<AvailabilityPage />} />
-          <Route path="/app/terminology" element={<TerminologyPage />} />
-          <Route path="/app/device-check" element={<DeviceCheckPage />} />
-          <Route path="/app/billing" element={<BillingPage />} />
-          <Route path="/app/assistant" element={<RecordsAssistantPage />} />
-          <Route path="/app/support" element={<SupportPage />} />
-          <Route path="/app/admin" element={<AdminReviewPage />} />
-          <Route path="/app/reports" element={<ReportsPage />} />
-          <Route path="/app/quality" element={<QualityPage />} />
-          <Route path="/app/organization" element={<OrganizationPage />} />
-          <Route path="/app/settings" element={<SettingsPage />} />
+            <Route path="/app" element={<OverviewPage />} />
+            <Route path="/app/ops" element={<OpsDashboardPage />} />
+            <Route path="/app/assignments" element={<AssignmentsPage />} />
+            <Route path="/app/assignments/:id" element={<AssignmentsPage />} />
+            <Route path="/app/assignments/:id/close" element={<SessionFocusPage />} />
+            <Route path="/app/session/:id" element={<SessionFocusPage />} />
+            <Route path="/app/availability" element={<AvailabilityPage />} />
+            <Route path="/app/terminology" element={<TerminologyPage />} />
+            <Route path="/app/device-check" element={<DeviceCheckPage />} />
+            <Route path="/app/billing" element={<BillingPage />} />
+            <Route path="/app/assistant" element={<RecordsAssistantPage />} />
+            <Route path="/app/support" element={<SupportPage />} />
+            <Route path="/app/admin" element={<AdminReviewPage />} />
+            <Route path="/app/reports" element={<ReportsPage />} />
+            <Route path="/app/quality" element={<QualityPage />} />
+            <Route path="/app/organization" element={<OrganizationPage />} />
+            <Route path="/app/settings" element={<SettingsPage />} />
+          </Route>
           <Route path="*" element={wrapPublic(<NotFoundPage />)} />
         </Routes>
       </Suspense>
