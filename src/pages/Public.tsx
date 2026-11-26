@@ -913,6 +913,7 @@ export function PrivacyPage() {
             <a href="#ics-hygiene">{isAr ? '02 · تقليص بيانات المواعيد' : '02 · Timing-only scheduling'}</a>
             <a href="#pii-redaction">{isAr ? '03 · تنقيح المساعد المعرفي' : '03 · Assistant PII redaction'}</a>
             <a href="#export-delete">{isAr ? '04 · التصدير والحذف' : '04 · Export & erasure'}</a>
+            <a href="#cookies-sessions">{isAr ? '05 · ملفات تعريف الارتباط والجلسات' : '05 · Cookies & sessions'}</a>
           </aside>
 
           <article className="essay-body">
@@ -954,6 +955,30 @@ export function PrivacyPage() {
                 {isAr
                   ? 'يمكنك تصدير مساردك وجداولك وإغلاق حسابك أو إبطال جلساتك النشطة من صفحة الإعدادات.'
                   : 'Operators can export glossaries and assignment records, inspect active device sessions, sign out everywhere, or remove records cleanly from workspace settings.'}
+              </p>
+            </section>
+
+            <section id="cookies-sessions" className="essay-section">
+              <h2>{isAr ? '05 · ملفات تعريف الارتباط والجلسات' : '05 · Cookies & sessions'}</h2>
+              <p className="editorial-prose">
+                {isAr
+                  ? 'يستخدم VOXRELAY ملفات تعريف ارتباط أساسية للمصادقة فقط عند الحاجة. لا نستخدم ملفات تعريف ارتباط للتحليلات أو الإعلان أو التسويق.'
+                  : 'VOXRELAY uses only the cookies needed for authentication and session security. We do not use analytics, advertising, or marketing cookies.'}
+              </p>
+              <p className="editorial-prose">
+                {isAr
+                  ? 'ملف جلسة محلي (voxrelay_session) هو ملف HttpOnly يملكه الخادم. عند تفعيل Supabase، قد تُستخدم ملفات تعريف ارتباط مصادقة يديرها المتصفح بواسطة @supabase/ssr؛ وهي ليست HttpOnly لأن عميل المتصفح يحتاج إليها، لكنها تستخدم SameSite=Lax وSecure في الإنتاج ومسار /.'
+                  : 'The local workspace session cookie (voxrelay_session) is server-owned and HttpOnly. When Supabase Auth is configured, Supabase browser-managed auth cookies may be used by @supabase/ssr; these are not HttpOnly because the browser client must read/update them, but they are configured with SameSite=Lax, Secure in production, and Path=/.'}
+              </p>
+              <p className="editorial-prose">
+                {isAr
+                  ? 'خيار "تذكرني على هذا الجهاز" في تسجيل الدخول يتحكم في استمرار الجلسة: بدون تحديده تكون ملفات المصادقة جلسة متصفح وتنتهي عند إغلاق المتصفح (مع حد خادم أقصى يوم واحد للجلسة المحلية). عند تحديده تستمر الجلسة حتى 30 يوماً كحد أقصى للمتصفح، مع الالتزام بسياسات انتهاء صلاحية Supabase refresh token.'
+                  : 'The "Remember me on this device" sign-in option controls persistence: unchecked uses browser-session auth cookies that end when the browser session closes (local server session capped at 1 day). Checked keeps auth persistence for up to 30 days in the browser, while Supabase refresh-token expiry and project security policies remain authoritative.'}
+              </p>
+              <p className="editorial-prose">
+                {isAr
+                  ? 'لا تُخزن كلمات المرور أو بيانات المرضى أو الهوية السريرية في ملفات تعريف الارتباط. يمكنك إدارة التفضيلات أو مسح ملفات تعريف الارتباط الاختيارية من الإعدادات > Cookie management، كما يمكنك تسجيل الخروج أو إبطال الجلسات لمسح جلسات المصادقة.'
+                  : 'Passwords, patient data, clinical content, and unnecessary identifiers are never stored in cookies. You can manage cookie preferences and clear optional cookies from Settings &gt; Cookie management, and sign out or revoke sessions to clear auth sessions.'}
               </p>
             </section>
           </article>
