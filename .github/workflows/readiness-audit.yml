@@ -43,11 +43,23 @@ jobs:
         run: |
           set -euo pipefail
           cd .cache/readiness
-          supabase start > ../../evidence/stack-start.log 2>&1
+          if ! supabase start > ../../evidence/stack-start.log 2>&1; then
+            node ../../scripts/readiness/report-failure.mjs ../../evidence/stack-start.log
+            exit 1
+          fi
           supabase status -o json > status.json
           cd ../..
-          node scripts/readiness/configure.mjs
-          node scripts/readiness/database.mjs
+          if ! node scripts/readiness/configure.mjs > evidence/configure.log 2>&1; then
+            node scripts/readiness/report-failure.mjs evidence/configure.log
+            exit 1
+          fi
+          # configure prints GitHub mask commands; replay them without recording key values as diagnostics.
+          cat evidence/configure.log
+          rm evidence/configure.log
+          if ! node scripts/readiness/database.mjs > evidence/database.log 2>&1; then
+            node scripts/readiness/report-failure.mjs evidence/database.log
+            exit 1
+          fi
       - id: http
         name: Phases 1–2 — real Auth and PostgREST HTTP acceptance
         run: node scripts/readiness/http.mjs
