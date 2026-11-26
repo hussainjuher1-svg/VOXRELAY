@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import pg from 'pg';
-const db = new pg.Client({connectionString:process.env.READINESS_DB_URL});
+const connectionString = process.env.READINESS_DB_URL || JSON.parse(fs.readFileSync('.cache/readiness/status.json', 'utf8')).DB_URL;
+if (!connectionString || !['127.0.0.1','localhost'].includes(new URL(connectionString).hostname)) throw new Error('Verified loopback DB URL required');
+const db = new pg.Client({connectionString});
 await db.connect();
 try {
   const version=(await db.query('show server_version')).rows[0].server_version;
