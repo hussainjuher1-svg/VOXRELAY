@@ -52,7 +52,7 @@ export function PublicShell({
         {isAr ? 'تخطي إلى المحتوى الرئيسي' : 'Skip to main content'}
       </a>
 
-      <header className="pub-header">
+      {pathname !== '/' && <header className="pub-header">
         <div className="pub-header-inner">
           <Link to="/" className="brand-wordmark-link" aria-label="VOXRELAY">
             <BrandWordmark size={28} />
@@ -123,7 +123,7 @@ export function PublicShell({
             </nav>
           </div>
         )}
-      </header>
+      </header>}
 
       <main id="main-content" className="pub-main">
         {children}
