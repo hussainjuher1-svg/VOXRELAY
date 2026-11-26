@@ -33,7 +33,7 @@ it('preserves approved copy and accessible stable heading', () => {
 
 it('links to existing product, organization, sign-in and signup flows', () => {
   mount();
-  expect(screen.getByRole('link', { name: 'Product' })).toHaveAttribute('href', '/how-it-works');
+  expect(screen.getByRole('link', { name: 'How it works' })).toHaveAttribute('href', '/how-it-works');
   expect(screen.getByRole('link', { name: 'For organizations' })).toHaveAttribute('href', '/organizations');
   expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/login');
   expect(screen.getByRole('link', { name: 'Create your workspace' })).toHaveAttribute('href', '/login?mode=signup');

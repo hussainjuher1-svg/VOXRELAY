@@ -103,3 +103,14 @@ describe('Public homepage layout, accessibility, Radix primitives, and routing',
     expect(screen.getByRole('heading', { level: 1, name: /not in the index/i })).toBeInTheDocument();
   });
 });
+
+it('provides a quieter footer row with only real destinations', () => {
+  renderAt('/');
+  const footer = screen.getByRole('contentinfo');
+  expect(footer).toHaveTextContent('©');
+  expect(screen.getByRole('navigation', { name: 'Main navigation' })).toHaveTextContent('How it works');
+  expect(screen.queryByRole('link', { name: 'Product' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Privacy charter' })).toHaveAttribute('href', '/privacy');
+  expect(screen.getByRole('link', { name: 'Cookies & sessions' })).toHaveAttribute('href', '/privacy#cookies-sessions');
+  expect(screen.getByRole('link', { name: 'Contact support' })).toHaveAttribute('href', '/contact');
+});

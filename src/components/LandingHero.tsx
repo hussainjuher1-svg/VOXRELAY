@@ -48,7 +48,7 @@ export function LandingHero() {
           <span className={styles.logoWord}>Vox<i>Relay</i></span>
         </Link>
         <div className={styles.navLinks}>
-          <Link to="/how-it-works" className={styles.ulink}>Product</Link>
+          <Link to="/how-it-works" className={styles.ulink}>How it works</Link>
           <Link to="/organizations" className={styles.ulink}>For organizations</Link>
           <Link to="/login" className={`${styles.ulink} ${styles.signin}`}>Sign in</Link>
         </div>

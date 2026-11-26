@@ -4,6 +4,7 @@ import { useAuth, useLocale } from '../context/hooks';
 import { AssistantDock } from './AssistantSheet';
 import { BrandWordmark } from './BrandLogo';
 import { CommandPalette } from './ui/CommandPalette';
+import footerStyles from './PublicFooter.module.css';
 
 export function PublicShell({
   children,
@@ -143,6 +144,14 @@ export function PublicShell({
             <Link to="/status">{isAr ? 'حالة النظام' : 'Status'}</Link>
             <Link to="/faq">{isAr ? 'الأسئلة الشائعة' : 'FAQ'}</Link>
             <Link to="/contact">{isAr ? 'طلب الوصول' : 'Contact'}</Link>
+          </nav>
+        </div>
+        <div className={footerStyles.meta}>
+          <span>© {new Date().getUTCFullYear()} VoxRelay</span>
+          <nav aria-label={isAr ? 'الخصوصية والدعم' : 'Privacy and support'}>
+            <Link to="/privacy">{isAr ? 'ميثاق الخصوصية' : 'Privacy charter'}</Link>
+            <a href="/privacy#cookies-sessions">{isAr ? 'ملفات تعريف الارتباط والجلسات' : 'Cookies & sessions'}</a>
+            <Link to="/contact">{isAr ? 'تواصل معنا' : 'Contact support'}</Link>
           </nav>
         </div>
       </footer>
