@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { LandingHero } from '../components/LandingHero';
+import privacyTypography from './PrivacyTypography.module.css';
 import { Mic, MicOff, X } from 'lucide-react';
 import { useAuth, useLocale } from '../context/hooks';
 import { KNOWLEDGE_BASE } from '../../api/_lib/kb.js';
@@ -885,7 +886,7 @@ export function PrivacyPage() {
   const isAr = locale === 'ar';
 
   return (
-    <div className="pub-page">
+    <div className={`pub-page ${privacyTypography.page}`}>
       <section className="page-header-band">
         <div className="pub-container hero-split-enterprise">
           <div>
