@@ -12,8 +12,10 @@ try{for(const width of [390,1440]){
  page.on('pageerror',e=>errors.push(e.message));
  page.on('response',r=>{if(validFlow&&[401,403,500].includes(r.status()))errors.push(`HTTP ${r.status()} ${new URL(r.url()).pathname}`);});
  page.on('console',m=>{if(validFlow&&m.type()==='error')errors.push(m.text());});
+ console.log(`Viewport ${width}: checking anonymous redirect`);
  await page.goto(origin+'/app/assignments');await page.waitForURL(/\/login/);
  validFlow=true;
+ console.log(`Viewport ${width}: real app signup`);
  await page.goto(origin+'/login?mode=signup');
  const email=`browser-${randomUUID()}@example.com`,password=`Audit-${randomUUID()}-aA9!`;
  await page.getByLabel('Full name',{exact:true}).fill('Readiness Interpreter');await page.getByLabel('Work email',{exact:true}).fill(email);await page.getByLabel('Password',{exact:true}).fill(password);
