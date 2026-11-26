@@ -101,8 +101,8 @@ export function LoginPage() {
         return;
       }
 
-      // Try server auth endpoint first (handles local cookie auth AND server-verified Supabase invitation/public signup)
-      const localRes = await fetch('/api/auth', { credentials: 'include',
+      // Configured Supabase sign-in uses genuine browser Auth; signup stays server-verified.
+      const localRes = mode === 'signin' && supabase ? null : await fetch('/api/auth', { credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(

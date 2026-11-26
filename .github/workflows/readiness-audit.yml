@@ -36,7 +36,10 @@ jobs:
           p = Path('supabase/config.toml')
           s = p.read_text().replace('major_version = 15', 'major_version = 17')
           s = s.replace('schemas = ["public", "graphql_public"]', 'schemas = ["public", "voxrelay"]')
-          s = s.replace('enable_confirmations = true', 'enable_confirmations = false')
+          s = s.replace('enable_confirmations = false', 'enable_confirmations = true')
+          s = s.replace('http://127.0.0.1:3000', 'http://localhost:5173').replace('https://127.0.0.1:3000', 'http://localhost:5173')
+          # Local inbox only: allow the four synthetic confirmation messages per run.
+          s = s.replace('email_sent = 2', 'email_sent = 100')
           p.write_text(s)
           assert 'major_version = 17' in s
           PY

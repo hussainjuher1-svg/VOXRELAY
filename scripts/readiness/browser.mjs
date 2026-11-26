@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {randomUUID} from 'node:crypto';
+import {confirmationLink} from './mail.mjs';
 import {chromium} from '../../.cache/readiness/browser/node_modules/playwright/index.mjs';
 const origin='http://localhost:5173';
 let ready=false;
@@ -19,11 +20,13 @@ try{for(const width of [390,1440]){
  await page.goto(origin+'/login?mode=signup');
  const email=`browser-${randomUUID()}@example.com`,password=`Audit-${randomUUID()}-aA9!`;
  await page.getByLabel('Full name',{exact:true}).fill('Readiness Interpreter');await page.getByLabel('Work email',{exact:true}).fill(email);await page.getByLabel('Password',{exact:true}).fill(password);
- await page.locator('form').getByRole('button',{name:'Create account',exact:true}).click();await page.waitForURL(/\/app(?:\/|$)/,{timeout:30000});
+ await page.locator('form').getByRole('button',{name:'Create account',exact:true}).click();
+ await page.getByRole('status').filter({hasText:/check your inbox/i}).waitFor({timeout:15000});
+ const link=await confirmationLink(email,origin+'/login');await page.goto(link);await page.waitForURL(/\/app(?:\/|$)/,{timeout:30000});
  await page.reload();await page.waitForURL(/\/app(?:\/|$)/);
  // Live browser CRUD uses genuine GoTrue credentials, never fabricated tokens.
  const crud=await page.evaluate(async({base,key,email,password})=>{
-  const tokenResponse=await fetch(base+'/auth/v1/token?grant_type=password',{method:'POST',headers:{apikey:key,'Content-Type':'application/json'},body:JSON.stringify({email,password})});if(!tokenResponse.ok)throw Error('Browser token issuance failed');const session=await tokenResponse.json();
+  const tokenResponse=await fetch(base+'/auth/v1/token?grant_type=password',{method:'POST',headers:{apikey:key,'Content-Type':'application/json'},body:JSON.stringify({email,password})});if(!tokenResponse.ok)throw Error(`Browser token issuance HTTP ${tokenResponse.status}`);const session=await tokenResponse.json();
   const headers={apikey:key,Authorization:`Bearer ${session.access_token}`,'Content-Type':'application/json',Prefer:'return=representation'};
   const path=base+'/rest/v1/readiness_probe';const statuses=[];
   for(const [method,url,body] of [['POST',path,{user_id:session.user.id,display_name:'Browser'}],['GET',path+'?user_id=eq.'+session.user.id],['PATCH',path+'?user_id=eq.'+session.user.id,{display_name:'Changed'}],['DELETE',path+'?user_id=eq.'+session.user.id]]){

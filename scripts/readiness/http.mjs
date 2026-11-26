@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {randomUUID} from 'node:crypto';
+import {confirmEmail} from './mail.mjs';
 const base=process.env.SUPABASE_URL,key=process.env.SUPABASE_ANON_KEY;
 const results=[];
 async function request(path,{token,body,method='GET',schema=false,expected=[200]}={}){
@@ -13,9 +14,13 @@ await request('/auth/v1/health');
 const password=`Audit-${randomUUID()}-aA9!`;
 const email=`audit-${randomUUID()}@example.com`;
 await request('/auth/v1/signup',{method:'POST',body:{email,password},expected:[200,201]});
+results.push({method:'GET',path:'/auth/v1/verify (email link)',status:await confirmEmail(email)});
 const a=await request('/auth/v1/token?grant_type=password',{method:'POST',body:{email,password}});
 assert.ok(a.access_token&&a.refresh_token);
-const b=await request('/auth/v1/signup',{method:'POST',body:{email:`other-${randomUUID()}@example.com`,password},expected:[200,201]});
+const otherEmail=`other-${randomUUID()}@example.com`;
+await request('/auth/v1/signup',{method:'POST',body:{email:otherEmail,password},expected:[200,201]});
+results.push({method:'GET',path:'/auth/v1/verify (email link)',status:await confirmEmail(otherEmail)});
+const b=await request('/auth/v1/token?grant_type=password',{method:'POST',body:{email:otherEmail,password}});
 assert.ok(b.access_token);
 const rotated=await request('/auth/v1/token?grant_type=refresh_token',{method:'POST',body:{refresh_token:a.refresh_token}});
 assert.notEqual(rotated.refresh_token,a.refresh_token);

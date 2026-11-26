@@ -5,5 +5,5 @@ if ! .cache/readiness/browser/node_modules/.bin/playwright install --with-deps c
   tail -30 evidence/browser-install.log
   exit 1
 fi
-npm run dev > evidence/frontend.log 2>&1 &
+VERCEL=1 npm run dev > evidence/frontend.log 2>&1 &
 node scripts/readiness/browser.mjs
