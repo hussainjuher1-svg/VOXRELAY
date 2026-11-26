@@ -87,6 +87,7 @@ describe('Public homepage layout, accessibility, Radix primitives, and routing',
   it('routes /privacy, /faq, /design, and unknown routes cleanly and populates KB rows on /faq', async () => {
     renderAt('/privacy');
     expect(screen.getByRole('heading', { level: 1, name: /what we refuse to store/i })).toBeInTheDocument();
+    expect(document.getElementById('cookies-sessions')).toBeInTheDocument();
     cleanup();
 
     renderAt('/faq');

@@ -1,0 +1,46 @@
+{
+  "scope": "Local-only Phase 03; no production operations",
+  "starting_head": "4de081c6b018ab67767e16af75f944c6e3ac3b01",
+  "baseline_files": 144,
+  "deleted_preexisting_files": [],
+  "changed_preexisting_files": [
+    "README.md",
+    "api/_lib/auth-session.js",
+    "api/_lib/supabase-sessions.js",
+    "api/_lib/supabase.js",
+    "api/admin.js",
+    "api/assignments.js",
+    "api/auth.js",
+    "api/ops.js",
+    "api/support.js",
+    "api/terms.js",
+    "db/migrations/001_access_requests_and_terms_notes.sql",
+    "db/migrations/002_atomic_invites_and_rate_limits.sql",
+    "src/components/AppShell.tsx",
+    "src/components/PublicShell.tsx",
+    "src/context/AuthContext.tsx",
+    "src/pages/AppWorkspace.tsx",
+    "tests/api-security.test.js",
+    "tests/auth-restoration.test.tsx",
+    "tests/landing-a11y.test.tsx",
+    "tests/session-revocation.test.js"
+  ],
+  "working_tree_validation": {
+    "lint": "PASS",
+    "test_files": 33,
+    "tests": 255,
+    "build": "PASS",
+    "whitespace": "PASS"
+  },
+  "index_export_validation": {
+    "lint": "PASS",
+    "test_files": 25,
+    "tests": 164,
+    "build": "PASS",
+    "contains_production_env": false
+  },
+  "database_engine": "PGlite (not native PostgreSQL17)",
+  "auth_http_provider": "Loopback protocol simulator with real Supabase JS/SSR (not GoTrue)",
+  "real_browsers_tested": false,
+  "production_sessions_used": false
+}

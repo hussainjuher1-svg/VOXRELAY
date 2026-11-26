@@ -38,8 +38,11 @@ Copy `.env.example` to `.env` (`.env` and `.env.*` are ignored by Git):
 
 ## Database setup & lockdown (Supabase Production)
 
-1. Run `db/schema.sql` in the Supabase SQL Editor to create the `voxrelay` schema and tables.
-2. Run `db/lockdown.sql` once in the Supabase SQL Editor to enable RLS and revoke `anon`/`authenticated` table privileges.
+The application uses a dedicated, server-only `voxrelay` schema. See [the schema architecture decision](docs/audits/phase-03-schema-architecture-decision.md) for trust boundaries and ordering.
+
+For an **empty disposable local database**, the complete bootstrap is roles → `db/schema.sql` → migration `001` → migration `002` → `db/lockdown.sql`. Core schema + lockdown alone does not create the required RPCs. Direct SQL tests do not validate PostgREST's exposed-schema allow-list.
+
+**Do not execute this bootstrap against production.** Existing installations require a reviewed transactional upgrade, schema/configuration preflight, recovery plan and explicit approval. No production migration, exposed-schema change, permission change or deployment is authorized by these instructions.
 
 ## No fake data
 
