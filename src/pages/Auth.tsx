@@ -5,10 +5,10 @@ import { Button } from '../components/ui/Button';
 import { Field, Input } from '../components/ui/Field';
 import { useAuth } from '../context/hooks';
 import { sanitizeReturnTo } from '../lib/returnTo';
-import { supabase } from '../lib/supabaseClient';
+import { setRememberMePreference, supabase } from '../lib/supabaseClient';
 
 export function LoginPage() {
-  const { user, loading, refreshSession } = useAuth();
+  const { user, loading, refreshSession, completeSignIn } = useAuth();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const returnTo = sanitizeReturnTo(searchParams.get('returnTo'));
@@ -21,6 +21,7 @@ export function LoginPage() {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const [feedback, setFeedback] = useState<{ kind: 'error' | 'info'; text: string } | null>(null);
   const [needsConfirmation, setNeedsConfirmation] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -35,10 +36,9 @@ export function LoginPage() {
     if (!email) return;
     setBusy(true);
     try {
-      const serverRes = await fetch('/api/auth', {
+      const serverRes = await fetch('/api/auth', { credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
         body: JSON.stringify({ action: 'resend_confirmation', email }),
       }).catch(() => null);
 
@@ -102,20 +102,20 @@ export function LoginPage() {
       }
 
       // Try server auth endpoint first (handles local cookie auth AND server-verified Supabase invitation/public signup)
-      const localRes = await fetch('/api/auth', {
+      const localRes = await fetch('/api/auth', { credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
         body: JSON.stringify(
           mode === 'signup'
-            ? { action: 'signup', email, password, fullName, inviteToken: inviteToken || undefined }
-            : { action: 'signin', email, password }
+            ? { action: 'signup', email, password, fullName, inviteToken: inviteToken || undefined, rememberMe }
+            : { action: 'signin', email, password, rememberMe }
         ),
       }).catch(() => null);
 
       if (localRes) {
         const localData = await localRes.json().catch(() => ({}));
         if (localRes.ok) {
+          setRememberMePreference(rememberMe);
           if (localData.requiresConfirmation) {
             setNeedsConfirmation(true);
             setFeedback({
@@ -127,7 +127,11 @@ export function LoginPage() {
             });
             return;
           }
-          await refreshSession();
+          if (localData.user?.id) {
+            completeSignIn(localData.user);
+          } else {
+            await refreshSession();
+          }
           navigate(returnTo, { replace: true });
           return;
         }
@@ -168,6 +172,8 @@ export function LoginPage() {
         if (error) {
           setFeedback({ kind: 'error', text: error.message });
         } else if (data.session) {
+          setRememberMePreference(rememberMe);
+          completeSignIn(data.session.user, data.session);
           navigate(returnTo, { replace: true });
         } else {
           setNeedsConfirmation(true);
@@ -179,12 +185,17 @@ export function LoginPage() {
         return;
       }
 
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) {
         if (/email not confirmed/i.test(error.message)) {
           setNeedsConfirmation(true);
         }
         setFeedback({ kind: 'error', text: error.message });
+      } else {
+        setRememberMePreference(rememberMe);
+        if (data?.session) completeSignIn(data.session.user, data.session);
+        else await refreshSession();
+        navigate(returnTo, { replace: true });
       }
     } finally {
       setBusy(false);
@@ -206,7 +217,7 @@ export function LoginPage() {
   return (
     <PublicShell>
       <section className="subpage section-wrap">
-        <span className="eyebrow">AUTHENTICATION</span>
+        <span className="eyebrow">INTERPRETER WORKSPACE · SECURE ACCESS</span>
         <h1>
           {mode === 'signin'
             ? 'Sign in to VOXRELAY'
@@ -217,7 +228,7 @@ export function LoginPage() {
         <p className="subpage-lead">
           {inviteToken
             ? 'Your one-time invite token is attached. Choose a password (12+ characters) to activate your account.'
-            : 'Sign in with your email and password, or create a workspace account. Need an invite? '}
+            : 'For interpreters: sign in to manage assignments, prepare terminology, and track your work. Need an invite? '}
           {!inviteToken && (
             <Link className="inline-link" to="/contact">
               Request access
@@ -225,6 +236,8 @@ export function LoginPage() {
           )}
           .
         </p>
+
+        <p className="auth-client-note">Booking an interpreter for your organization? <Link className="inline-link" to="/organizations">Client & organization access</Link></p>
 
         <div className="auth-tabs" role="tablist" aria-label="Authentication mode">
           <button type="button" className={mode === 'signin' ? 'is-active' : ''} onClick={() => setMode('signin')}>
@@ -292,6 +305,16 @@ export function LoginPage() {
                 </div>
               )}
             </div>
+          )}
+          {mode === 'signin' && (
+            <label className="auth-remember">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+              />
+              <span>Remember me on this device</span>
+            </label>
           )}
           <Button type="submit" loading={busy}>
             {busy

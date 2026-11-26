@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { resolveActor } from './_lib/auth-session.js';
+import { enforceSameOrigin, resolveActor } from './_lib/auth-session.js';
 import { HttpError, isPlatformAdminActor } from './_lib/authz.js';
 import { readJsonBody, sendJson } from './_lib/core.js';
 import { buildInviteEmail } from './_lib/email-templates.js';
@@ -14,8 +14,9 @@ const reviewSchema = z.object({
 });
 
 export default async function handler(req, res) {
+  if (!['GET','HEAD','OPTIONS'].includes(String(req.method||'GET').toUpperCase())) enforceSameOrigin(req);
   try {
-    const actor = await resolveActor(req);
+    const actor = await resolveActor(req, res);
     const db = actor?.mode === 'local' ? actor.db : getLocalDb();
 
     if (db) {
@@ -153,7 +154,7 @@ export default async function handler(req, res) {
       return sendJson(res, 405, { error: 'Method not allowed' });
     }
 
-    const ctx = await authenticateRequest(req);
+    const ctx = await authenticateRequest(req, res, actor);
     if (!isPlatformAdminActor(ctx)) {
       return sendJson(res, 403, { error: 'Platform administrator permission required.' });
     }

@@ -1,7 +1,8 @@
 import crypto from 'node:crypto';
+import { currentSupabaseSession, expireSupabaseCookies, revokeSupabaseSessions } from './_lib/supabase-sessions.js';
 import { createClient } from '@supabase/supabase-js';
 import { z } from 'zod';
-import { clearSessionCookie, createLocalSession, resolveActor, setSessionCookie } from './_lib/auth-session.js';
+import { clearSessionCookie, createLocalSession, enforceSameOrigin, getRememberMeFromRequest, parseCookies, resolveActor, setSessionCookie } from './_lib/auth-session.js';
 import { HttpError } from './_lib/authz.js';
 import { enforceLocalRateLimit, enforceRateLimit, hashKey, readJsonBody, sendJson } from './_lib/core.js';
 import { enqueueOutboxEmail, getLocalDb, hashPassword, hashSecret, verifyPassword, writeLocalAudit } from './_lib/local-db.js';
@@ -26,11 +27,13 @@ const authActionSchema = z.discriminatedUnion('action', [
     fullName: z.string().trim().max(120).optional().default(''),
     role: z.enum(['interpreter', 'org_admin']).optional().default('interpreter'),
     inviteToken: z.string().max(160).optional(),
+    rememberMe: z.boolean().optional().default(false),
   }),
   z.object({
     action: z.literal('signin'),
     email: z.string().trim().email().max(160),
     password: z.string().min(1).max(128),
+    rememberMe: z.boolean().optional().default(false),
   }),
   z.object({
     action: z.literal('resend_confirmation'),
@@ -431,9 +434,12 @@ async function handleSupabaseSignup(data, req, res) {
 }
 
 export default async function handler(req, res) {
+  try {
+  if (req.method !== 'GET') enforceSameOrigin(req);
   if (req.method === 'GET') {
-    const actor = await resolveActor(req);
-    if (!actor) return sendJson(res, 200, { authenticated: false, user: null, sessions: [] });
+    const actor = await resolveActor(req, res);
+    const rememberMe = getRememberMeFromRequest(req);
+    if (!actor) return sendJson(res, 200, { authenticated: false, user: null, sessions: [], rememberMe });
 
     let sessions = [];
     if (actor.mode === 'local' && actor.db) {
@@ -442,12 +448,17 @@ export default async function handler(req, res) {
         .all(actor.user.id)
         .map((s) => ({ ...s, isCurrent: s.id === actor.sessionId }));
     }
+    if (actor.mode === 'supabase') {
+      const current = await currentSupabaseSession(req, res, actor);
+      if (current) sessions = [{ id: current.id, user_agent: current.user_agent, expires_at: current.expires_at, created_at: current.created_at, isCurrent: true }];
+    }
     return sendJson(res, 200, {
       authenticated: true,
       mode: actor.mode,
       user: actor.user,
       membership: actor.membership || null,
       sessions,
+      rememberMe,
     });
   }
 
@@ -465,6 +476,54 @@ export default async function handler(req, res) {
     const data = parsed.data;
     const db = getLocalDb();
 
+    const ua = req.headers['user-agent'] || 'Browser';
+    const ip = getClientIp(req);
+
+    if (data.action === 'signout') {
+      const actor = await resolveActor(req, res, { skipMembership: true });
+      if (!actor && (req.headers?.authorization || req.headers?.Authorization || Object.keys(parseCookies(req)).some((name) => name.startsWith('sb-') && name.includes('-auth-token')))) {
+        throw new HttpError(401, 'Unable to verify this session. Sign in again.');
+      }
+      if (actor?.mode === 'local' && actor.sessionId) {
+        db.prepare('DELETE FROM local_sessions WHERE id = ?').run(actor.sessionId);
+        writeLocalAudit(db, { actorId: actor.user.id, area: 'auth', type: 'signout', result: 'ok' });
+      }
+      if (actor?.mode === 'supabase') await revokeSupabaseSessions(req, res, actor, 'signout');
+      expireSupabaseCookies(req, res);
+      clearSessionCookie(req, res);
+      return sendJson(res, 200, { ok: true });
+    }
+
+    if (data.action === 'revoke_session') {
+      const actor = await resolveActor(req, res, { skipMembership: true });
+      if (!actor) return sendJson(res, 401, { error: 'Authentication required.' });
+      if (actor.mode === 'supabase') {
+        await revokeSupabaseSessions(req, res, actor, 'revoke_session', data.sessionId);
+        clearSessionCookie(req, res);
+      }
+      if (actor.mode === 'local') {
+        db.prepare('DELETE FROM local_sessions WHERE id = ? AND user_id = ?').run(data.sessionId, actor.user.id);
+        writeLocalAudit(db, { actorId: actor.user.id, area: 'auth', type: 'revoke_session', result: 'ok' });
+        if (actor.sessionId === data.sessionId) {
+          clearSessionCookie(req, res);
+        }
+      }
+      return sendJson(res, 200, { ok: true });
+    }
+
+    if (data.action === 'revoke_all') {
+      const actor = await resolveActor(req, res, { skipMembership: true });
+      if (!actor) return sendJson(res, 401, { error: 'Authentication required.' });
+      if (actor.mode === 'local') {
+        db.prepare('DELETE FROM local_sessions WHERE user_id = ?').run(actor.user.id);
+        writeLocalAudit(db, { actorId: actor.user.id, area: 'auth', type: 'revoke_all_sessions', result: 'ok' });
+      }
+      if (actor.mode === 'supabase') await revokeSupabaseSessions(req, res, actor, 'revoke_all');
+      expireSupabaseCookies(req, res);
+      clearSessionCookie(req, res);
+      return sendJson(res, 200, { ok: true });
+    }
+
     if (!db) {
       if (data.action === 'signup') {
         return await handleSupabaseSignup(data, req, res);
@@ -476,43 +535,6 @@ export default async function handler(req, res) {
         error: 'Local authentication unavailable in serverless mode; use Supabase Auth.',
         allowClientFallback: data.action === 'signin',
       });
-    }
-
-    const ua = req.headers['user-agent'] || 'Browser';
-    const ip = getClientIp(req);
-
-    if (data.action === 'signout') {
-      const actor = await resolveActor(req);
-      if (actor?.mode === 'local' && actor.sessionId) {
-        db.prepare('DELETE FROM local_sessions WHERE id = ?').run(actor.sessionId);
-        writeLocalAudit(db, { actorId: actor.user.id, area: 'auth', type: 'signout', result: 'ok' });
-      }
-      clearSessionCookie(res);
-      return sendJson(res, 200, { ok: true });
-    }
-
-    if (data.action === 'revoke_session') {
-      const actor = await resolveActor(req);
-      if (!actor) return sendJson(res, 401, { error: 'Authentication required.' });
-      if (actor.mode === 'local') {
-        db.prepare('DELETE FROM local_sessions WHERE id = ? AND user_id = ?').run(data.sessionId, actor.user.id);
-        writeLocalAudit(db, { actorId: actor.user.id, area: 'auth', type: 'revoke_session', result: 'ok' });
-        if (actor.sessionId === data.sessionId) {
-          clearSessionCookie(res);
-        }
-      }
-      return sendJson(res, 200, { ok: true });
-    }
-
-    if (data.action === 'revoke_all') {
-      const actor = await resolveActor(req);
-      if (!actor) return sendJson(res, 401, { error: 'Authentication required.' });
-      if (actor.mode === 'local') {
-        db.prepare('DELETE FROM local_sessions WHERE user_id = ?').run(actor.user.id);
-        writeLocalAudit(db, { actorId: actor.user.id, area: 'auth', type: 'revoke_all_sessions', result: 'ok' });
-      }
-      clearSessionCookie(res);
-      return sendJson(res, 200, { ok: true });
     }
 
     if (data.action === 'resend_confirmation') {
@@ -606,8 +628,8 @@ export default async function handler(req, res) {
         throw err;
       }
 
-      const session = createLocalSession(db, id, ua);
-      setSessionCookie(res, session.rawToken);
+      const session = createLocalSession(db, id, ua, { rememberMe: Boolean(data.rememberMe) });
+      setSessionCookie(req, res, session.rawToken, { rememberMe: Boolean(data.rememberMe) });
 
       enqueueOutboxEmail(db, {
         toEmail: email,
@@ -626,6 +648,8 @@ export default async function handler(req, res) {
 
     if (data.action === 'signin') {
       const email = data.email.toLowerCase();
+      enforceLocalRateLimit(db, `signin:ip:${ip}`, { maxRequests: 30, windowMs: 900_000 });
+      enforceLocalRateLimit(db, `signin:email:${hashKey(email)}`, { maxRequests: 15, windowMs: 900_000 });
       const user = db.prepare('SELECT * FROM local_users WHERE email = ?').get(email);
       if (!user) {
         return sendJson(res, 401, { error: 'Invalid email or password.' });
@@ -647,8 +671,8 @@ export default async function handler(req, res) {
       }
 
       db.prepare('UPDATE local_users SET failed_attempts = 0, locked_until = NULL WHERE id = ?').run(user.id);
-      const session = createLocalSession(db, user.id, ua);
-      setSessionCookie(res, session.rawToken);
+      const session = createLocalSession(db, user.id, ua, { rememberMe: Boolean(data.rememberMe) });
+      setSessionCookie(req, res, session.rawToken, { rememberMe: Boolean(data.rememberMe) });
       writeLocalAudit(db, { actorId: user.id, area: 'auth', type: 'signin', result: 'ok' });
 
       return sendJson(res, 200, {
@@ -656,6 +680,10 @@ export default async function handler(req, res) {
         user: { id: user.id, email: user.email, full_name: user.full_name, role: user.role },
       });
     }
+  } catch (err) {
+    if (err instanceof HttpError) return sendJson(res, err.status, { error: err.message });
+    return sendJson(res, 500, { error: 'Authentication error.' });
+  }
   } catch (err) {
     if (err instanceof HttpError) return sendJson(res, err.status, { error: err.message });
     return sendJson(res, 500, { error: 'Authentication error.' });
