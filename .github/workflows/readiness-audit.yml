@@ -29,6 +29,8 @@ jobs:
           mkdir -p .cache/readiness evidence
           cd .cache/readiness
           supabase init
+          mkdir -p supabase/migrations
+          printf 'CREATE SCHEMA IF NOT EXISTS voxrelay;\n' > supabase/migrations/20260101000000_readiness_schema.sql
           python3 - <<'PY'
           from pathlib import Path
           p = Path('supabase/config.toml')
@@ -62,7 +64,11 @@ jobs:
           fi
       - id: http
         name: Phases 1–2 — real Auth and PostgREST HTTP acceptance
-        run: node scripts/readiness/http.mjs
+        run: |
+          if ! node scripts/readiness/http.mjs > evidence/http-run.log 2>&1; then
+            node scripts/readiness/report-failure.mjs evidence/http-run.log
+            exit 1
+          fi
       - id: build
         name: Lint, existing tests and production build
         run: |
@@ -77,10 +83,17 @@ jobs:
           npm install --prefix .cache/readiness/browser --no-save --package-lock=false playwright@1.56.1
           .cache/readiness/browser/node_modules/.bin/playwright install --with-deps chromium
           npm run dev > evidence/frontend.log 2>&1 &
-          node scripts/readiness/browser.mjs
+          if ! node scripts/readiness/browser.mjs > evidence/browser-run.log 2>&1; then
+            node scripts/readiness/report-failure.mjs evidence/browser-run.log
+            exit 1
+          fi
       - id: hardening
         name: Phase 4 — bundle secret scan and backup/restore rehearsal
-        run: node scripts/readiness/hardening.mjs
+        run: |
+          if ! node scripts/readiness/hardening.mjs > evidence/hardening-run.log 2>&1; then
+            node scripts/readiness/report-failure.mjs evidence/hardening-run.log
+            exit 1
+          fi
       - name: Publish readiness summary (never equate local CI with production certification)
         if: always()
         env:
