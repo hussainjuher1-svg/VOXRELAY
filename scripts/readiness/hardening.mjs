@@ -10,6 +10,8 @@ const ids=execFileSync('docker',['ps','--format','{{.Names}}'],{encoding:'utf8'}
 const dump=execFileSync('docker',['exec',db,'pg_dump','-U','postgres','-d','postgres','--schema=auth','--schema=voxrelay','--schema=public','--no-owner','--no-acl'],{maxBuffer:30*1024*1024});
 // Rehearse restore into a separate database, never over the running audit DB.
 execFileSync('docker',['exec',db,'createdb','-U','postgres','readiness_restore']);
+// pg_dump includes CREATE SCHEMA public. Only clear the empty schema in this newly created restore DB.
+execFileSync('docker',['exec',db,'psql','-U','postgres','-d','readiness_restore','-v','ON_ERROR_STOP=1','-c','DROP SCHEMA public']);
 execFileSync('docker',['exec','-i',db,'psql','-U','postgres','-d','readiness_restore','-v','ON_ERROR_STOP=1'],{input:dump,stdio:['pipe','ignore','pipe']});
 const count=execFileSync('docker',['exec',db,'psql','-U','postgres','-d','readiness_restore','-Atc',"select count(*) from pg_tables where schemaname='voxrelay'"],{encoding:'utf8'}).trim();assert.ok(Number(count)>0);
 fs.writeFileSync('evidence/hardening.json',JSON.stringify({bundleServiceKeyAbsent:true,forbiddenFrontendVariablesAbsent:true,disposableSchemaRestore:true,restoredAppTableCount:Number(count),productionReadiness:'NOT CERTIFIED: production network bindings, restart/pooling, off-host backup automation/retention and production restore RPO/RTO require separate verification'},null,2));
