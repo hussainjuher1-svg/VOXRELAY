@@ -1,0 +1,150 @@
+name: Real-service readiness audit
+on:
+  workflow_dispatch:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: readiness-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v3
+        with:
+          version: 2.65.5
+      - name: Install dependencies
+        run: npm ci
+      - name: Configure disposable stack (no repository or production secrets)
+        run: |
+          mkdir -p .cache/readiness evidence
+          cd .cache/readiness
+          supabase init
+          mkdir -p supabase/migrations
+          printf 'CREATE SCHEMA IF NOT EXISTS voxrelay;\n' > supabase/migrations/20260101000000_readiness_schema.sql
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('supabase/config.toml')
+          s = p.read_text().replace('major_version = 15', 'major_version = 17')
+          s = s.replace('schemas = ["public", "graphql_public"]', 'schemas = ["public", "voxrelay"]')
+          s = s.replace('enable_confirmations = false', 'enable_confirmations = true')
+          s = s.replace('http://127.0.0.1:3000', 'http://localhost:5173').replace('https://127.0.0.1:3000', 'http://localhost:5173')
+          # Local inbox only: allow the four synthetic confirmation messages per run.
+          s = s.replace('email_sent = 2', 'email_sent = 100')
+          p.write_text(s)
+          assert 'major_version = 17' in s
+          PY
+      - id: services
+        name: Phase 1 — start real services and migrate disposable PostgreSQL17
+        run: |
+          set -euo pipefail
+          cd .cache/readiness
+          if ! supabase start > ../../evidence/stack-start.log 2>&1; then
+            node ../../scripts/readiness/report-failure.mjs ../../evidence/stack-start.log
+            exit 1
+          fi
+          supabase status -o json > status.json
+          cd ../..
+          if ! node scripts/readiness/configure.mjs > evidence/configure.log 2>&1; then
+            node scripts/readiness/report-failure.mjs evidence/configure.log
+            exit 1
+          fi
+          # configure prints GitHub mask commands; replay them without recording key values as diagnostics.
+          cat evidence/configure.log
+          rm evidence/configure.log
+          if ! node scripts/readiness/database.mjs > evidence/database.log 2>&1; then
+            node scripts/readiness/report-failure.mjs evidence/database.log
+            exit 1
+          fi
+      - id: http
+        name: Phases 1–2 — real Auth and PostgREST HTTP acceptance
+        run: |
+          if ! node scripts/readiness/http.mjs > evidence/http-run.log 2>&1; then
+            node scripts/readiness/report-failure.mjs evidence/http-run.log
+            exit 1
+          fi
+      - id: build
+        name: Lint, existing tests and production build
+        run: |
+          set -euo pipefail
+          npm run lint 2>&1 | tee evidence/lint.log
+          npm test 2>&1 | tee evidence/tests.log
+          npm run build 2>&1 | tee evidence/build.log
+      - id: browser
+        name: Phase 3 — browser acceptance on the live stack
+        run: |
+          set -euo pipefail
+          if ! bash scripts/readiness/browser-stage.sh > evidence/browser-stage.log 2>&1; then
+            node scripts/readiness/report-failure.mjs evidence/frontend.log evidence/browser-stage.log
+            exit 1
+          fi
+      - id: hardening
+        name: Phase 4 — bundle secret scan and backup/restore rehearsal
+        run: |
+          if ! node scripts/readiness/hardening.mjs > evidence/hardening-run.log 2>&1; then
+            node scripts/readiness/report-failure.mjs evidence/hardening-run.log
+            exit 1
+          fi
+      - name: Publish credential-free verification assertions
+        if: always()
+        run: node scripts/readiness/publish-evidence.mjs
+      - name: Publish readiness summary (never equate local CI with production certification)
+        if: always()
+        env:
+          AUDIT_RESULT: ${{ job.status }}
+          SERVICES: ${{ steps.services.outcome }}
+          HTTP: ${{ steps.http.outcome }}
+          BUILD: ${{ steps.build.outcome }}
+          BROWSER: ${{ steps.browser.outcome }}
+          HARDENING: ${{ steps.hardening.outcome }}
+        run: |
+          {
+            echo '## Real-service readiness audit'
+            echo "Job result: **$AUDIT_RESULT**"
+            echo "| Gate | Result |"
+            echo "|---|---|"
+            echo "| Real services / PG17 migrations | $SERVICES |"
+            echo "| Auth / PostgREST HTTP | $HTTP |"
+            echo "| Lint / tests / build | $BUILD |"
+            echo "| Live browser acceptance | $BROWSER |"
+            echo "| Bundle / restore rehearsal | $HARDENING |"
+            echo 'Sequential gates: first failure prevents later verification steps.'
+            echo 'Evidence: redacted HTTP status log, SQL/security results, browser results, build logs and backup/restore result in the readiness-evidence artifact.'
+            echo 'Production deployment remains gated: production secrets, private port bindings, pooling, restart policies, off-host backup retention and production restore/RPO/RTO are NOT certified by this disposable runner.'
+            echo 'No production credentials or deployment operations are used.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Redact local credential values from service logs
+        if: always()
+        run: |
+          python3 - <<'PYCODE'
+          import json, re
+          from pathlib import Path
+          status = Path('.cache/readiness/status.json')
+          values = json.loads(status.read_text()) if status.exists() else {}
+          secrets = [str(v) for k,v in values.items() if any(t in k for t in ['KEY','SECRET','DB_URL']) and v]
+          for p in Path('evidence').glob('*.log'):
+              text = p.read_text(errors='replace')
+              for value in secrets:
+                  text = text.replace(value, '[REDACTED LOCAL TEST CREDENTIAL]')
+              text = re.sub(r'((?:access_token|refresh_token|token|code)=)[^&\s\"<>]+', r'\1[REDACTED]', text)
+              text = re.sub(r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+', '[REDACTED JWT]', text)
+              p.write_text(text)
+          PYCODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: readiness-evidence
+          path: evidence/
+          retention-days: 7
+      - name: Stop disposable services
+        if: always()
+        run: cd .cache/readiness && supabase stop --no-backup

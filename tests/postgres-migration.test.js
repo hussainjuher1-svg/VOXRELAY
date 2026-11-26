@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
 import pg from 'pg';
+import { disposableDatabaseUrl } from './helpers/disposable-database.js';
 
 const rootDir = process.cwd();
 const schemaSql = fs.readFileSync(path.join(rootDir, 'db/schema.sql'), 'utf8');
@@ -21,7 +22,7 @@ END $$;
 `;
 
 describe('Real PostgreSQL schema, lockdown, migrations & PL/pgSQL RPCs', () => {
-  const databaseUrl = process.env.DATABASE_URL || '';
+  const databaseUrl = disposableDatabaseUrl() || '';
   let usePool = Boolean(databaseUrl);
   let pool = null;
   let pglite = null;
@@ -60,7 +61,8 @@ describe('Real PostgreSQL schema, lockdown, migrations & PL/pgSQL RPCs', () => {
   beforeAll(async () => {
     if (usePool) {
       pool = new pg.Pool({ connectionString: databaseUrl, max: 10 });
-      await execSql('DROP SCHEMA IF EXISTS voxrelay CASCADE;');
+      const existing = await pool.query("SELECT to_regnamespace('voxrelay') AS existing_schema");
+      if (existing.rows[0]?.existing_schema) throw new Error('Disposable test database is not empty; refusing to overwrite its voxrelay schema. Recreate the disposable test database explicitly.');
     } else {
       pglite = new PGlite();
     }
@@ -331,5 +333,118 @@ describe('Real PostgreSQL schema, lockdown, migrations & PL/pgSQL RPCs', () => {
       expect(results.filter(Boolean).length).toBe(5);
       expect(results.filter((x) => !x).length).toBe(3);
     }
+  });
+
+  it('finalize_access_invite is idempotent for the same user and creates only one audit event', async () => {
+    const reviewerId = crypto.randomUUID();
+    const userId = crypto.randomUUID();
+    const hash = `hash-idem-${crypto.randomUUID()}`;
+    const ins = await querySql(
+      `INSERT INTO voxrelay.access_requests (name, email, audience, consent, status, message)
+       VALUES ('Idem User', 'idem@voxrelay.test', 'interpreter', true, 'pending', 'idem')
+       RETURNING id`
+    );
+    const reqId = Number(ins.rows[0].id);
+    await querySql(
+      `SELECT voxrelay.review_access_request($1, 'approve', 'ok', $2, $3, now() + interval '7 days')`,
+      [reqId, reviewerId, hash]
+    );
+
+    const reserve = await querySql(`SELECT voxrelay.reserve_access_invite($1, 'idem@voxrelay.test', 120) AS res`, [hash]);
+    expect(reserve.rows[0].res.ok).toBe(true);
+    const claimToken = reserve.rows[0].res.claim_token;
+
+    const first = await querySql(`SELECT voxrelay.finalize_access_invite($1, $2::uuid, $3::uuid) AS res`, [reqId, claimToken, userId]);
+    expect(first.rows[0].res).toMatchObject({ ok: true, status: 'redeemed' });
+    expect(first.rows[0].res.already_finalized).toBe(false);
+
+    const second = await querySql(`SELECT voxrelay.finalize_access_invite($1, $2::uuid, $3::uuid) AS res`, [reqId, claimToken, userId]);
+    expect(second.rows[0].res).toMatchObject({ ok: true, status: 'redeemed', already_finalized: true });
+
+    const third = await querySql(`SELECT voxrelay.finalize_access_invite($1, $2::uuid, $3::uuid) AS res`, [reqId, crypto.randomUUID(), userId]);
+    expect(third.rows[0].res).toMatchObject({ ok: true, status: 'redeemed', already_finalized: true });
+
+    const auditCount = await querySql(
+      `SELECT COUNT(*)::int AS c FROM voxrelay.audit_events WHERE object_ref = $1 AND type = 'invite_signup' AND result = 'ok'`,
+      [String(reqId)]
+    );
+    expect(auditCount.rows[0].c).toBe(1);
+
+    const row = await querySql(
+      'SELECT status, invite_token_hash, claim_token, provisioned_user_id FROM voxrelay.access_requests WHERE id = $1',
+      [reqId]
+    );
+    expect(row.rows[0]).toEqual({
+      status: 'redeemed',
+      invite_token_hash: null,
+      claim_token: null,
+      provisioned_user_id: userId,
+    });
+  });
+
+  it('rejects finalize for a different user after redemption and does not mutate state', async () => {
+    const reviewerId = crypto.randomUUID();
+    const userId = crypto.randomUUID();
+    const otherUser = crypto.randomUUID();
+    const hash = `hash-other-${crypto.randomUUID()}`;
+    const ins = await querySql(
+      `INSERT INTO voxrelay.access_requests (name, email, audience, consent, status, message)
+       VALUES ('Other User', 'other@voxrelay.test', 'interpreter', true, 'pending', 'other')
+       RETURNING id`
+    );
+    const reqId = Number(ins.rows[0].id);
+    await querySql(
+      `SELECT voxrelay.review_access_request($1, 'approve', 'ok', $2, $3, now() + interval '7 days')`,
+      [reqId, reviewerId, hash]
+    );
+    const reserve = await querySql(`SELECT voxrelay.reserve_access_invite($1, 'other@voxrelay.test', 120) AS res`, [hash]);
+    const claimToken = reserve.rows[0].res.claim_token;
+    await querySql(`SELECT voxrelay.finalize_access_invite($1, $2::uuid, $3::uuid) AS res`, [reqId, claimToken, userId]);
+
+    const wrong = await querySql(`SELECT voxrelay.finalize_access_invite($1, $2::uuid, $3::uuid) AS res`, [reqId, claimToken, otherUser]);
+    expect(wrong.rows[0].res).toMatchObject({ ok: false, code: 'already_redeemed_other_user' });
+
+    const auditCount = await querySql(
+      `SELECT COUNT(*)::int AS c FROM voxrelay.audit_events WHERE object_ref = $1 AND type = 'invite_signup' AND result = 'ok'`,
+      [String(reqId)]
+    );
+    expect(auditCount.rows[0].c).toBe(1);
+
+    const row = await querySql('SELECT status, provisioned_user_id FROM voxrelay.access_requests WHERE id = $1', [reqId]);
+    expect(row.rows[0]).toEqual({ status: 'redeemed', provisioned_user_id: userId });
+  });
+
+  it('allows retry after a recoverable release and finalizes only once', async () => {
+    const reviewerId = crypto.randomUUID();
+    const userId = crypto.randomUUID();
+    const hash = `hash-retry-${crypto.randomUUID()}`;
+    const ins = await querySql(
+      `INSERT INTO voxrelay.access_requests (name, email, audience, consent, status, message)
+       VALUES ('Retry User', 'retry@voxrelay.test', 'interpreter', true, 'pending', 'retry')
+       RETURNING id`
+    );
+    const reqId = Number(ins.rows[0].id);
+    await querySql(
+      `SELECT voxrelay.review_access_request($1, 'approve', 'ok', $2, $3, now() + interval '7 days')`,
+      [reqId, reviewerId, hash]
+    );
+
+    const reserve1 = await querySql(`SELECT voxrelay.reserve_access_invite($1, 'retry@voxrelay.test', 120) AS res`, [hash]);
+    const claim1 = reserve1.rows[0].res.claim_token;
+    const released = await querySql(`SELECT voxrelay.release_access_invite($1, $2::uuid) AS released`, [reqId, claim1]);
+    expect(released.rows[0].released).toBe(true);
+
+    const reserve2 = await querySql(`SELECT voxrelay.reserve_access_invite($1, 'retry@voxrelay.test', 120) AS res`, [hash]);
+    expect(reserve2.rows[0].res.ok).toBe(true);
+    const claim2 = reserve2.rows[0].res.claim_token;
+
+    const fin = await querySql(`SELECT voxrelay.finalize_access_invite($1, $2::uuid, $3::uuid) AS res`, [reqId, claim2, userId]);
+    expect(fin.rows[0].res).toMatchObject({ ok: true, status: 'redeemed' });
+
+    const auditCount = await querySql(
+      `SELECT COUNT(*)::int AS c FROM voxrelay.audit_events WHERE object_ref = $1 AND type = 'invite_signup' AND result = 'ok'`,
+      [String(reqId)]
+    );
+    expect(auditCount.rows[0].c).toBe(1);
   });
 });

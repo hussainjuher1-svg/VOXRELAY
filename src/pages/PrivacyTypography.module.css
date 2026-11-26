@@ -1,0 +1,74 @@
+@import '@fontsource/newsreader/400.css';
+
+/* Claude-inspired editorial reading, using existing free font families.
+   Scoped to the Privacy Charter; no global heading or hero changes. */
+.page {
+  --privacy-reading-font: 'Newsreader', Georgia, serif;
+  --privacy-interface-font: 'Instrument Sans', sans-serif;
+}
+
+.page :global(.page-display) {
+  font-family: var(--privacy-reading-font);
+  font-weight: 400;
+  line-height: 1.14;
+  letter-spacing: -0.02em;
+}
+
+.page :global(.editorial-prose) {
+  font-family: var(--privacy-reading-font);
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1.7;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+.page :global(.essay-section h2) {
+  font-family: var(--privacy-reading-font);
+  font-size: 26px;
+  font-weight: 400;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+}
+
+.page :global(.editorial-pullquote) {
+  font-family: var(--privacy-reading-font);
+  font-size: 19px;
+  font-weight: 400;
+  line-height: 1.6;
+  letter-spacing: 0;
+}
+
+.page :global(.eyebrow),
+.page :global(.essay-toc a) {
+  font-family: var(--privacy-interface-font);
+}
+
+.page :global(.eyebrow) {
+  font-weight: 500;
+  letter-spacing: 0.08em;
+}
+
+.page :global(.essay-toc a) {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.6;
+  letter-spacing: 0;
+}
+
+:global([dir='rtl']) .page {
+  --privacy-reading-font: 'Amiri', serif;
+  --privacy-interface-font: 'IBM Plex Sans Arabic', sans-serif;
+}
+
+:global([dir='rtl']) .page :global(.page-display),
+:global([dir='rtl']) .page :global(.essay-section h2),
+:global([dir='rtl']) .page :global(.eyebrow) {
+  letter-spacing: 0;
+}
+
+@media (max-width: 640px) {
+  .page :global(.editorial-prose) { font-size: 17px; }
+  .page :global(.essay-section h2) { font-size: 24px; }
+  .page :global(.editorial-pullquote) { font-size: 18px; }
+}

@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
+
+beforeEach(() => {
+  vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+});
 import { MemoryRouter } from 'react-router-dom';
 import { AuthProvider } from '../src/context/AuthContext';
 import { LocaleProvider } from '../src/context/LocaleContext';
@@ -10,6 +14,7 @@ import { AppRoutes } from '../src/App';
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
 });
 
 function renderAt(initialPath = '/') {
@@ -27,7 +32,7 @@ function renderAt(initialPath = '/') {
 }
 
 describe('Public homepage layout, accessibility, Radix primitives, and routing', () => {
-  it('renders the full editorial VOXRELAY homepage matching the 7 reference sections without floating assistant', () => {
+  it('renders the approved hero and preserves the existing sections without a duplicate header or floating assistant', () => {
     const { container } = renderAt('/');
     const h1 = container.querySelector('h1');
     const firstH2 = container.querySelector('h2');
@@ -39,7 +44,9 @@ describe('Public homepage layout, accessibility, Radix primitives, and routing',
       screen.getByRole('heading', { level: 1, name: /infrastructure for the humans between languages/i })
     ).toBeInTheDocument();
     expect(screen.getByText(/HUMAN-LED · NEVER AI-REPLACED/i)).toBeInTheDocument();
-    expect(screen.getByText('Audio stays in your tab')).toBeInTheDocument();
+    expect(container.querySelector('.vx-hero-visual')).toBeNull();
+    expect(container.querySelector('.pub-header')).toBeNull();
+    expect(screen.getByRole('navigation', { name: 'Main navigation' })).toBeInTheDocument();
 
     expect(screen.getByRole('heading', { level: 2, name: /one workflow, four honest stages/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: /calm on the inside\. alive where it counts/i })).toBeInTheDocument();
@@ -56,7 +63,7 @@ describe('Public homepage layout, accessibility, Radix primitives, and routing',
   });
 
   it('toggles mobile navigation drawer with matching aria-controls', () => {
-    renderAt('/');
+    renderAt('/privacy');
     const menuBtn = screen.getByRole('button', { name: /menu/i });
     expect(menuBtn).toHaveAttribute('aria-expanded', 'false');
 
@@ -72,9 +79,15 @@ describe('Public homepage layout, accessibility, Radix primitives, and routing',
     expect(screen.getByRole('combobox', { name: /role/i })).toBeInTheDocument();
   });
 
+  it('prefills organization requests through the hero CTA destination', () => {
+    renderAt('/contact?audience=organization');
+    expect(screen.getByRole('combobox', { name: /role/i })).toHaveTextContent('Clinic or language team');
+  });
+
   it('routes /privacy, /faq, /design, and unknown routes cleanly and populates KB rows on /faq', async () => {
     renderAt('/privacy');
     expect(screen.getByRole('heading', { level: 1, name: /what we refuse to store/i })).toBeInTheDocument();
+    expect(document.getElementById('cookies-sessions')).toBeInTheDocument();
     cleanup();
 
     renderAt('/faq');
@@ -90,4 +103,15 @@ describe('Public homepage layout, accessibility, Radix primitives, and routing',
     renderAt('/does-not-exist-xyz');
     expect(screen.getByRole('heading', { level: 1, name: /not in the index/i })).toBeInTheDocument();
   });
+});
+
+it('provides a quieter footer row with only real destinations', () => {
+  renderAt('/');
+  const footer = screen.getByRole('contentinfo');
+  expect(footer).toHaveTextContent('©');
+  expect(screen.getByRole('navigation', { name: 'Main navigation' })).toHaveTextContent('How it works');
+  expect(screen.queryByRole('link', { name: 'Product' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Privacy charter' })).toHaveAttribute('href', '/privacy');
+  expect(screen.getByRole('link', { name: 'Cookies & sessions' })).toHaveAttribute('href', '/privacy#cookies-sessions');
+  expect(screen.getByRole('link', { name: 'Contact support' })).toHaveAttribute('href', '/contact');
 });

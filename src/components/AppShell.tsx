@@ -40,6 +40,7 @@ export function AppShell({
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const { pathname } = useLocation();
+  const [signOutError, setSignOutError] = useState<string | null>(null);
   const [internalPaletteOpen, setInternalPaletteOpen] = useState(false);
   const [internalAssistantOpen, setInternalAssistantOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -286,13 +287,19 @@ export function AppShell({
               {theme === 'dark' ? 'Light' : 'Dark'}
             </button>
           </div>
+          {signOutError && <span role="alert">{signOutError}</span>}
           {user ? (
             <button
               type="button"
               className="app-signout-btn"
               onClick={async () => {
-                await signOut();
-                navigate('/login');
+                setSignOutError(null);
+                try {
+                  await signOut();
+                  navigate('/login');
+                } catch {
+                  setSignOutError('Sign out failed. Please retry.');
+                }
               }}
             >
               {isAr ? 'تسجيل الخروج' : isBn ? 'সাইন আউট' : 'Sign out'}

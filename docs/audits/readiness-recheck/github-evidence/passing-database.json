@@ -1,0 +1,114 @@
+{
+  "version": "17.6",
+  "authMigrations": 71,
+  "searchPath": "auth",
+  "storageRls": true,
+  "tables": [
+    {
+      "relname": "profiles",
+      "relrowsecurity": true
+    },
+    {
+      "relname": "availability_overrides",
+      "relrowsecurity": true
+    },
+    {
+      "relname": "assignments",
+      "relrowsecurity": true
+    },
+    {
+      "relname": "assignment_events",
+      "relrowsecurity": true
+    },
+    {
+      "relname": "access_requests",
+      "relrowsecurity": true
+    },
+    {
+      "relname": "organizations",
+      "relrowsecurity": true
+    },
+    {
+      "relname": "memberships",
+      "relrowsecurity": true
+    },
+    {
+      "relname": "invitations",
+      "relrowsecurity": true
+    },
+    {
+      "relname": "assignment_links",
+      "relrowsecurity": true
+    },
+    {
+      "relname": "device_checks",
+      "relrowsecurity": true
+    },
+    {
+      "relname": "terms",
+      "relrowsecurity": true
+    },
+    {
+      "relname": "term_versions",
+      "relrowsecurity": true
+    },
+    {
+      "relname": "resources",
+      "relrowsecurity": true
+    },
+    {
+      "relname": "saved_resources",
+      "relrowsecurity": true
+    },
+    {
+      "relname": "support_requests",
+      "relrowsecurity": true
+    },
+    {
+      "relname": "support_messages",
+      "relrowsecurity": true
+    },
+    {
+      "relname": "assistance_policies",
+      "relrowsecurity": true
+    },
+    {
+      "relname": "audit_events",
+      "relrowsecurity": true
+    },
+    {
+      "relname": "consents",
+      "relrowsecurity": true
+    },
+    {
+      "relname": "rate_events",
+      "relrowsecurity": true
+    },
+    {
+      "relname": "session_events",
+      "relrowsecurity": true
+    },
+    {
+      "relname": "session_docs",
+      "relrowsecurity": true
+    },
+    {
+      "relname": "followups",
+      "relrowsecurity": true
+    },
+    {
+      "relname": "billing_settings",
+      "relrowsecurity": true
+    },
+    {
+      "relname": "billing_records",
+      "relrowsecurity": true
+    },
+    {
+      "relname": "readiness_probe",
+      "relrowsecurity": true
+    }
+  ],
+  "buckets": [],
+  "policyCount": 1
+}

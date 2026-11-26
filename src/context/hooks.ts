@@ -14,6 +14,8 @@ export interface AuthContextValue {
   session: Session | null;
   user: User | AuthUser | null;
   loading: boolean;
+  isAuthenticated: boolean;
+  completeSignIn: (user: User | AuthUser, session?: Session | null) => void;
   refreshSession: () => Promise<void>;
   signOut: () => Promise<void>;
 }

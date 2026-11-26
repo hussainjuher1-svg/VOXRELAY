@@ -33,5 +33,6 @@ jobs:
       - run: npm run lint
       - run: npm test
         env:
-          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/voxrelay_test
+          VOXRELAY_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/voxrelay_test
+          VOXRELAY_ALLOW_DISPOSABLE_DB: voxrelay_test
       - run: npm run build

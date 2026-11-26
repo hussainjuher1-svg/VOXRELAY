@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { resolveActor } from './_lib/auth-session.js';
+import { enforceSameOrigin, resolveActor } from './_lib/auth-session.js';
 import { evaluateAssistantRequest, matchTopic } from './_lib/assistant.js';
 import { can, canReadDoc, canReviewDoc, HttpError, isPlatformAdminActor, requireCapability } from './_lib/authz.js';
 import { enforceRateLimit, readJsonBody, sendJson, streamRoute } from './_lib/core.js';
@@ -316,6 +316,7 @@ async function handleLocalOps(req, res, actor, resource) {
 }
 
 export default async function handler(req, res) {
+  if (!['GET','HEAD','OPTIONS'].includes(String(req.method||'GET').toUpperCase())) enforceSameOrigin(req);
   try {
     const url = new URL(req.url, 'http://localhost');
     const resource = req.query?.resource || url.searchParams.get('resource') || 'dashboard';
@@ -336,7 +337,7 @@ export default async function handler(req, res) {
       }
     }
 
-    const actor = await resolveActor(req);
+    const actor = await resolveActor(req, res);
     if (actor?.mode === 'local') {
       return await handleLocalOps(req, res, actor, resource);
     }
@@ -344,7 +345,7 @@ export default async function handler(req, res) {
       return sendJson(res, 401, { error: 'Sign in required.' });
     }
 
-    const ctx = await authenticateRequest(req);
+    const ctx = await authenticateRequest(req, res, actor);
 
     if (resource === 'assistant' && req.method === 'POST') {
       await enforceRateLimit(ctx.supabase, `assistant:${ctx.userId}`, { maxRequests: 20, windowMs: 60_000 });

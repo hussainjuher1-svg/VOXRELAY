@@ -1,0 +1,13 @@
+.meta {
+  width: min(1220px, calc(100% - 48px));
+  margin: 22px auto 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  font-size: 13px;
+  color: var(--vr-muted);
+}
+.meta nav { display: flex; flex-wrap: wrap; gap: 12px 20px; }
+.meta a:hover { color: var(--vr-accent-brand); }
+@media (max-width: 640px) { .meta { width: calc(100% - 32px); } }

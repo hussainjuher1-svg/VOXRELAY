@@ -1,0 +1,7 @@
+{
+  "bundleServiceKeyAbsent": true,
+  "forbiddenFrontendVariablesAbsent": true,
+  "disposableSchemaRestore": true,
+  "restoredAppTableCount": 25,
+  "productionReadiness": "NOT CERTIFIED: production network bindings, restart/pooling, off-host backup automation/retention and production restore RPO/RTO require separate verification"
+}

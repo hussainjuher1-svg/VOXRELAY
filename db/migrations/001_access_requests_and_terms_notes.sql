@@ -14,7 +14,7 @@ ALTER TABLE voxrelay.access_requests
 DO $$
 BEGIN
   IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'access_requests_status_check'
+    SELECT 1 FROM pg_constraint WHERE conname = 'access_requests_status_check' AND conrelid = 'voxrelay.access_requests'::regclass
   ) THEN
     ALTER TABLE voxrelay.access_requests
       ADD CONSTRAINT access_requests_status_check

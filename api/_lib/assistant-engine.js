@@ -63,41 +63,6 @@ const DOMAIN_RESEARCH_BRIEFS = [
   },
 ];
 
-async function callAnthropicIfConfigured({ systemPrompt, userMessage }) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return null;
-
-  const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5';
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15_000);
-  try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      signal: controller.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: 550,
-        temperature: 0.2,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userMessage }],
-      }),
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
-    const text = json?.content?.[0]?.text;
-    return typeof text === 'string' && text.trim() ? text.trim() : null;
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 export function buildWorkspaceSnapshot({ db, userId }) {
   if (!db || !userId) return { assignments: 0, terms: 0, openTickets: 0 };
   const assignments = db.prepare('SELECT COUNT(*) AS c FROM assignments WHERE owner_id = ?').get(userId)?.c || 0;
@@ -249,18 +214,6 @@ export async function runAssistantStream({ mode = 'ask', question, locale = 'en'
     return;
   }
 
-  const contextBlock = kbMatches
-    .map((m) => {
-      const bullets = (m.bullets?.[lang] || m.bullets?.en || []).map((b) => `- ${b}`).join('\n');
-      return `[${m.id}] ${m.title[lang] || m.title.en}\n${bullets || m.summary[lang] || m.summary.en}`;
-    })
-    .join('\n\n');
-
-  const anthropicText = await callAnthropicIfConfigured({
-    systemPrompt: `You are the VOXRELAY Workspace Assistant. Answer strictly using ONLY the provided knowledge-base excerpts and workspace counts (assignments=${snapshot.assignments}, terms=${snapshot.terms}, openTickets=${snapshot.openTickets}). Format EVERY answer as: a short bold heading (with [KB-xx] citation) followed by 2–4 concise bullet points ("- ..."). Never write long paragraphs or dump unrelated rules. Never interpret/translate live dialogue, never record/transcribe, never give medical/legal advice. Keep total length under 95 words. Language: ${lang}.`,
-    userMessage: `Question: ${sanitized}\n\nKnowledge base:\n${contextBlock}`,
-  });
-
   const top = kbMatches[0];
   const topTitle = top.title[lang] || top.title.en;
   const topBullets = (top.bullets?.[lang] || top.bullets?.en || [top.summary[lang] || top.summary.en])
@@ -276,7 +229,7 @@ export async function runAssistantStream({ mode = 'ask', question, locale = 'en'
         : `\n\n- **Your workspace:** ${snapshot.assignments} assignments · ${snapshot.terms} terms · ${snapshot.openTickets} open tickets`
       : '');
 
-  const answerText = anthropicText || structuredFallback;
+  const answerText = structuredFallback;
 
   emit({ type: 'delta', text: answerText });
   emit({

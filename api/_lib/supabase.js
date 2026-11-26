@@ -17,40 +17,15 @@ export function getServiceClient() {
   });
 }
 
-export async function authenticateRequest(req) {
-  const supabase = getServiceClient();
-  if (!supabase) {
-    throw new HttpError(503, 'Supabase service-role environment variables are not configured.');
-  }
-
-  const authHeader = req.headers?.authorization || req.headers?.Authorization || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-  if (!token) {
-    throw new HttpError(401, 'Sign in required.');
-  }
-
-  const { data, error } = await supabase.auth.getUser(token);
-  if (error || !data?.user) {
-    throw new HttpError(401, 'Invalid or expired session.');
-  }
-
-  if (!data.user.email_confirmed_at) {
-    throw new HttpError(403, 'Verify your email address before accessing the workspace.');
-  }
-
-  const { data: membership } = await supabase
-    .from('memberships')
-    .select('org_id, role, status')
-    .eq('user_id', data.user.id)
-    .eq('status', 'active')
-    .maybeSingle();
-
+export async function authenticateRequest(req, res, verifiedActor) {
+  const { resolveActor } = await import('./auth-session.js');
+  const actor = verifiedActor === undefined ? await resolveActor(req, res) : verifiedActor;
+  if (!actor || actor.mode !== 'supabase') throw new HttpError(401, 'Sign in required.');
+  if (!actor.supabase) throw new HttpError(503, 'Supabase service-role environment variables are not configured.');
+  if (!actor.user.email_confirmed_at) throw new HttpError(403, 'Verify your email address before accessing the workspace.');
   return {
-    supabase,
-    userId: data.user.id,
-    email: data.user.email || '',
-    appRole: data.user.app_metadata?.role || 'interpreter',
-    membership: membership || null,
+    supabase: actor.supabase, userId: actor.user.id, email: actor.user.email,
+    appRole: actor.appRole, membership: actor.membership,
   };
 }
 
@@ -63,9 +38,11 @@ export async function checkPublicAccessLock() {
     db: { schema: 'voxrelay' },
   });
   const { error } = await anon.from('assignments').select('id').limit(1);
-  // If anon key query returns a permissions/RLS error, public access is locked.
+  // Only explicit PostgreSQL permission denial establishes this probe result.
+  // Schema exclusion, network and credential failures are not proof of lockdown.
   return {
     configured: true,
-    locked: Boolean(error),
+    locked: error ? (error.code === '42501' ? true : null) : false,
+    reason: error ? (error.code === '42501' ? 'permission_denied' : 'probe_unavailable') : 'query_allowed',
   };
 }

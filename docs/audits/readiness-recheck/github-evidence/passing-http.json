@@ -1,0 +1,107 @@
+[
+  {
+    "method": "GET",
+    "path": "/auth/v1/health",
+    "status": 200
+  },
+  {
+    "method": "POST",
+    "path": "/auth/v1/signup",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/auth/v1/verify (email link)",
+    "status": 303
+  },
+  {
+    "method": "POST",
+    "path": "/auth/v1/token?grant_type=password",
+    "status": 200
+  },
+  {
+    "method": "POST",
+    "path": "/auth/v1/signup",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/auth/v1/verify (email link)",
+    "status": 303
+  },
+  {
+    "method": "POST",
+    "path": "/auth/v1/token?grant_type=password",
+    "status": 200
+  },
+  {
+    "method": "POST",
+    "path": "/auth/v1/token?grant_type=refresh_token",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/auth/v1/user",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "voxrelay.profiles (locked)",
+    "status": 403
+  },
+  {
+    "method": "GET",
+    "path": "/rest/v1/readiness_probe?select=user_id",
+    "status": 200
+  },
+  {
+    "method": "POST",
+    "path": "/rest/v1/readiness_probe",
+    "status": 401
+  },
+  {
+    "method": "POST",
+    "path": "/rest/v1/readiness_probe",
+    "status": 201
+  },
+  {
+    "method": "GET",
+    "path": "/rest/v1/readiness_probe?select=user_id",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/rest/v1/readiness_probe?user_id=eq.97a6dfef-ff49-49e5-95d4-a3d260551efa",
+    "status": 200
+  },
+  {
+    "method": "POST",
+    "path": "/rest/v1/readiness_probe",
+    "status": 403
+  },
+  {
+    "method": "PATCH",
+    "path": "/rest/v1/readiness_probe?user_id=eq.97a6dfef-ff49-49e5-95d4-a3d260551efa",
+    "status": 200
+  },
+  {
+    "method": "DELETE",
+    "path": "/rest/v1/readiness_probe?user_id=eq.97a6dfef-ff49-49e5-95d4-a3d260551efa",
+    "status": 200
+  },
+  {
+    "method": "POST",
+    "path": "/auth/v1/logout",
+    "status": 204
+  },
+  {
+    "method": "POST",
+    "path": "/auth/v1/token?grant_type=refresh_token",
+    "status": 400
+  },
+  {
+    "method": "GET",
+    "path": "/auth/v1/user",
+    "status": 403
+  }
+]

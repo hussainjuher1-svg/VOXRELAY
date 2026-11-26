@@ -2839,7 +2839,7 @@ export function AdminReviewPage() {
 }
 
 export function SettingsPage() {
-  const { user, session, signOut } = useAuth();
+  const { user, session } = useAuth();
   const { locale, setLocale } = useLocale();
   const [fullName, setFullName] = useState('');
   const [timeZone, setTimeZone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
@@ -2886,24 +2886,46 @@ export function SettingsPage() {
   }, [user, session?.access_token]);
 
   async function revokeSession(sessionId: string) {
-    await fetch('/api/auth', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin',
-      body: JSON.stringify({ action: 'revoke_session', sessionId }),
-    });
-    await loadSessions();
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ action: 'revoke_session', sessionId }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        setSavedNotice({ kind: 'error', text: json.error || 'Session revocation failed. Please retry.' });
+        return;
+      }
+      await loadSessions();
+      if (sessionsList.find((item) => item.id === sessionId)?.isCurrent) window.location.reload();
+    } catch {
+      setSavedNotice({ kind: 'error', text: 'Session service is unavailable. Please retry.' });
+    }
   }
 
   async function revokeAllSessions() {
-    await fetch('/api/auth', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin',
-      body: JSON.stringify({ action: 'revoke_all' }),
-    });
-    await signOut();
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ action: 'revoke_all' }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        setSavedNotice({ kind: 'error', text: json.error || 'Session revocation failed. Please retry.' });
+        return;
+      }
+      // Reload after successful global revocation; do not make a second request
+      // with an already revoked token.
+      window.location.reload();
+    } catch {
+      setSavedNotice({ kind: 'error', text: 'Session service is unavailable. Please retry.' });
+    }
   }
+
 
   async function downloadGdprExport() {
     const res = await fetch('/api/ops?resource=gdpr_export', {

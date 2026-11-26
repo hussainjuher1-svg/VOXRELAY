@@ -10,6 +10,9 @@ const mockSignInWithPassword = vi.fn();
 
 vi.mock('../src/lib/supabaseClient', () => ({
   isSupabaseConfigured: true,
+  setRememberMePreference: vi.fn(),
+  getRememberMePreference: () => false,
+  REMEMBER_ME_KEY: 'voxrelay_remember_me',
   supabase: {
     auth: {
       signUp: (...args: unknown[]) => mockSignUp(...args),

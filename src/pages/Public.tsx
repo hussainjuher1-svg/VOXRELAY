@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ArrowUpRight, Mic, MicOff, ShieldCheck, X } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { LandingHero } from '../components/LandingHero';
+import privacyTypography from './PrivacyTypography.module.css';
+import { Mic, MicOff, X } from 'lucide-react';
 import { useAuth, useLocale } from '../context/hooks';
 import { KNOWLEDGE_BASE } from '../../api/_lib/kb.js';
 import {
@@ -16,55 +18,6 @@ import { Button } from '../components/ui/Button';
 import { Field, Input, Textarea } from '../components/ui/Field';
 import { Badge, Skeleton } from '../components/ui/Primitives';
 import { Select } from '../components/ui/Select';
-
-function HandDrawnUnderline() {
-  return (
-    <svg
-      className="hand-underline-svg"
-      viewBox="0 0 240 22"
-      fill="none"
-      preserveAspectRatio="none"
-      aria-hidden="true"
-    >
-      <path
-        d="M4 15.5C64 6.5 162 4.5 236 12.5"
-        stroke="#F2B632"
-        strokeWidth="5"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function RotatingSealBadge({ isAr }: { isAr: boolean }) {
-  const ringText = isAr
-    ? 'أشخاص حقيقيون • دعم حقيقي • '
-    : 'REAL PEOPLE • REAL SUPPORT • ';
-
-  return (
-    <div className="rotating-seal" aria-hidden="true">
-      <svg viewBox="0 0 120 120" className="rotating-seal-svg">
-        <defs>
-          <path
-            id="vr-seal-circle"
-            d="M 60, 60 m -40, 0 a 40,40 0 1,1 80,0 a 40,40 0 1,1 -80,0"
-          />
-        </defs>
-        <circle cx="60" cy="60" r="56" fill="#162E2A" />
-        <text className="rotating-seal-text">
-          <textPath href="#vr-seal-circle" startOffset="0%">
-            {ringText}
-          </textPath>
-        </text>
-      </svg>
-      <span className="rotating-seal-dot" />
-    </div>
-  );
-}
-
-const WAVEFORM_HEIGHTS = [
-  24, 46, 32, 66, 38, 86, 52, 98, 44, 72, 28, 60, 40, 92, 54, 78, 36, 68, 48, 88, 34, 62, 28, 42,
-];
 
 const MARQUEE_LANGS = [
   'Русский',
@@ -530,119 +483,7 @@ export function HomePage() {
 
   return (
     <div className="pub-page">
-      {/* 1. Hero Section */}
-      <section className="vx-hero-band">
-        <div className="pub-container vx-hero-grid">
-          <div className="vx-hero-copy">
-            <div className="vx-kicker-pill">
-              <span className="vx-kicker-dot" aria-hidden="true" />
-              <span>{isAr ? 'بقيادة بشرية · لا يُستبدل بالذكاء الاصطناعي' : 'HUMAN-LED · NEVER AI-REPLACED'}</span>
-            </div>
-
-            <h1 className="vx-h1">
-              {isAr ? (
-                <>
-                  بنية تشغيلية{' '}
-                  <span className="vx-h1-accent">
-                    للإنسان
-                    <HandDrawnUnderline />
-                  </span>{' '}
-                  بين اللغات.
-                </>
-              ) : (
-                <>
-                  Infrastructure for the{' '}
-                  <span className="vx-h1-accent">
-                    humans
-                    <HandDrawnUnderline />
-                  </span>{' '}
-                  between languages.
-                </>
-              )}
-            </h1>
-
-            <p className="vx-hero-lead">
-              {isAr ? (
-                <>
-                  المهام والتحضير والمصطلحات والدعم البشري الحقيقي — للمترجمين الفوريين عن بُعد.{' '}
-                  <strong>ليس مترجماً آلياً أبداً.</strong>
-                </>
-              ) : (
-                <>
-                  Assignments, preparation, terminology and real human support — for professional remote interpreters.{' '}
-                  <strong>Never an automatic translator.</strong>
-                </>
-              )}
-            </p>
-
-            <div className="vx-hero-ctas">
-              <Link to={user ? '/app' : '/login?mode=signup'} className="vx-cta-terracotta">
-                <span>
-                  {user
-                    ? isAr
-                      ? 'افتح مساحة عملك'
-                      : 'Open your workspace'
-                    : isAr
-                      ? 'أنشئ مساحة عملك'
-                      : 'Create your workspace'}
-                </span>
-                <ArrowUpRight size={16} aria-hidden="true" />
-              </Link>
-              <Link to="/contact" className="vx-cta-outline">
-                {isAr ? 'طلب وصول للمؤسسة' : 'Request organization access'}
-              </Link>
-            </div>
-          </div>
-
-          <div className="vx-hero-visual">
-            <div className="vx-blob-circle" aria-hidden="true">
-              <div className="vx-waveform">
-                {WAVEFORM_HEIGHTS.map((h, idx) => (
-                  <span key={idx} style={{ height: `${h}%` }} />
-                ))}
-              </div>
-            </div>
-
-            <Link
-              to={nextAssignment ? `/app/session/${nextAssignment.id}` : user ? '/app/assignments' : '/login?mode=signup'}
-              className="vx-float-nextup"
-            >
-              <span className="vx-float-nextup-tag">
-                {nextAssignment
-                  ? `${nextAssignment.ref} · ${formatUtcTime(nextAssignment.start_at)}`
-                  : isAr
-                    ? 'التالي · جاهز للجدولة'
-                    : 'NEXT UP · SCHEDULE'}
-              </span>
-              <div className="vx-float-nextup-title">
-                {nextAssignment
-                  ? nextAssignment.language_pair
-                  : user
-                    ? isAr
-                      ? 'أضف أول مهمة'
-                      : 'Add your first assignment'
-                    : isAr
-                      ? 'مساحة عمل بدون تسجيل'
-                      : 'Timing-only schedule'}
-              </div>
-              <div className="vx-float-nextup-meta">
-                {nextAssignment
-                  ? `${nextAssignment.modality} · ${nextAssignment.duration_minutes} min`
-                  : isAr
-                    ? 'افتح الجدول أو استورد .ics ↗'
-                    : 'Open schedule or import .ics ↗'}
-              </div>
-            </Link>
-
-            <RotatingSealBadge isAr={isAr} />
-
-            <Link to="/app/device-check" className="vx-float-audio-pill">
-              <ShieldCheck size={15} aria-hidden="true" />
-              <span>{isAr ? 'الصوت يبقى في متصفحك' : 'Audio stays in your tab'}</span>
-            </Link>
-          </div>
-        </div>
-      </section>
+      <LandingHero />
 
       {/* 2. Tilted Forest-Green Language Marquee */}
       <section className="vx-marquee-band" aria-label={isAr ? 'اللغات المدعومة' : 'Supported languages'}>
@@ -1045,7 +886,7 @@ export function PrivacyPage() {
   const isAr = locale === 'ar';
 
   return (
-    <div className="pub-page">
+    <div className={`pub-page ${privacyTypography.page}`}>
       <section className="page-header-band">
         <div className="pub-container hero-split-enterprise">
           <div>
@@ -1073,6 +914,7 @@ export function PrivacyPage() {
             <a href="#ics-hygiene">{isAr ? '02 · تقليص بيانات المواعيد' : '02 · Timing-only scheduling'}</a>
             <a href="#pii-redaction">{isAr ? '03 · تنقيح المساعد المعرفي' : '03 · Assistant PII redaction'}</a>
             <a href="#export-delete">{isAr ? '04 · التصدير والحذف' : '04 · Export & erasure'}</a>
+            <a href="#cookies-sessions">{isAr ? '05 · ملفات تعريف الارتباط والجلسات' : '05 · Cookies & sessions'}</a>
           </aside>
 
           <article className="essay-body">
@@ -1114,6 +956,30 @@ export function PrivacyPage() {
                 {isAr
                   ? 'يمكنك تصدير مساردك وجداولك وإغلاق حسابك أو إبطال جلساتك النشطة من صفحة الإعدادات.'
                   : 'Operators can export glossaries and assignment records, inspect active device sessions, sign out everywhere, or remove records cleanly from workspace settings.'}
+              </p>
+            </section>
+
+            <section id="cookies-sessions" className="essay-section">
+              <h2>{isAr ? '05 · ملفات تعريف الارتباط والجلسات' : '05 · Cookies & sessions'}</h2>
+              <p className="editorial-prose">
+                {isAr
+                  ? 'يستخدم VOXRELAY ملفات تعريف ارتباط أساسية للمصادقة فقط عند الحاجة. لا نستخدم ملفات تعريف ارتباط للتحليلات أو الإعلان أو التسويق.'
+                  : 'VOXRELAY uses only the cookies needed for authentication and session security. We do not use analytics, advertising, or marketing cookies.'}
+              </p>
+              <p className="editorial-prose">
+                {isAr
+                  ? 'ملف جلسة محلي (voxrelay_session) هو ملف HttpOnly يملكه الخادم. عند تفعيل Supabase، قد تُستخدم ملفات تعريف ارتباط مصادقة يديرها المتصفح بواسطة @supabase/ssr؛ وهي ليست HttpOnly لأن عميل المتصفح يحتاج إليها، لكنها تستخدم SameSite=Lax وSecure في الإنتاج ومسار /.'
+                  : 'The local workspace session cookie (voxrelay_session) is server-owned and HttpOnly. When Supabase Auth is configured, Supabase browser-managed auth cookies may be used by @supabase/ssr; these are not HttpOnly because the browser client must read/update them, but they are configured with SameSite=Lax, Secure in production, and Path=/.'}
+              </p>
+              <p className="editorial-prose">
+                {isAr
+                  ? 'خيار "تذكرني على هذا الجهاز" في تسجيل الدخول يتحكم في استمرار الجلسة: بدون تحديده تكون ملفات المصادقة جلسة متصفح وتنتهي عند إغلاق المتصفح (مع حد خادم أقصى يوم واحد للجلسة المحلية). عند تحديده تستمر الجلسة حتى 30 يوماً كحد أقصى للمتصفح، مع الالتزام بسياسات انتهاء صلاحية Supabase refresh token.'
+                  : 'The "Remember me on this device" sign-in option controls persistence: unchecked uses browser-session auth cookies that end when the browser session closes (local server session capped at 1 day). Checked keeps auth persistence for up to 30 days in the browser, while Supabase refresh-token expiry and project security policies remain authoritative.'}
+              </p>
+              <p className="editorial-prose">
+                {isAr
+                  ? 'لا تُخزن كلمات المرور أو بيانات المرضى أو الهوية السريرية في ملفات تعريف الارتباط. يمكنك إدارة التفضيلات أو مسح ملفات تعريف الارتباط الاختيارية من الإعدادات > Cookie management، كما يمكنك تسجيل الخروج أو إبطال الجلسات لمسح جلسات المصادقة.'
+                  : 'Passwords, patient data, clinical content, and unnecessary identifiers are never stored in cookies. You can manage cookie preferences and clear optional cookies from Settings &gt; Cookie management, and sign out or revoke sessions to clear auth sessions.'}
               </p>
             </section>
           </article>
@@ -1325,12 +1191,13 @@ export function StatusPage() {
 }
 
 export function ContactPage() {
+  const [searchParams] = useSearchParams();
   const { locale } = useLocale();
   const isAr = locale === 'ar';
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
-  const [audience, setAudience] = useState('interpreter');
+  const [audience, setAudience] = useState(() => searchParams.get('audience') === 'organization' ? 'organization' : 'interpreter');
   const [organization, setOrganization] = useState('');
   const [country, setCountry] = useState('');
   const [languages, setLanguages] = useState('');

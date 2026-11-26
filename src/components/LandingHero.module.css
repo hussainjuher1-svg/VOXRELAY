@@ -1,0 +1,74 @@
+/* Approved hero reference, isolated from the application's existing theme/UI CSS. */
+.hero {
+  --cream:#F7F3EA; --ink:#1B3A33; --ink-2:#3D5A52;
+  --clay:#C4421A; --gold:#F2B732; --white:#FFFFFF;
+  --ease:cubic-bezier(.2,.7,.2,1);
+  min-height:720px;height:100vh;max-height:900px;display:flex;flex-direction:column;
+  background:var(--cream);color:var(--ink);font-family:'Instrument Sans',sans-serif;
+  font-size:16px;line-height:normal;letter-spacing:normal;font-weight:400;font-style:normal;
+  text-rendering:auto;-webkit-font-smoothing:antialiased;direction:ltr;text-align:start;
+}
+.hero :where(*:not(svg):not(svg *)) {all:revert;box-sizing:border-box}
+.hero svg{max-width:none;display:inline;vertical-align:baseline}
+.hero a{color:var(--ink)} .hero a:hover{color:var(--clay)}
+.srOnly{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.nav{display:flex;align-items:center;justify-content:space-between;padding:32px 72px 0}
+.hero .logo{display:flex;align-items:center;gap:9px;text-decoration:none;color:var(--ink)}
+.hero .logo:hover{color:var(--ink)}
+.logo svg{overflow:visible}
+.logoWord{font-family:'Instrument Serif',serif;font-size:28px;letter-spacing:-0.3px}
+.logoWord i{font-style:italic}
+.navLinks{display:flex;gap:32px;font-size:15px}
+.hero .navLinks a{color:var(--ink-2)}
+.hero .navLinks a.signin{color:var(--ink);font-weight:600}
+.hero .ulink{text-decoration:none;background-image:linear-gradient(currentColor,currentColor);background-size:0% 1px;background-repeat:no-repeat;background-position:0 100%;transition:background-size .3s}
+.hero .ulink:hover{background-size:100% 1px}
+.content{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;text-align:center;padding:0 120px 40px}
+.eyebrow{font-size:13px;font-weight:600;letter-spacing:1.6px;color:var(--clay)}
+.heading{margin:0;font-family:'Instrument Serif',serif;font-weight:400;font-size:92px;line-height:.95;letter-spacing:-2.5px}
+.heading .line{display:block}
+.humans{position:relative;display:inline-block;font-style:italic;color:var(--clay)}
+.humans svg{position:absolute;left:2%;bottom:-6px;width:96%;height:13px}
+.cycle{display:inline-grid;text-align:left;vertical-align:bottom}
+.cycle span{grid-area:1/1;opacity:0;transform:translateY(22px);filter:blur(6px);transition:opacity .6s ease,transform .6s var(--ease),filter .6s}
+.cycle span.isOn{opacity:1;transform:none;filter:none}
+.cycle span.isOut{opacity:0;transform:translateY(-22px);filter:blur(6px)}
+.sub{margin:0;font-size:20px;line-height:1.5;color:var(--ink-2);max-width:620px}
+.ctas{display:flex;gap:14px}
+.hero .btn{text-decoration:none;font-weight:600;font-size:16px;border-radius:999px}
+.hero .btnPrimary{background:var(--clay);color:var(--white);padding:17px 28px;transition:transform .25s var(--ease),box-shadow .25s}
+.hero .btnPrimary:hover{color:var(--white);transform:translateY(-2px);box-shadow:0 10px 24px -10px rgba(196,66,26,.55)}
+.btnPrimary .arr{display:inline-block;transition:transform .25s}
+.btnPrimary:hover .arr{transform:translate(2px,-2px)}
+.hero .btnSecondary{border:1.5px solid var(--ink);color:var(--ink);padding:16px 26px}
+@keyframes rise{from{opacity:0;transform:translateY(18px);filter:blur(6px)}to{opacity:1;transform:none;filter:none}}
+@keyframes draw{from{stroke-dashoffset:260}to{stroke-dashoffset:0}}
+@keyframes openL{from{transform:translateX(5px);opacity:0}to{transform:none;opacity:1}}
+@keyframes openR{from{transform:translateX(-5px);opacity:0}to{transform:none;opacity:1}}
+.r1{animation:rise .9s var(--ease) both .10s}
+.r2{animation:rise .9s var(--ease) both .22s}
+.r3{animation:rise .9s var(--ease) both .36s}
+.r4{animation:rise .9s var(--ease) both .50s}
+.r5{animation:rise .9s var(--ease) both .64s}
+.underline{stroke-dasharray:260;animation:draw 1.1s cubic-bezier(.6,0,.2,1) both .8s}
+.qL{animation:openL .8s var(--ease) both .1s}
+.qR{animation:openR .8s var(--ease) both .1s}
+/* Separate hover transforms from load transforms so animation fill doesn't suppress hover. */
+.quoteLeft,.quoteRight{transition:transform .35s var(--ease)}
+.logo:hover .quoteLeft{transform:translateX(-2px)}
+.logo:hover .quoteRight{transform:translateX(2px)}
+@media (max-width:1100px){.heading{font-size:clamp(46px,8vw,92px);letter-spacing:-0.027em}.content{padding:0 40px 40px}}
+@media (max-width:640px){
+  .nav{padding:20px 20px 0}
+  .navLinks a:not(.signin){display:none}
+  .content{padding:0 20px 32px;gap:20px}
+  .sub{font-size:17px}
+  .ctas{flex-direction:column;width:100%}
+  .hero .btn{text-align:center}
+  .hero{height:auto;min-height:100svh;max-height:none}
+}
+@media (prefers-reduced-motion:reduce){
+  .hero,.hero *,.hero *::before,.hero *::after{animation:none!important;transition:none!important}
+}
+/* The old site reserves a scrollbar gutter; the approved standalone frame does not. */
+:global(html):has(.hero){scrollbar-gutter:auto}

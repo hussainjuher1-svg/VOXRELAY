@@ -88,6 +88,9 @@ describe('Local SQLite API security, authorization, isolation & concurrency', ()
     process.env.VOXRELAY_LOCAL_DB = tempDbPath;
     process.env.VITE_SUPABASE_URL = 'https://example.supabase.co';
     delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    delete process.env.SUPABASE_URL;
+    delete process.env.SUPABASE_ANON_KEY;
+    delete process.env.VITE_SUPABASE_ANON_KEY;
     delete process.env.VERCEL;
 
     adminHandler = (await import('../api/admin.js')).default;

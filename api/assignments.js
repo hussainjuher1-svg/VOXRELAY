@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { resolveActor } from './_lib/auth-session.js';
+import { enforceSameOrigin, resolveActor } from './_lib/auth-session.js';
 import { HttpError, requireCapability, serializeAssignment } from './_lib/authz.js';
 import { readJsonBody, sendJson } from './_lib/core.js';
 import { getLocalDb, writeLocalAudit } from './_lib/local-db.js';
@@ -126,8 +126,9 @@ async function handleLocal(req, res, actor) {
 }
 
 export default async function handler(req, res) {
+  if (!['GET','HEAD','OPTIONS'].includes(String(req.method||'GET').toUpperCase())) enforceSameOrigin(req);
   try {
-    const actor = await resolveActor(req);
+    const actor = await resolveActor(req, res);
     if (actor?.mode === 'local') {
       return await handleLocal(req, res, actor);
     }
@@ -135,7 +136,7 @@ export default async function handler(req, res) {
       return sendJson(res, 401, { error: 'Sign in required.' });
     }
 
-    const ctx = await authenticateRequest(req);
+    const ctx = await authenticateRequest(req, res, actor);
     const url = new URL(req.url, 'http://localhost');
     const id = req.query?.id || url.searchParams.get('id');
 
