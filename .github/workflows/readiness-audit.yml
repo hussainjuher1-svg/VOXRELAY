@@ -91,6 +91,9 @@ jobs:
             node scripts/readiness/report-failure.mjs evidence/hardening-run.log
             exit 1
           fi
+      - name: Publish credential-free verification assertions
+        if: always()
+        run: node scripts/readiness/publish-evidence.mjs
       - name: Publish readiness summary (never equate local CI with production certification)
         if: always()
         env:
