@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
 import pg from 'pg';
+import { disposableDatabaseUrl } from './helpers/disposable-database.js';
 
 const rootDir = process.cwd();
 const schemaSql = fs.readFileSync(path.join(rootDir, 'db/schema.sql'), 'utf8');
@@ -21,7 +22,7 @@ END $$;
 `;
 
 describe('Real PostgreSQL schema, lockdown, migrations & PL/pgSQL RPCs', () => {
-  const databaseUrl = process.env.DATABASE_URL || '';
+  const databaseUrl = disposableDatabaseUrl() || '';
   let usePool = Boolean(databaseUrl);
   let pool = null;
   let pglite = null;
@@ -60,7 +61,8 @@ describe('Real PostgreSQL schema, lockdown, migrations & PL/pgSQL RPCs', () => {
   beforeAll(async () => {
     if (usePool) {
       pool = new pg.Pool({ connectionString: databaseUrl, max: 10 });
-      await execSql('DROP SCHEMA IF EXISTS voxrelay CASCADE;');
+      const existing = await pool.query("SELECT to_regnamespace('voxrelay') AS existing_schema");
+      if (existing.rows[0]?.existing_schema) throw new Error('Disposable test database is not empty; refusing to overwrite its voxrelay schema. Recreate the disposable test database explicitly.');
     } else {
       pglite = new PGlite();
     }
