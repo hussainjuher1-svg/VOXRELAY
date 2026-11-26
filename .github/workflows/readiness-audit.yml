@@ -1,0 +1,120 @@
+name: Real-service readiness audit
+on:
+  workflow_dispatch:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: readiness-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v3
+        with:
+          version: 2.65.5
+      - name: Install dependencies
+        run: npm ci
+      - name: Configure disposable stack (no repository or production secrets)
+        run: |
+          mkdir -p .cache/readiness evidence
+          cd .cache/readiness
+          supabase init
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('supabase/config.toml')
+          s = p.read_text().replace('major_version = 15', 'major_version = 17')
+          s = s.replace('schemas = ["public", "graphql_public"]', 'schemas = ["public", "voxrelay"]')
+          s = s.replace('enable_confirmations = true', 'enable_confirmations = false')
+          p.write_text(s)
+          assert 'major_version = 17' in s
+          PY
+      - id: services
+        name: Phase 1 — start real services and migrate disposable PostgreSQL17
+        run: |
+          set -euo pipefail
+          cd .cache/readiness
+          supabase start > ../../evidence/stack-start.log 2>&1
+          supabase status -o json > status.json
+          cd ../..
+          node scripts/readiness/configure.mjs
+          node scripts/readiness/database.mjs
+      - id: http
+        name: Phases 1–2 — real Auth and PostgREST HTTP acceptance
+        run: node scripts/readiness/http.mjs
+      - id: build
+        name: Lint, existing tests and production build
+        run: |
+          set -euo pipefail
+          npm run lint 2>&1 | tee evidence/lint.log
+          npm test 2>&1 | tee evidence/tests.log
+          npm run build 2>&1 | tee evidence/build.log
+      - id: browser
+        name: Phase 3 — browser acceptance on the live stack
+        run: |
+          set -euo pipefail
+          npm install --prefix .cache/readiness/browser --no-save --package-lock=false playwright@1.56.1
+          .cache/readiness/browser/node_modules/.bin/playwright install --with-deps chromium
+          npm run dev > evidence/frontend.log 2>&1 &
+          node scripts/readiness/browser.mjs
+      - id: hardening
+        name: Phase 4 — bundle secret scan and backup/restore rehearsal
+        run: node scripts/readiness/hardening.mjs
+      - name: Publish readiness summary (never equate local CI with production certification)
+        if: always()
+        env:
+          AUDIT_RESULT: ${{ job.status }}
+          SERVICES: ${{ steps.services.outcome }}
+          HTTP: ${{ steps.http.outcome }}
+          BUILD: ${{ steps.build.outcome }}
+          BROWSER: ${{ steps.browser.outcome }}
+          HARDENING: ${{ steps.hardening.outcome }}
+        run: |
+          {
+            echo '## Real-service readiness audit'
+            echo "Job result: **$AUDIT_RESULT**"
+            echo "| Gate | Result |"
+            echo "|---|---|"
+            echo "| Real services / PG17 migrations | $SERVICES |"
+            echo "| Auth / PostgREST HTTP | $HTTP |"
+            echo "| Lint / tests / build | $BUILD |"
+            echo "| Live browser acceptance | $BROWSER |"
+            echo "| Bundle / restore rehearsal | $HARDENING |"
+            echo 'Sequential gates: first failure prevents later verification steps.'
+            echo 'Evidence: redacted HTTP status log, SQL/security results, browser results, build logs and backup/restore result in the readiness-evidence artifact.'
+            echo 'Production deployment remains gated: production secrets, private port bindings, pooling, restart policies, off-host backup retention and production restore/RPO/RTO are NOT certified by this disposable runner.'
+            echo 'No production credentials or deployment operations are used.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Redact local credential values from service logs
+        if: always()
+        run: |
+          python3 - <<'PYCODE'
+          import json
+          from pathlib import Path
+          status = Path('.cache/readiness/status.json')
+          values = json.loads(status.read_text()) if status.exists() else {}
+          secrets = [str(v) for k,v in values.items() if any(t in k for t in ['KEY','SECRET','DB_URL']) and v]
+          for p in Path('evidence').glob('*.log'):
+              text = p.read_text(errors='replace')
+              for value in secrets:
+                  text = text.replace(value, '[REDACTED LOCAL TEST CREDENTIAL]')
+              p.write_text(text)
+          PYCODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: readiness-evidence
+          path: evidence/
+          retention-days: 7
+      - name: Stop disposable services
+        if: always()
+        run: cd .cache/readiness && supabase stop --no-backup

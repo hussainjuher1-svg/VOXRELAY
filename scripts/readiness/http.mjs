@@ -1,0 +1,36 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {randomUUID} from 'node:crypto';
+const base=process.env.SUPABASE_URL,key=process.env.SUPABASE_ANON_KEY;
+const results=[];
+async function request(path,{token,body,method='GET',schema=false,expected=[200]}={}){
+ const r=await fetch(base+path,{method,headers:{apikey:key,...(token?{Authorization:`Bearer ${token}`} : {}),...(body?{'Content-Type':'application/json'}:{}),...(schema?{'Accept-Profile':'public','Content-Profile':'public',Prefer:'return=representation'}:{})},body:body?JSON.stringify(body):undefined});
+ results.push({method,path,status:r.status});fs.writeFileSync('evidence/http.json',JSON.stringify(results,null,2));
+ assert.ok(expected.includes(r.status),`${method} ${path}: HTTP ${r.status}`);
+ const text=await r.text();return text?JSON.parse(text):null;
+}
+await request('/auth/v1/health');
+const password=`Audit-${randomUUID()}-aA9!`;
+const email=`audit-${randomUUID()}@example.com`;
+await request('/auth/v1/signup',{method:'POST',body:{email,password},expected:[200,201]});
+const a=await request('/auth/v1/token?grant_type=password',{method:'POST',body:{email,password}});
+assert.ok(a.access_token&&a.refresh_token);
+const b=await request('/auth/v1/signup',{method:'POST',body:{email:`other-${randomUUID()}@example.com`,password},expected:[200,201]});
+assert.ok(b.access_token);
+const rotated=await request('/auth/v1/token?grant_type=refresh_token',{method:'POST',body:{refresh_token:a.refresh_token}});
+assert.notEqual(rotated.refresh_token,a.refresh_token);
+const user=await request('/auth/v1/user',{token:rotated.access_token});assert.equal(user.id,a.user.id);
+const locked=await fetch(base+'/rest/v1/profiles?select=user_id',{headers:{apikey:key,Authorization:`Bearer ${rotated.access_token}`,'Accept-Profile':'voxrelay'}});
+results.push({method:'GET',path:'voxrelay.profiles (locked)',status:locked.status});assert.ok([401,403].includes(locked.status));
+const anon=await request('/rest/v1/readiness_probe?select=user_id',{schema:true,expected:[200,401,403]});if(Array.isArray(anon))assert.equal(anon.length,0);
+await request('/rest/v1/readiness_probe',{schema:true,method:'POST',body:{user_id:user.id,display_name:'forbidden'},expected:[401,403]});
+await request('/rest/v1/readiness_probe',{schema:true,token:rotated.access_token,method:'POST',body:{user_id:user.id,display_name:'Audit'},expected:[201]});
+const own=await request('/rest/v1/readiness_probe?select=user_id',{schema:true,token:rotated.access_token});assert.ok(own.some(x=>x.user_id===user.id));
+const foreign=await request(`/rest/v1/readiness_probe?user_id=eq.${user.id}`,{schema:true,token:b.access_token});assert.equal(foreign.length,0);
+await request('/rest/v1/readiness_probe',{schema:true,token:b.access_token,method:'POST',body:{user_id:user.id,display_name:'forged'},expected:[401,403]});
+await request(`/rest/v1/readiness_probe?user_id=eq.${user.id}`,{schema:true,token:rotated.access_token,method:'PATCH',body:{display_name:'Updated'},expected:[200]});
+await request(`/rest/v1/readiness_probe?user_id=eq.${user.id}`,{schema:true,token:rotated.access_token,method:'DELETE',expected:[200]});
+await request('/auth/v1/logout',{token:rotated.access_token,method:'POST',expected:[204]});
+await request('/auth/v1/token?grant_type=refresh_token',{method:'POST',body:{refresh_token:rotated.refresh_token},expected:[400,401,403]});
+// Stale access-token semantics depend on GoTrue's session check: test explicitly.
+await request('/auth/v1/user',{token:rotated.access_token,expected:[401,403]});
