@@ -22,7 +22,13 @@ try{for(const width of [390,1440]){
  await page.getByLabel('Full name',{exact:true}).fill('Readiness Interpreter');await page.getByLabel('Work email',{exact:true}).fill(email);await page.getByLabel('Password',{exact:true}).fill(password);
  await page.locator('form').getByRole('button',{name:'Create account',exact:true}).click();
  await page.getByRole('status').filter({hasText:/check your inbox/i}).waitFor({timeout:15000});
- const link=await confirmationLink(email,origin+'/login');await page.goto(link);await page.waitForURL(/\/app(?:\/|$)/,{timeout:30000});
+ const link=await confirmationLink(email,origin+'/login');
+ // The product instructs confirmed users to sign in; do not assume auto-login from email.
+ await page.goto(link);await page.waitForURL(/\/login(?:[?#]|$)/);
+ assert.ok(!new URL(page.url()).hash.includes('error='),'Provider rejected confirmation');
+ await page.goto(origin+'/login');
+ await page.getByLabel('Work email',{exact:true}).fill(email);await page.getByLabel('Password',{exact:true}).fill(password);
+ await page.locator('form').getByRole('button',{name:'Sign in',exact:true}).click();await page.waitForURL(/\/app(?:\/|$)/,{timeout:30000});
  await page.reload();await page.waitForURL(/\/app(?:\/|$)/);
  // Live browser CRUD uses genuine GoTrue credentials, never fabricated tokens.
  const crud=await page.evaluate(async({base,key,email,password})=>{
@@ -34,7 +40,11 @@ try{for(const width of [390,1440]){
   }return statuses;
  },{base:process.env.SUPABASE_URL,key:process.env.SUPABASE_ANON_KEY,email,password});
  const signout=page.getByRole('button',{name:'Sign out',exact:true});
- if(!await signout.isVisible()){const menu=page.getByRole('button',{name:/menu/i}).first();await menu.click();}
+ if(width<720){
+  const menu=page.getByRole('button',{name:'Open workspace menu',exact:true});await menu.click();
+  await page.locator('.app-sidebar.is-open').waitFor();await page.getByRole('button',{name:'Close navigation',exact:true}).click();
+  await menu.click();await page.locator('.app-sidebar.is-open').waitFor();
+ }
  await signout.click();await page.waitForURL(/\/(login)?$/);
  validFlow=false;await page.goto(origin+'/app/assignments');await page.waitForURL(/\/login/);
  validFlow=true;await page.getByLabel('Work email',{exact:true}).fill(email);await page.getByLabel('Password',{exact:true}).fill(password);await page.locator('form').getByRole('button',{name:'Sign in',exact:true}).click();await page.waitForURL(/\/app(?:\/|$)/);await page.reload();
