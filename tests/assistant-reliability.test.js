@@ -58,6 +58,22 @@ describe('assistant honest unavailability (deterministic)', () => {
     expect(events.some((e) => e.type === 'unavailable')).toBe(false);
   });
 
+  it('flags a weak knowledge-base match as the closest related topic with citations retained', async () => {
+    const events = await collect({ question: 'payouts', db: emptyDb(), userId: null });
+    const delta = events.find((e) => e.type === 'delta');
+    expect(delta.text).toContain('closest related topic');
+    const citations = events.find((e) => e.type === 'citations');
+    expect(citations.items.some((c) => c.id === 'KB-06')).toBe(true);
+  });
+
+  it('does not qualify a strong knowledge-base match', async () => {
+    const events = await collect({ question: 'How does billing rounding work?', db: emptyDb(), userId: null });
+    const delta = events.find((e) => e.type === 'delta');
+    expect(delta.text).not.toContain('closest related topic');
+    const citations = events.find((e) => e.type === 'citations');
+    expect(citations.items.some((c) => c.id === 'KB-06')).toBe(true);
+  });
+
   it('maps service failure messages by locale without raw exception text', () => {
     expect(assistantServiceErrorMessage('en')).toMatch(/temporarily unavailable/);
     expect(assistantServiceErrorMessage('ar')).not.toMatch(/temporarily unavailable/);

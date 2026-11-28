@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { searchKnowledgeBase } from './kb.js';
+import { KB_STRONG_MATCH_THRESHOLD, searchKnowledgeBase, searchKnowledgeBaseWithScores } from './kb.js';
 
 export function redactPii(text) {
   return String(text || '')
@@ -199,8 +199,11 @@ export async function runAssistantStream({ mode = 'ask', question, locale = 'en'
     return;
   }
 
-  // Ask mode: grounded KB + workspace records + optional Anthropic provider
-  const kbMatches = searchKnowledgeBase(sanitized, lang, 2);
+  // Ask mode: grounded KB + workspace records
+  const kbScored = searchKnowledgeBaseWithScores(sanitized, lang, 2);
+  const kbMatches = kbScored.map((s) => s.entry);
+  const topScore = kbScored[0]?.score ?? 0;
+  const weakMatch = kbMatches.length > 0 && topScore < KB_STRONG_MATCH_THRESHOLD;
   let snapshot = null;
   let workspaceReadFailed = Boolean(userId && !db);
   if (!workspaceReadFailed) {
@@ -246,7 +249,15 @@ export async function runAssistantStream({ mode = 'ask', question, locale = 'en'
     }
   }
 
-  const structuredFallback = `### ${topTitle} [${top.id}]\n${topBullets}` + workspaceNote;
+  const weakMatchNote = weakMatch
+    ? lang === 'ar'
+      ? '\n\n- **ملاحظة:** هذا أقرب موضوع ذي صلة في قاعدة معرفة VOXRELAY — إذا لم يُجب عن سؤالك، يمكنك التصعيد إلى الدعم البشري أدناه.'
+      : lang === 'bn'
+        ? '\n\n- **নোট:** এটি VOXRELAY নলেজ বেসের সবচেয়ে কাছের সম্পর্কিত বিষয় — এটি যদি আপনার প্রশ্নের উত্তর না দেয়, আপনি নিচে মানব সহায়তায় এস্কেলেট করতে পারেন।'
+        : '\n\n- **Note:** this is the closest related topic in the VOXRELAY knowledge base — if it does not answer your question, you can escalate to human support below.'
+    : '';
+
+  const structuredFallback = `### ${topTitle} [${top.id}]\n${topBullets}` + workspaceNote + weakMatchNote;
 
   const answerText = structuredFallback;
 
