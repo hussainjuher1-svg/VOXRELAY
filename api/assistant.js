@@ -117,8 +117,10 @@ export default async function handler(req, res) {
         question: parsed.data.question,
         locale: parsed.data.locale,
         db,
+        supabase: actor?.supabase || null,
         userId: actor?.user?.id || null,
         role,
+        history: parsed.data.history || [],
         emit: emitWithAudit,
       });
       emit({ type: 'done' });
@@ -145,8 +147,10 @@ export default async function handler(req, res) {
       question: parsed.data.question,
       locale: parsed.data.locale,
       db,
+      supabase: actor?.supabase || null,
       userId: actor?.user?.id || null,
       role,
+      history: parsed.data.history || [],
       emit: emitWithAudit,
     });
     emit({ type: 'done' });

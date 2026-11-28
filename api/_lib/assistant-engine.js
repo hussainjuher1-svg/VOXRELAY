@@ -65,18 +65,71 @@ const DOMAIN_RESEARCH_BRIEFS = [
   },
 ];
 
-export function buildWorkspaceSnapshot({ db, userId }) {
-  if (!db || !userId) return { assignments: 0, terms: 0, openTickets: 0 };
-  const assignments = db.prepare('SELECT COUNT(*) AS c FROM assignments WHERE owner_id = ?').get(userId)?.c || 0;
-  const terms = db.prepare('SELECT COUNT(*) AS c FROM terms WHERE owner_id = ?').get(userId)?.c || 0;
-  const openTickets =
-    db.prepare("SELECT COUNT(*) AS c FROM support_tickets WHERE requester_id = ? AND status != 'closed'").get(userId)?.c || 0;
-  return { assignments, terms, openTickets };
+export function buildWorkspaceSnapshot({ db, supabase, userId }) {
+  if (!userId || (!db && !supabase)) return { assignments: 0, terms: 0, openTickets: 0 };
+  if (db) {
+    const assignments = db.prepare('SELECT COUNT(*) AS c FROM assignments WHERE owner_id = ?').get(userId)?.c || 0;
+    const terms = db.prepare('SELECT COUNT(*) AS c FROM terms WHERE owner_id = ?').get(userId)?.c || 0;
+    const openTickets =
+      db.prepare("SELECT COUNT(*) AS c FROM support_tickets WHERE requester_id = ? AND status != 'closed'").get(userId)?.c || 0;
+    return { assignments, terms, openTickets };
+  }
+  return readSupabaseWorkspaceSnapshot(supabase, userId);
 }
 
-export async function runAssistantStream({ mode = 'ask', question, locale = 'en', db, userId, role = null, emit }) {
+async function countSupabaseRows(supabase, table, applyFilters) {
+  const query = applyFilters(supabase.from(table).select('id'));
+  const { data, error } = await query.limit(200);
+  if (error) throw new Error('snapshot read failed');
+  return Array.isArray(data) ? data.length : 0;
+}
+
+async function readSupabaseWorkspaceSnapshot(supabase, userId) {
+  const [assignments, terms, tickets] = await Promise.all([
+    countSupabaseRows(supabase, 'assignments', (q) => q.eq('owner_id', userId)),
+    countSupabaseRows(supabase, 'terms', (q) => q.eq('owner_id', userId)),
+    countSupabaseRows(supabase, 'support_tickets', (q) => q.eq('requester_id', userId).neq('status', 'closed')),
+  ]);
+  return { assignments, terms, openTickets: tickets };
+}
+
+const CORRECTION_RE = /^(?:no|nope|nah)\b[\s,!.?]*(?:i\s+)?(?:meant|said|asked)\b[\s:,-]*(.+)$/i;
+const FOLLOWUP_CUE_RE = /^(?:what|how)\s+about\b|^and\s+\S|^what\s+else\b|^continue\b/i;
+const FOLLOWUP_MAX_WORDS = 3;
+
+export function resolveConversationQuery(sanitized, history = []) {
+  const lastUser = [...(Array.isArray(history) ? history : [])].reverse().find((m) => m?.role === 'user' && m.text);
+  if (!lastUser) return { query: sanitized, kind: 'standalone' };
+  const lastText = redactPii(lastUser.text);
+  const correction = sanitized.match(CORRECTION_RE);
+  if (correction && correction[1]?.trim()) return { query: correction[1].trim(), kind: 'correction' };
+  const wordCount = sanitized.split(/\s+/).filter(Boolean).length;
+  if (wordCount <= FOLLOWUP_MAX_WORDS || FOLLOWUP_CUE_RE.test(sanitized)) {
+    return { query: `${lastText} ${sanitized}`, kind: 'followup' };
+  }
+  return { query: sanitized, kind: 'standalone' };
+}
+
+export async function runAssistantStream({
+  mode = 'ask',
+  question,
+  locale = 'en',
+  db,
+  supabase = null,
+  userId,
+  role = null,
+  history = [],
+  emit,
+}) {
   const sanitized = redactPii(question).trim();
   const lang = locale === 'ar' ? 'ar' : locale === 'bn' ? 'bn' : 'en';
+  const safeHistory = (Array.isArray(history) ? history : [])
+    .slice(-4)
+    .map((m) => ({
+      role: m?.role === 'user' ? 'user' : 'assistant',
+      text: redactPii(String(m?.text || '')).slice(0, 300),
+    }))
+    .filter((m) => m.text);
 
   if (!sanitized) {
     emit({
@@ -214,16 +267,17 @@ export async function runAssistantStream({ mode = 'ask', question, locale = 'en'
     return;
   }
 
-  // Ask mode: grounded KB + workspace records
-  const kbScored = searchKnowledgeBaseWithScores(sanitized, lang, 2);
+  // Ask mode: grounded KB (with conversation-resolved retrieval) + workspace records
+  const resolved = resolveConversationQuery(sanitized, safeHistory);
+  const kbScored = searchKnowledgeBaseWithScores(resolved.query, lang, 2);
   const kbMatches = kbScored.map((s) => s.entry);
   const topScore = kbScored[0]?.score ?? 0;
   const weakMatch = kbMatches.length > 0 && topScore < KB_STRONG_MATCH_THRESHOLD;
   let snapshot = null;
-  let workspaceReadFailed = Boolean(userId && !db);
+  let workspaceReadFailed = Boolean(userId && !db && !supabase);
   if (!workspaceReadFailed) {
     try {
-      snapshot = buildWorkspaceSnapshot({ db, userId });
+      snapshot = await buildWorkspaceSnapshot({ db, supabase, userId });
     } catch {
       workspaceReadFailed = true;
     }
