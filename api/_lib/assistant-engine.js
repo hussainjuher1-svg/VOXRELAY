@@ -1,5 +1,7 @@
 import crypto from 'node:crypto';
-import { searchKnowledgeBase } from './kb.js';
+import { matchTopic } from './assistant.js';
+import { can } from './authz.js';
+import { KB_STRONG_MATCH_THRESHOLD, searchKnowledgeBase, searchKnowledgeBaseWithScores } from './kb.js';
 
 export function redactPii(text) {
   return String(text || '')
@@ -72,7 +74,7 @@ export function buildWorkspaceSnapshot({ db, userId }) {
   return { assignments, terms, openTickets };
 }
 
-export async function runAssistantStream({ mode = 'ask', question, locale = 'en', db, userId, emit }) {
+export async function runAssistantStream({ mode = 'ask', question, locale = 'en', db, userId, role = null, emit }) {
   const sanitized = redactPii(question).trim();
   const lang = locale === 'ar' ? 'ar' : locale === 'bn' ? 'bn' : 'en';
 
@@ -155,6 +157,19 @@ export async function runAssistantStream({ mode = 'ask', question, locale = 'en'
     return;
   }
 
+  if (role && !can(role, 'ops.org.view') && matchTopic(sanitized) === 'org_overview') {
+    const refusalText =
+      lang === 'ar'
+        ? 'بيانات المؤسسة (الفريق، الجودة، إعدادات المؤسسة) متاحة فقط للمنسّقين والمسؤولين. يمكنني مساعدتك في مهامك ومصطلحاتك وفواتيرك وتحضير جلستك، أو يمكنك التصعيد إلى الدعم البشري أدناه.'
+        : lang === 'bn'
+          ? 'সংস্থার স্তরের রেকর্ড (টিম, কোয়ালিটি, সংস্থার সেটিংস) শুধু কোঅর্ডিনেটর ও অ্যাডমিনদের জন্য। আমি আপনার নিজের অ্যাসাইনমেন্ট, গ্লসারি, বিলিং ও প্রস্তুতিতে সাহায্য করতে পারি, অথবা আপনি নিচে মানব সহায়তায় এস্কেলেট করতে পারেন।'
+          : 'Organization-level records (team, quality, org settings) are restricted to coordinators and admins. I can help with your own assignments, glossary, billing, and session prep — or escalate to human support below.';
+    emit({ type: 'delta', text: refusalText });
+    emit({ type: 'refusal', code: 'role_refused', topic: 'org_overview' });
+    emit({ type: 'offer_ticket', reason: 'role_scope' });
+    return;
+  }
+
   if (mode === 'research') {
     emit({ type: 'step', step: 'planning', label: lang === 'ar' ? 'تخطيط محاور البحث والتحضير...' : 'Planning subject & terminology search...' });
     await new Promise((r) => setTimeout(r, 80));
@@ -199,9 +214,20 @@ export async function runAssistantStream({ mode = 'ask', question, locale = 'en'
     return;
   }
 
-  // Ask mode: grounded KB + workspace records + optional Anthropic provider
-  const kbMatches = searchKnowledgeBase(sanitized, lang, 2);
-  const snapshot = buildWorkspaceSnapshot({ db, userId });
+  // Ask mode: grounded KB + workspace records
+  const kbScored = searchKnowledgeBaseWithScores(sanitized, lang, 2);
+  const kbMatches = kbScored.map((s) => s.entry);
+  const topScore = kbScored[0]?.score ?? 0;
+  const weakMatch = kbMatches.length > 0 && topScore < KB_STRONG_MATCH_THRESHOLD;
+  let snapshot = null;
+  let workspaceReadFailed = Boolean(userId && !db);
+  if (!workspaceReadFailed) {
+    try {
+      snapshot = buildWorkspaceSnapshot({ db, userId });
+    } catch {
+      workspaceReadFailed = true;
+    }
+  }
 
   if (kbMatches.length === 0) {
     const ungrounded =
@@ -221,13 +247,32 @@ export async function runAssistantStream({ mode = 'ask', question, locale = 'en'
     .map((b) => `- ${b}`)
     .join('\n');
 
-  const structuredFallback =
-    `### ${topTitle} [${top.id}]\n${topBullets}` +
-    (userId
-      ? lang === 'ar'
-        ? `\n\n- **مساحتك الحالية:** ${snapshot.assignments} مهام · ${snapshot.terms} مصطلحات · ${snapshot.openTickets} تذاكر`
-        : `\n\n- **Your workspace:** ${snapshot.assignments} assignments · ${snapshot.terms} terms · ${snapshot.openTickets} open tickets`
-      : '');
+  let workspaceNote = '';
+  if (userId) {
+    if (workspaceReadFailed) {
+      workspaceNote =
+        lang === 'ar'
+          ? '\n\n- **بيانات مساحتك:** غير متوفرة حالياً — تعذّر قراءة سجلاتك.'
+          : lang === 'bn'
+            ? '\n\n- **আপনার ওয়ার্কস্পেস:** সাময়িকভাবে অনুপলব্ধ — রেকর্ড পড়া যায়নি।'
+            : '\n\n- **Your workspace:** temporarily unavailable — your records could not be read right now.';
+    } else {
+      workspaceNote =
+        lang === 'ar'
+          ? `\n\n- **مساحتك الحالية:** ${snapshot.assignments} مهام · ${snapshot.terms} مصطلحات · ${snapshot.openTickets} تذاكر`
+          : `\n\n- **Your workspace:** ${snapshot.assignments} assignments · ${snapshot.terms} terms · ${snapshot.openTickets} open tickets`;
+    }
+  }
+
+  const weakMatchNote = weakMatch
+    ? lang === 'ar'
+      ? '\n\n- **ملاحظة:** هذا أقرب موضوع ذي صلة في قاعدة معرفة VOXRELAY — إذا لم يُجب عن سؤالك، يمكنك التصعيد إلى الدعم البشري أدناه.'
+      : lang === 'bn'
+        ? '\n\n- **নোট:** এটি VOXRELAY নলেজ বেসের সবচেয়ে কাছের সম্পর্কিত বিষয় — এটি যদি আপনার প্রশ্নের উত্তর না দেয়, আপনি নিচে মানব সহায়তায় এস্কেলেট করতে পারেন।'
+        : '\n\n- **Note:** this is the closest related topic in the VOXRELAY knowledge base — if it does not answer your question, you can escalate to human support below.'
+    : '';
+
+  const structuredFallback = `### ${topTitle} [${top.id}]\n${topBullets}` + workspaceNote + weakMatchNote;
 
   const answerText = structuredFallback;
 
@@ -236,8 +281,23 @@ export async function runAssistantStream({ mode = 'ask', question, locale = 'en'
     type: 'citations',
     items: kbMatches.map((m) => ({ id: m.id, title: m.title[lang] || m.title.en, href: m.href })),
   });
+  if (workspaceReadFailed) emit({ type: 'unavailable', reason: 'workspace_read' });
 }
 
 export function hashQuestion(q) {
   return crypto.createHash('sha256').update(String(q || '')).digest('hex').slice(0, 16);
+}
+
+export function assistantRateLimitMessage(locale = 'en') {
+  const lang = locale === 'ar' ? 'ar' : locale === 'bn' ? 'bn' : 'en';
+  if (lang === 'ar') return 'طلبات كثيرة جدًا. يرجى الانتظار قليلًا ثم المحاولة مرة أخرى.';
+  if (lang === 'bn') return 'অতিরিক্ত অনুরোধ। কিছুক্ষণ অপেক্ষা করে আবার চেষ্টা করুন।';
+  return 'Too many requests. Please wait a moment and try again.';
+}
+
+export function assistantServiceErrorMessage(locale = 'en') {
+  const lang = locale === 'ar' ? 'ar' : locale === 'bn' ? 'bn' : 'en';
+  if (lang === 'ar') return 'خدمة المساعد غير متوفرة مؤقتاً. يرجى المحاولة مرة أخرى.';
+  if (lang === 'bn') return 'সহকারী পরিষেবা সাময়িকভাবে অনুপলব্ধ। অনুগ্রহ করে আবার চেষ্টা করুন।';
+  return 'The assistant service is temporarily unavailable. Please try again.';
 }

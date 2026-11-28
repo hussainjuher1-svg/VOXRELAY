@@ -1,10 +1,18 @@
 import crypto from 'node:crypto';
 import { resolveActor } from './_lib/auth-session.js';
-import { hashQuestion, runAssistantStream } from './_lib/assistant-engine.js';
+import {
+  assistantRateLimitMessage,
+  assistantServiceErrorMessage,
+  hashQuestion,
+  runAssistantStream,
+} from './_lib/assistant-engine.js';
 import { HttpError } from './_lib/authz.js';
-import { readJsonBody, sendJson } from './_lib/core.js';
-import { getLocalDb } from './_lib/local-db.js';
+import { enforceLocalRateLimit, enforceRateLimit, readJsonBody, sendJson } from './_lib/core.js';
+import { getLocalDb, writeLocalAudit } from './_lib/local-db.js';
+import { getServiceClient } from './_lib/supabase.js';
 import { assistantRequestSchema } from './_lib/validate.js';
+
+const ASSISTANT_RATE_LIMIT = { maxRequests: 20, windowMs: 60_000 };
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -37,6 +45,56 @@ export default async function handler(req, res) {
   const actor = await resolveActor(req).catch(() => null);
   const db = getLocalDb();
 
+  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
+  const bucket = actor?.user?.id ? `assistant:${actor.user.id}` : `assistant-anon:${ip}`;
+  const service = getServiceClient();
+  try {
+    if (service) {
+      await enforceRateLimit(service, bucket, ASSISTANT_RATE_LIMIT);
+    } else {
+      enforceLocalRateLimit(db, bucket, ASSISTANT_RATE_LIMIT);
+    }
+  } catch (err) {
+    if (err instanceof HttpError) {
+      const message =
+        err.status === 429 ? assistantRateLimitMessage(parsed.data.locale) : assistantServiceErrorMessage(parsed.data.locale);
+      return sendJson(res, err.status, { error: message });
+    }
+    throw err;
+  }
+
+  const role = actor?.membership?.role || actor?.user?.role || null;
+  const auditRoleRefusal = (event) => {
+    if (event?.type !== 'refusal' || event.code !== 'role_refused') return;
+    if (service && actor?.user?.id) {
+      service
+        .from('audit_events')
+        .insert({
+          actor_id: actor.user.id,
+          org_id: actor.membership?.org_id || null,
+          area: 'assistant',
+          type: 'assistant_role_refusal',
+          result: 'denied',
+          metadata: { topic: event.topic || null },
+        })
+        .then(
+          () => undefined,
+          () => undefined
+        );
+    } else if (db) {
+      try {
+        writeLocalAudit(db, {
+          actorId: actor?.user?.id || null,
+          area: 'assistant',
+          type: 'assistant_role_refusal',
+          result: 'denied',
+        });
+      } catch {
+        return;
+      }
+    }
+  };
+
   const wantsSse = String(req.headers.accept || '').includes('text/event-stream');
   if (wantsSse) {
     res.statusCode = 200;
@@ -48,6 +106,11 @@ export default async function handler(req, res) {
       res.write(`data: ${JSON.stringify(payload)}\n\n`);
     };
 
+    const emitWithAudit = (payload) => {
+      emit(payload);
+      auditRoleRefusal(payload);
+    };
+
     try {
       await runAssistantStream({
         mode: parsed.data.mode,
@@ -55,11 +118,12 @@ export default async function handler(req, res) {
         locale: parsed.data.locale,
         db,
         userId: actor?.user?.id || null,
-        emit,
+        role,
+        emit: emitWithAudit,
       });
       emit({ type: 'done' });
-    } catch (err) {
-      emit({ type: 'error', message: err?.message || 'Assistant stream failed.' });
+    } catch {
+      emit({ type: 'error', message: assistantServiceErrorMessage(parsed.data.locale) });
     } finally {
       res.end();
     }
@@ -71,6 +135,10 @@ export default async function handler(req, res) {
   res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   const emit = (obj) => res.write(`${JSON.stringify(obj)}\n`);
+  const emitWithAudit = (payload) => {
+    emit(payload);
+    auditRoleRefusal(payload);
+  };
   try {
     await runAssistantStream({
       mode: parsed.data.mode,
@@ -78,11 +146,12 @@ export default async function handler(req, res) {
       locale: parsed.data.locale,
       db,
       userId: actor?.user?.id || null,
-      emit,
+      role,
+      emit: emitWithAudit,
     });
     emit({ type: 'done' });
-  } catch (err) {
-    emit({ type: 'error', message: err?.message || 'Assistant stream failed.' });
+  } catch {
+    emit({ type: 'error', message: assistantServiceErrorMessage(parsed.data.locale) });
   } finally {
     res.end();
   }

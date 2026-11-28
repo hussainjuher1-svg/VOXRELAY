@@ -6,6 +6,8 @@ import { Button } from './ui/Button';
 import { Badge } from './ui/Primitives';
 import '../workspace.css';
 
+class AssistantRequestError extends Error {}
+
 interface Citation {
   id: string;
   title: string;
@@ -152,7 +154,7 @@ export function AssistantDock({
 }) {
   const { locale } = useLocale();
   const { pathname } = useLocation();
-  const { session } = useAuth();
+  const { user, session } = useAuth();
   const isAr = locale === 'ar';
 
   const [mode, setMode] = useState<'ask' | 'research'>('ask');
@@ -165,6 +167,10 @@ export function AssistantDock({
   const inputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const wasOpen = useRef(false);
+  const activeRequestRef = useRef<{ id: string; userId: string | null } | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const sessionUserId = user?.id ?? session?.user?.id ?? null;
+  const identityRef = useRef<string | null>(sessionUserId);
 
   const faqChips = useMemo(
     () =>
@@ -207,6 +213,20 @@ export function AssistantDock({
   }, [open, returnFocusToRef]);
 
   useEffect(() => {
+    if (identityRef.current === sessionUserId) return;
+    identityRef.current = sessionUserId;
+    activeRequestRef.current = null;
+    abortRef.current?.abort();
+    setMessages([]);
+    setSavedTerms({});
+    setEscalatedMsgId(null);
+    setStreaming(false);
+    setActiveSteps([]);
+  }, [sessionUserId]);
+
+  useEffect(() => () => abortRef.current?.abort(), []);
+
+  useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === '/') {
         e.preventDefault();
@@ -237,6 +257,11 @@ export function AssistantDock({
       setStreaming(true);
       setActiveSteps([]);
 
+      const controller = new AbortController();
+      abortRef.current = controller;
+      const request = { id: assistantId, userId: sessionUserId };
+      activeRequestRef.current = request;
+
       try {
         const headers: Record<string, string> = {
           'Content-Type': 'application/json',
@@ -248,6 +273,7 @@ export function AssistantDock({
         const res = await fetch('/api/assistant', {
           method: 'POST',
           headers,
+          signal: controller.signal,
           body: JSON.stringify({
             question: q,
             mode: runMode,
@@ -256,17 +282,37 @@ export function AssistantDock({
           }),
         });
 
+        if (activeRequestRef.current !== request) return;
+
         if (!res.ok || !res.body) {
+          let serverMessage = '';
+          try {
+            const body = await res.json();
+            if (typeof body?.error === 'string' && body.error.trim()) serverMessage = body.error.trim();
+          } catch {
+            serverMessage = '';
+          }
+          if (serverMessage) {
+            throw new AssistantRequestError(serverMessage);
+          }
           throw new Error('Assistant request failed');
         }
 
         const reader = res.body.getReader();
+        if (activeRequestRef.current !== request) {
+          reader.cancel().catch(() => undefined);
+          return;
+        }
         const decoder = new TextDecoder();
         let buffer = '';
 
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
+          if (activeRequestRef.current !== request) {
+            reader.cancel().catch(() => undefined);
+            return;
+          }
           buffer += decoder.decode(value, { stream: true });
           const frames = buffer.split('\n\n');
           buffer = frames.pop() || '';
@@ -321,26 +367,33 @@ export function AssistantDock({
             }
           }
         }
-      } catch {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantId
-              ? {
-                  ...m,
-                  text: isAr
-                    ? 'تعذر الاتصال بالمساعد حالياً. يمكنك فتح تذكرة دعم بشري مباشرة.'
-                    : 'Unable to reach the assistant right now. You can open a human support ticket directly.',
-                  escalate: true,
-                }
-              : m
-          )
-        );
+      } catch (err) {
+        if (activeRequestRef.current === request) {
+          const serverMessage = err instanceof AssistantRequestError ? err.message : '';
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? {
+                    ...m,
+                    text:
+                      serverMessage ||
+                      (isAr
+                        ? 'تعذر الاتصال بالمساعد حالياً. يمكنك فتح تذكرة دعم بشري مباشرة.'
+                        : 'Unable to reach the assistant right now. You can open a human support ticket directly.'),
+                    escalate: !(err instanceof AssistantRequestError),
+                  }
+                : m
+            )
+          );
+        }
       } finally {
-        setStreaming(false);
-        setActiveSteps([]);
+        if (activeRequestRef.current === request) {
+          setStreaming(false);
+          setActiveSteps([]);
+        }
       }
     },
-    [isAr, locale, mode, pathname, session, streaming]
+    [isAr, locale, mode, pathname, session, sessionUserId, streaming]
   );
 
   useEffect(() => {

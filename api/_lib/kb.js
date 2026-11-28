@@ -218,9 +218,11 @@ const STOP_WORDS = new Set([
   'في', 'من', 'على', 'إلى', 'عن', 'ما', 'هل', 'كيف', 'أو', 'مع', 'هذا', 'هذه',
 ]);
 
-export function searchKnowledgeBase(query, locale = 'en', limit = 4) {
+export const KB_STRONG_MATCH_THRESHOLD = 8;
+
+export function searchKnowledgeBaseWithScores(query, locale = 'en', limit = 4) {
   const q = String(query || '').toLowerCase().trim();
-  if (!q) return KNOWLEDGE_BASE.slice(0, limit);
+  if (!q) return KNOWLEDGE_BASE.slice(0, limit).map((entry) => ({ entry, score: 0 }));
   const tokens = q
     .split(/[^\p{L}\p{N}.-]+/u)
     .filter((t) => t.length >= 2 && !STOP_WORDS.has(t));
@@ -242,5 +244,9 @@ export function searchKnowledgeBase(query, locale = 'en', limit = 4) {
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score);
 
-  return scored.slice(0, limit).map((s) => s.entry);
+  return scored.slice(0, limit);
+}
+
+export function searchKnowledgeBase(query, locale = 'en', limit = 4) {
+  return searchKnowledgeBaseWithScores(query, locale, limit).map((s) => s.entry);
 }
