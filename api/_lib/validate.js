@@ -91,6 +91,15 @@ export const assistantRequestSchema = z.object({
   locale: z.enum(['en', 'bn', 'ar']).default('en'),
   tier: z.string().max(16).optional(),
   category: z.string().max(64).optional(),
+  history: z
+    .array(
+      z.object({
+        role: z.enum(['user', 'assistant']),
+        text: maxCodePoints(500, 'History message'),
+      })
+    )
+    .max(8)
+    .optional(),
 });
 
 export const termCreateSchema = z.object({

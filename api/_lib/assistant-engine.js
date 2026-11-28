@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { matchTopic } from './assistant.js';
 import { can } from './authz.js';
-import { KB_STRONG_MATCH_THRESHOLD, searchKnowledgeBase, searchKnowledgeBaseWithScores } from './kb.js';
+import { KB_STRONG_MATCH_THRESHOLD, KNOWLEDGE_BASE, searchKnowledgeBase, searchKnowledgeBaseWithScores } from './kb.js';
 
 export function redactPii(text) {
   return String(text || '')
@@ -12,7 +12,7 @@ export function redactPii(text) {
 
 const LIVE_INTERPRET_RE = /\b(translate|interpret|transcribe|record\s+session|patient\s+said|doctor\s+said|diagnose|prescribe|legal\s+advice|medical\s+advice|verdict|lawsuit)\b/i;
 const HUMAN_ESCALATE_RE = /\b(human|person|agent|staff|coordinator|escalate|ticket|support\s+team|talk\s+to\s+someone|بشر|دعم|تذكرة)\b/i;
-const GREETING_RE = /^(hi|hello|hey|yo|bro|mate|friend|good\s+(morning|afternoon|evening)|greetings|salam|assalamu\s+alaikum|hola|thanks|thank\s+you|ok|okay|cool|test|مرحبا|أهلا|السلام\s+عليكم|شكرا|হ্যালো|হাই|ধন্যবাদ)[\s!.,?]*$/i;
+const GREETING_RE = /^(hi|hello|hey|yo|bro|mate|friend|good\s+(morning|afternoon|evening)|greetings|salam|assalamu\s+alaikum|hola|thanks|thank\s+you|ok|okay|cool|test|مرحبا|أهلا|السلام\s+عليكم|شكرا|হ্যালো|হাই|ধন্যবাদ)(\s+vox)?[\s!.,?]*$/i;
 const IDENTITY_RE = /^(what\s+is\s+(your|ur)\s+name|who\s+are\s+you|what\s+are\s+you|what\s+can\s+you\s+do|about\s+you|introduce\s+yourself|ما\s+اسمك|من\s+أنت|তোমার\s+নাম\s+কি|তুমি\s+কে)[\s!.,?]*$/i;
 
 const DOMAIN_RESEARCH_BRIEFS = [
@@ -65,18 +65,130 @@ const DOMAIN_RESEARCH_BRIEFS = [
   },
 ];
 
-export function buildWorkspaceSnapshot({ db, userId }) {
-  if (!db || !userId) return { assignments: 0, terms: 0, openTickets: 0 };
-  const assignments = db.prepare('SELECT COUNT(*) AS c FROM assignments WHERE owner_id = ?').get(userId)?.c || 0;
-  const terms = db.prepare('SELECT COUNT(*) AS c FROM terms WHERE owner_id = ?').get(userId)?.c || 0;
-  const openTickets =
-    db.prepare("SELECT COUNT(*) AS c FROM support_tickets WHERE requester_id = ? AND status != 'closed'").get(userId)?.c || 0;
-  return { assignments, terms, openTickets };
+export function buildWorkspaceSnapshot({ db, supabase, userId }) {
+  if (!userId || (!db && !supabase)) return { assignments: 0, terms: 0, openTickets: 0 };
+  if (db) {
+    const assignments = db.prepare('SELECT COUNT(*) AS c FROM assignments WHERE owner_id = ?').get(userId)?.c || 0;
+    const terms = db.prepare('SELECT COUNT(*) AS c FROM terms WHERE owner_id = ?').get(userId)?.c || 0;
+    const openTickets =
+      db.prepare("SELECT COUNT(*) AS c FROM support_tickets WHERE requester_id = ? AND status != 'closed'").get(userId)?.c || 0;
+    return { assignments, terms, openTickets };
+  }
+  return readSupabaseWorkspaceSnapshot(supabase, userId);
 }
 
-export async function runAssistantStream({ mode = 'ask', question, locale = 'en', db, userId, role = null, emit }) {
+async function countSupabaseRows(supabase, table, applyFilters) {
+  const query = applyFilters(supabase.from(table).select('id'));
+  const { data, error } = await query.limit(200);
+  if (error) throw new Error('snapshot read failed');
+  return Array.isArray(data) ? data.length : 0;
+}
+
+async function readSupabaseWorkspaceSnapshot(supabase, userId) {
+  const [assignments, terms, tickets] = await Promise.all([
+    countSupabaseRows(supabase, 'assignments', (q) => q.eq('owner_id', userId)),
+    countSupabaseRows(supabase, 'terms', (q) => q.eq('owner_id', userId)),
+    countSupabaseRows(supabase, 'support_tickets', (q) => q.eq('requester_id', userId).neq('status', 'closed')),
+  ]);
+  return { assignments, terms, openTickets: tickets };
+}
+
+const CORRECTION_RE = /^(?:no|nope|nah)\b[\s,!.?]*(?:i\s+)?(?:meant|said|asked)\b[\s:,-]*(.+)$/i;
+const FOLLOWUP_CUE_RE =
+  /^(?:what|how)\s+about\b|^and\s+\S|^what\s+else\b|^continue\b|^give\s+me\s+an?\s+example\b|^tell\s+me\s+more\b|^explain\s+(?:that|it)\s+again\b|^make\s+it\s+simpler\b|^what\s+did\s+you\s+mean\b|^compare\b/i;
+const FOLLOWUP_MAX_WORDS = 3;
+const PRODUCT_RE =
+  /^(?:what\s+is\s+voxrelay|what\s+does\s+voxrelay\s+do|tell\s+me\s+about\s+voxrelay|about\s+voxrelay)\s*[?!.]*$/i;
+const BROAD_DOMAIN_FILLER_RE =
+  /^(?:can\s+you\s+)?(?:please\s+)?(?:help\s+me\s+(?:with|understand)|tell\s+me\s+about|what\s+(?:is|are)|i\s+(?:want|would)\s+to\s+know\s+about|explain|what\s+about)\s+(?:the\s+)?/i;
+const BROAD_DOMAIN_TOPIC_RE = /^(?:an?\s+)?interpreters?$|^interpreting$|^interpreter\s+help$|^interpreters?\s+work$/i;
+
+function knowledgeEntryById(id) {
+  return KNOWLEDGE_BASE.find((entry) => entry.id === id) || null;
+}
+
+function entryLines(entry, lang, max) {
+  return (entry.bullets?.[lang] || entry.bullets?.en || [entry.summary[lang] || entry.summary.en])
+    .slice(0, max)
+    .map((b) => `- ${b}`)
+    .join('\n');
+}
+
+export function isBroadDomainQuery(sanitized) {
+  const stripped = String(sanitized || '')
+    .replace(/[!.?]+$/, '')
+    .replace(BROAD_DOMAIN_FILLER_RE, '')
+    .trim();
+  return BROAD_DOMAIN_TOPIC_RE.test(stripped);
+}
+
+function broadDomainAnswer(lang) {
+  if (lang === 'ar') {
+    return {
+      text:
+        '### الترجمة التفسيرية — ما يمكنني المساعدة فيه\n\n- **مساحة عمل VOXRELAY:** المهمام والجدولة (KB-02)، المصطلحات والقاموس (KB-03)، استيراد التقويم (KB-04)، سياسة المساعدة (KB-05)، الفوترة (KB-06)، جهوزية الجهاز (KB-07)، والحصول على الدعم (KB-08).\n- **حدود الخصوصية:** ما لا يفعله VOXRELAY أبدًا (KB-01).\n- **مواضيع مهنة الترجمة التفسيرية** (التقنيات، التفسير التتابعي والفوري، الأخلاقيات، التخصصات الطبية والقانونية): قاعدة المعرفة المدمجة لا تتضمن بعدُ صفحات موثقة عن هذه المواضيع — اسأل عن ميزة محددة أعلاه، أو استخدم وضع **البحث** للتحضير قبل الجلسة، أو اصعد إلى الدعم البشري.\n\nبأي مجال تريد أن نبدأ؟',
+      citations: KNOWLEDGE_BASE.map((entry) => ({ id: entry.id, title: entry.title.en, href: entry.href })),
+    };
+  }
+  if (lang === 'bn') {
+    return {
+      text:
+        '### ইন্টারপ্রিটিং — আমি যেসব ক্ষেত্রে সাহায্য করতে পারি\n\n- **VOXRELAY ওয়ার্কস্পেস:** অ্যাসাইনমেন্ট ও শিডিউল (KB-02), টার্মিনোলজি ও গ্লসারি (KB-03), ক্যালেন্ডার ইম্পোর্ট (KB-04), অ্যাসিস্ট্যান্স পলিসি (KB-05), বিলিং (KB-06), ডিভাইস রেডিনেস (KB-07), এবং সাপোর্ট (KB-08)।\n- **প্রাইভেসি সীমানা:** VOXRELAY কখনই যা করে না (KB-01)।\n- **ইন্টারপ্রিটিং পেশার বিষয়** (কৌশল, consecutive ও simultaneous interpreting, নৈতিকতা, মেডিকেল/লিগ্যাল বিশেষায়িত ক্ষেত্র): নির্মিত নলেজ বেসে এগুলোর যাচাই করা পাতা এখনো নেই — উপরের কোনো নির্দিষ্ট ফিচার সম্পর্কে জিজ্ঞাসা করুন, সেশনের আগে **Research** মোড ব্যবহার করুন, বা মানব সহায়তায় এস্কেলেট করুন।\n\nকোন ক্ষেত্র দিয়ে শুরু করতে চান?',
+      citations: KNOWLEDGE_BASE.map((entry) => ({ id: entry.id, title: entry.title.en, href: entry.href })),
+    };
+  }
+  return {
+    text:
+      '### Interpreting — what I can help with\n\n- **VOXRELAY workspace:** assignments & scheduling (KB-02), terminology & glossaries (KB-03), calendar import (KB-04), assistance policy tiers (KB-05), billing (KB-06), device readiness (KB-07), and getting support (KB-08).\n- **Privacy boundaries:** what VOXRELAY never does (KB-01).\n- **Interpreting-domain topics** (techniques, consecutive vs simultaneous, ethics, medical/legal specialties): the built-in knowledge base does not yet include verified pages on these — ask me about a specific workspace feature above, use **Research** mode for pre-session preparation on a named topic, or escalate to human support.\n\nWhich area would you like to start with?',
+    citations: KNOWLEDGE_BASE.map((entry) => ({ id: entry.id, title: entry.title[lang] || entry.title.en, href: entry.href })),
+  };
+}
+
+function productAnswer(lang) {
+  const entry = knowledgeEntryById('KB-01');
+  if (!entry) return null;
+  const title = entry.title[lang] || entry.title.en;
+  const summary = entry.summary[lang] || entry.summary.en;
+  const lines = entryLines(entry, lang, 3);
+  return {
+    text: `### ${title}\n\n${summary}\n\n${lines}`,
+    citations: [{ id: entry.id, title, href: entry.href }],
+  };
+}
+
+export function resolveConversationQuery(sanitized, history = []) {
+  const lastUser = [...(Array.isArray(history) ? history : [])].reverse().find((m) => m?.role === 'user' && m.text);
+  if (!lastUser) return { query: sanitized, kind: 'standalone' };
+  const lastText = redactPii(lastUser.text);
+  const correction = sanitized.match(CORRECTION_RE);
+  if (correction && correction[1]?.trim()) return { query: correction[1].trim(), kind: 'correction' };
+  const wordCount = sanitized.split(/\s+/).filter(Boolean).length;
+  if (wordCount <= FOLLOWUP_MAX_WORDS || FOLLOWUP_CUE_RE.test(sanitized)) {
+    return { query: `${lastText} ${sanitized}`, kind: 'followup' };
+  }
+  return { query: sanitized, kind: 'standalone' };
+}
+
+export async function runAssistantStream({
+  mode = 'ask',
+  question,
+  locale = 'en',
+  db,
+  supabase = null,
+  userId,
+  role = null,
+  history = [],
+  emit,
+}) {
   const sanitized = redactPii(question).trim();
   const lang = locale === 'ar' ? 'ar' : locale === 'bn' ? 'bn' : 'en';
+  const safeHistory = (Array.isArray(history) ? history : [])
+    .slice(-4)
+    .map((m) => ({
+      role: m?.role === 'user' ? 'user' : 'assistant',
+      text: redactPii(String(m?.text || '')).slice(0, 300),
+    }))
+    .filter((m) => m.text);
 
   if (!sanitized) {
     emit({
@@ -94,11 +206,29 @@ export async function runAssistantStream({ mode = 'ask', question, locale = 'en'
   if (IDENTITY_RE.test(sanitized)) {
     const identityText =
       lang === 'ar'
-        ? '### مساعد عمل VOXRELAY\n\n- **الاسم:** مساعد عمل VOXRELAY (Grounded KB).\n- **المهام:** المساعدة في الجدولة واستيراد `.ics`، فحص الجهاز، القاموس، وقواعد الخصوصية.\n- **حدود الأمان:** لا أسجل الصوت ولا أترجم المحادثات الحية (المستوى T3 للبشر فقط).'
+        ? '### فوكس — مساعد VOXRELAY\n\n- **من أنا:** فوكس، المساعد المدمج في مساحة عمل VOXRELAY للمترجمين الفوريين.\n- **ما يمكنني فعله:**\n  - الإجابة عن الأسئلة المدعومة من قاعدة المعرفة المعتمدة — قواعد الخصوصية (KB-01)، سير عمل المهام (KB-02)، المصطلحات والقاموس (KB-03)، استيراد التقويم (KB-04)، سياسة المساعدة (KB-05)، الفوترة (KB-06)، جهوزية الجهاز (KB-07)، والدعم (KB-08) — مع ذكر المصادر.\n  - إعداد ملخصات التحضير والمصطلحات المقترحة في وضع **البحث**.\n  - قراءة سجلاتك الخاصة (المهام، المصطلحات، التذاكر المفتوحة) عند السؤال عنها.\n- **ما لا يمكنني فعله:** تسجيل الصوت، أو الترجمة الفورية للجلسات الحية (المستوى T3 للبشر فقط)، أو تقديم نصائح طبية أو قانونية، أو حجز المترجمين، أو التواصل مع المؤسسات نيابةً عنك.\n- **قاعدة الأمانة:** عندما لا أملك معلومات موثوقة أقول ذلك بدلاً من التخمين.'
         : lang === 'bn'
-          ? '### VOXRELAY কর্মক্ষেত্র সহকারী\n\n- **নাম:** VOXRELAY কর্মক্ষেত্র সহকারী (Grounded KB)।\n- **কাজ:** সময়সূচী ও `.ics` আমদানি, ডিভাইস পরীক্ষা, পরিভাষা এবং গোপনীয়তা নীতিতে সাহায্য করা।\n- **সীমা:** আমি কোনো অডিও রেকর্ড করি না বা লাইভ অনুবাদ করি না (T3 মানব-বিচারসীমা)।'
-          : "### VOXRELAY Work Assistant\n\n- **Name:** VOXRELAY Work Assistant (grounded workspace & KB helper).\n- **How I help:** Scheduling & `.ics` imports, terminology prep, device readiness, and T0–T3 privacy rules.\n- **Safety boundary:** Zero audio recording and no live translation (T3 human-only).";
+          ? '### ভক্স — VOXRELAY সহকারী\n\n- **আমি কে:** ভক্স, VOXRELAY ইন্টারপ্রেটার ওয়ার্কস্পেসের অন্তর্নির্মিত সহকারী।\n- **যা করতে পারি:**\n  - অনুমোদিত নলেজ বেস থেকে উত্তর — প্রাইভেসি নিয়ম (KB-01), অ্যাসাইনমেন্ট ওয়ার্কফ্লো (KB-02), টার্মিনোলজি ও গ্লসারি (KB-03), ক্যালেন্ডার ইম্পোর্ট (KB-04), অ্যাসিস্ট্যান্স পলিসি (KB-05), বিলিং (KB-06), ডিভাইস রেডিনেস (KB-07), এবং সাপোর্ট (KB-08) — সূত্রসহ।\n  - **Research** মোডে সেশন-পূর্ব প্রস্তুতির সারসংক্ষেপ ও প্রস্তাবিত টার্ম তৈরি।\n  - আপনার নিজের ওয়ার্কস্পেস রেকর্ড (অ্যাসাইনমেন্ট, গ্লসারি টার্ম, খোলা টিকিট) পড়া, জিজ্ঞাসা করলে।\n- **যা করতে পারি না:** অডিও রেকর্ড করা, লাইভ সেশন অনুবাদ করা (T3 মানব-বিচারসীমা), মেডিকেল বা লিগ্যাল পরামর্শ, ইন্টারপ্রেটার বুক করা, বা আপনার হয়ে সংস্থার সঙ্গে যোগাযোগ।\n- **সততার নিয়ম:** নির্ভরযোগ্য তথ্য না থাকলে আন্দাজ না করে সেটাই বলি।'
+          : "### Vox — the VOXRELAY assistant\n\n- **Who I am:** Vox, the built-in assistant of the VOXRELAY interpreter workspace.\n- **What I can do:**\n  - Answer grounded questions from the approved knowledge base — privacy rules (KB-01), assignments workflow (KB-02), terminology & glossaries (KB-03), calendar import (KB-04), assistance policy (KB-05), billing (KB-06), device readiness (KB-07), and support (KB-08) — with citations.\n  - Build pre-session prep briefs and suggested glossary terms in **Research** mode.\n  - Read your own workspace records (assignments, glossary terms, open tickets) when you ask about them.\n- **What I can't do:** record audio, interpret or translate live sessions (T3 human-only), give medical or legal advice, book interpreters, or contact organizations on your behalf.\n- **Honesty rule:** when I don't have reliable information, I say so instead of guessing.";
     emit({ type: 'delta', text: identityText });
+    emit({ type: 'quick_chips', show: true });
+    return;
+  }
+
+  if (PRODUCT_RE.test(sanitized)) {
+    const product = productAnswer(lang);
+    if (product) {
+      emit({ type: 'delta', text: product.text });
+      emit({ type: 'citations', items: product.citations });
+      emit({ type: 'quick_chips', show: true });
+      return;
+    }
+  }
+
+  if (mode === 'ask' && isBroadDomainQuery(sanitized)) {
+    const broad = broadDomainAnswer(lang);
+    emit({ type: 'delta', text: broad.text });
+    emit({ type: 'citations', items: broad.citations });
     emit({ type: 'quick_chips', show: true });
     return;
   }
@@ -118,10 +248,10 @@ export async function runAssistantStream({ mode = 'ask', question, locale = 'en'
 
     const greetingText =
       lang === 'ar'
-        ? 'مرحباً! أنا مساعد عمل VOXRELAY. كيف يمكنني مساعدتك اليوم؟ يمكنك سؤالي عن الجدولة واستيراد .ics، الخصوصية وعدم التسجيل، فحص الجهاز، أو مستويات T0–T3 — أو اختيار موضوع سريع أدناه.'
+        ? 'مرحباً! أنا فوكس، مساعد VOXRELAY. كيف يمكنني مساعدتك اليوم؟ يمكنك سؤالي عن الجدولة واستيراد .ics، الخصوصية وعدم التسجيل، فحص الجهاز، أو مستويات T0–T3 — أو اختيار موضوع سريع أدناه.'
         : lang === 'bn'
-          ? 'হ্যালো! আমি VOXRELAY কর্মক্ষেত্র সহকারী। সময়সূচী ও .ics আমদানি, গোপনীয়তা, ডিভাইস পরীক্ষা, বা T0–T3 নীতি সম্পর্কে প্রশ্ন করুন বা নিচের যেকোনো বিষয়ে ক্লিক করুন।'
-          : "Hello! I'm the VOXRELAY Work Assistant. How can I help you today? Pick a quick topic below or ask about scheduling, privacy, device readiness, or billing.";
+          ? 'হ্যালো! আমি ভক্স, VOXRELAY সহকারী। সময়সূচী ও .ics আমদানি, গোপনীয়তা, ডিভাইস পরীক্ষা, বা T0–T3 নীতি সম্পর্কে প্রশ্ন করুন বা নিচের যেকোনো বিষয়ে ক্লিক করুন।'
+          : "Hello! I'm Vox, the VOXRELAY assistant. How can I help you today? Pick a quick topic below or ask about scheduling, privacy, device readiness, or billing.";
     emit({ type: 'delta', text: greetingText });
     emit({ type: 'quick_chips', show: true });
     return;
@@ -214,16 +344,18 @@ export async function runAssistantStream({ mode = 'ask', question, locale = 'en'
     return;
   }
 
-  // Ask mode: grounded KB + workspace records
-  const kbScored = searchKnowledgeBaseWithScores(sanitized, lang, 2);
+  // Ask mode: grounded KB (with conversation-resolved retrieval) + workspace records
+  const resolved = resolveConversationQuery(sanitized, safeHistory);
+  const kbScored = searchKnowledgeBaseWithScores(resolved.query, lang, 2);
   const kbMatches = kbScored.map((s) => s.entry);
   const topScore = kbScored[0]?.score ?? 0;
   const weakMatch = kbMatches.length > 0 && topScore < KB_STRONG_MATCH_THRESHOLD;
+  const ambiguousMatch = kbScored.filter((s) => s.score === topScore).length > 1;
   let snapshot = null;
-  let workspaceReadFailed = Boolean(userId && !db);
+  let workspaceReadFailed = Boolean(userId && !db && !supabase);
   if (!workspaceReadFailed) {
     try {
-      snapshot = buildWorkspaceSnapshot({ db, userId });
+      snapshot = await buildWorkspaceSnapshot({ db, supabase, userId });
     } catch {
       workspaceReadFailed = true;
     }
@@ -232,8 +364,10 @@ export async function runAssistantStream({ mode = 'ask', question, locale = 'en'
   if (kbMatches.length === 0) {
     const ungrounded =
       lang === 'ar'
-        ? 'لم أجد إجابة موثقة لهذا السؤال في قاعدة معرفة VOXRELAY. يمكنك تصعيد السؤال إلى الدعم البشري أدناه.'
-        : "I couldn't find a verified answer for that in the VOXRELAY knowledge base. You can escalate this directly to human support below.";
+        ? 'لا أجد معلومات موثوقة عن هذا الموضوع في قاعدة معرفة VOXRELAY، لذلك لن أخمّن إجابة. ما يمكنني المساعدة فيه بدلاً من ذلك: قواعد الخصوصية وما لا يفعله VOXRELAY أبدًا، سير عمل المهام، المصطلحات والقاموس، استيراد التقويم، سياسة المساعدة، الفوترة، جهوزية الجهاز، والحصول على الدعم. يمكنك أيضًا إعادة السؤال بمصطلح أكثر تحديدًا، أو استخدام وضع **البحث** للتحضير قبل الجلسة، أو فتح تذكرة دعم أدناه ليتابعها فريق بشري.'
+        : lang === 'bn'
+          ? 'VOXRELAY নলেজ বেসে এই বিষয়ে নির্ভরযোগ্য তথ্য এখন নেই, তাই আন্দাজ করে উত্তর দেব না। এর বদলে আমি সাহায্য করতে পারি: প্রাইভেসি নিয়ম ও VOXRELAY কখনই যা করে না, অ্যাসাইনমেন্ট ওয়ার্কফ্লো, টার্মিনোলজি ও গ্লসারি, ক্যালেন্ডার ইম্পোর্ট, অ্যাসিস্ট্যান্স পলিসি, বিলিং, ডিভাইস রেডিনেস, এবং সাপোর্ট পাওয়া। আরও নির্দিষ্ট শব্দ দিয়ে আবার জিজ্ঞাসা করতে পারেন, সেশন-পূর্ব প্রস্তুতির জন্য **Research** মোড ব্যবহার করতে পারেন, অথবা নিচে সাপোর্ট টিকিট খুলতে পারেন — মানব টিম অনুসরণ করবে।'
+          : "I don't have verified information on that in the VOXRELAY knowledge base, so I won't guess. What I can help with instead: privacy rules and what VOXRELAY never does, the assignments workflow, terminology and glossaries, calendar import, the assistance policy, billing, device readiness, and getting support. You can also rephrase with a more specific term, use **Research** mode for pre-session prep, or open a support ticket below for a human follow-up.";
     emit({ type: 'delta', text: ungrounded });
     emit({ type: 'citations', items: [] });
     emit({ type: 'offer_ticket', reason: 'ungrounded' });
@@ -272,7 +406,20 @@ export async function runAssistantStream({ mode = 'ask', question, locale = 'en'
         : '\n\n- **Note:** this is the closest related topic in the VOXRELAY knowledge base — if it does not answer your question, you can escalate to human support below.'
     : '';
 
-  const structuredFallback = `### ${topTitle} [${top.id}]\n${topBullets}` + workspaceNote + weakMatchNote;
+  const bnFallbackNote =
+    lang === 'bn' && !top.bullets?.bn && !top.summary?.bn
+      ? 'তথ্য: এই বিষয়ের নির্ভরযোগ্য তথ্য এখন ইংরেজিতে আছে (প্রযুক্তিগত শব্দ ইংরেজিতেই থাকবে)।\n\n'
+      : '';
+
+  const ambiguousNote = ambiguousMatch
+    ? lang === 'ar'
+      ? '\n\n- **ملاحظة:** سؤالك يتعلق بأكثر من موضوع واحد هنا — أخبرني أيّها تقصد، أو اطلب تفاصيل أكثر عن أحدها.'
+      : lang === 'bn'
+        ? '\n\n- **নোট:** আপনার প্রশ্ন এখানে একাধিক বিষয়ের সঙ্গে মেলে — কোনটি বুঝিয়েছেন বলুন, বা আরও বিস্তারিত জিজ্ঞাসা করুন।'
+        : '\n\n- **Note:** your question matches more than one knowledge-base topic — tell me which one you meant, or ask about one of them in more detail.'
+    : '';
+
+  const structuredFallback = bnFallbackNote + `### ${topTitle} [${top.id}]\n${topBullets}` + workspaceNote + weakMatchNote + ambiguousNote;
 
   const answerText = structuredFallback;
 

@@ -279,6 +279,10 @@ export function AssistantDock({
             mode: runMode,
             locale,
             route: pathname,
+            history: messages
+              .filter((m) => m.id !== assistantId && m.id !== userId && m.text)
+              .slice(-4)
+              .map((m) => ({ role: m.role, text: m.text.slice(0, 500) })),
           }),
         });
 
@@ -393,7 +397,7 @@ export function AssistantDock({
         }
       }
     },
-    [isAr, locale, mode, pathname, session, sessionUserId, streaming]
+    [isAr, locale, messages, mode, pathname, session, sessionUserId, streaming]
   );
 
   useEffect(() => {

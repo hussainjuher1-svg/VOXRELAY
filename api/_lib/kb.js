@@ -218,14 +218,51 @@ const STOP_WORDS = new Set([
   'في', 'من', 'على', 'إلى', 'عن', 'ما', 'هل', 'كيف', 'أو', 'مع', 'هذا', 'هذه',
 ]);
 
+// Bengali topic words mapped to canonical English KB keywords, so Bengali-script
+// questions reach the same grounded entries instead of returning zero matches.
+const BILINGUAL_TOKEN_MAP = new Map([
+  ['বিলিং', 'billing'],
+  ['বিল', 'billing'],
+  ['পেমেন্ট', 'pay'],
+  ['ফি', 'rate'],
+  ['প্রাইভেসি', 'privacy'],
+  ['গোপনীয়তা', 'privacy'],
+  ['রেকর্ড', 'record'],
+  ['রেকর্ডিং', 'recording'],
+  ['অনুবাদ', 'translate'],
+  ['দোভাষী', 'interpret'],
+  ['ইন্টারপ্রেটার', 'interpret'],
+  ['অ্যাসাইনমেন্ট', 'assignment'],
+  ['সময়সূচি', 'schedule'],
+  ['টার্মিনোলজি', 'terminology'],
+  ['গ্লসারি', 'glossary'],
+  ['শব্দকোষ', 'glossary'],
+  ['শব্দ', 'term'],
+  ['ক্যালেন্ডার', 'calendar'],
+  ['ইম্পোর্ট', 'import'],
+  ['টাইমজোন', 'timezone'],
+  ['ডিভাইস', 'device'],
+  ['মাইক্রোফোন', 'microphone'],
+  ['হেডফোন', 'audio'],
+  ['ইন্টারনেট', 'network'],
+  ['ক্যামেরা', 'camera'],
+  ['অডিও', 'audio'],
+  ['সাপোর্ট', 'support'],
+  ['সহায়তা', 'support'],
+  ['টিকিট', 'ticket'],
+  ['লগইন', 'login'],
+  ['অ্যাকাউন্ট', 'account'],
+]);
+
 export const KB_STRONG_MATCH_THRESHOLD = 8;
 
 export function searchKnowledgeBaseWithScores(query, locale = 'en', limit = 4) {
   const q = String(query || '').toLowerCase().trim();
   if (!q) return KNOWLEDGE_BASE.slice(0, limit).map((entry) => ({ entry, score: 0 }));
   const tokens = q
-    .split(/[^\p{L}\p{N}.-]+/u)
-    .filter((t) => t.length >= 2 && !STOP_WORDS.has(t));
+    .split(/[^\p{L}\p{N}\p{M}.-]+/u)
+    .filter((t) => t.length >= 2 && !STOP_WORDS.has(t))
+    .map((t) => BILINGUAL_TOKEN_MAP.get(t) || t);
   if (tokens.length === 0) return [];
   const scored = KNOWLEDGE_BASE.map((entry) => {
     const title = (entry.title[locale] || entry.title.en).toLowerCase();
