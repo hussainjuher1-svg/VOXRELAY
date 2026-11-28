@@ -6,6 +6,8 @@ import { Button } from './ui/Button';
 import { Badge } from './ui/Primitives';
 import '../workspace.css';
 
+class AssistantRequestError extends Error {}
+
 interface Citation {
   id: string;
   title: string;
@@ -283,6 +285,16 @@ export function AssistantDock({
         if (activeRequestRef.current !== request) return;
 
         if (!res.ok || !res.body) {
+          let serverMessage = '';
+          try {
+            const body = await res.json();
+            if (typeof body?.error === 'string' && body.error.trim()) serverMessage = body.error.trim();
+          } catch {
+            serverMessage = '';
+          }
+          if (serverMessage) {
+            throw new AssistantRequestError(serverMessage);
+          }
           throw new Error('Assistant request failed');
         }
 
@@ -355,17 +367,20 @@ export function AssistantDock({
             }
           }
         }
-      } catch {
+      } catch (err) {
         if (activeRequestRef.current === request) {
+          const serverMessage = err instanceof AssistantRequestError ? err.message : '';
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantId
                 ? {
                     ...m,
-                    text: isAr
-                      ? 'تعذر الاتصال بالمساعد حالياً. يمكنك فتح تذكرة دعم بشري مباشرة.'
-                      : 'Unable to reach the assistant right now. You can open a human support ticket directly.',
-                    escalate: true,
+                    text:
+                      serverMessage ||
+                      (isAr
+                        ? 'تعذر الاتصال بالمساعد حالياً. يمكنك فتح تذكرة دعم بشري مباشرة.'
+                        : 'Unable to reach the assistant right now. You can open a human support ticket directly.'),
+                    escalate: !(err instanceof AssistantRequestError),
                   }
                 : m
             )

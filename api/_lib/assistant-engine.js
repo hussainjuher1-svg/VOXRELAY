@@ -1,4 +1,6 @@
 import crypto from 'node:crypto';
+import { matchTopic } from './assistant.js';
+import { can } from './authz.js';
 import { KB_STRONG_MATCH_THRESHOLD, searchKnowledgeBase, searchKnowledgeBaseWithScores } from './kb.js';
 
 export function redactPii(text) {
@@ -72,7 +74,7 @@ export function buildWorkspaceSnapshot({ db, userId }) {
   return { assignments, terms, openTickets };
 }
 
-export async function runAssistantStream({ mode = 'ask', question, locale = 'en', db, userId, emit }) {
+export async function runAssistantStream({ mode = 'ask', question, locale = 'en', db, userId, role = null, emit }) {
   const sanitized = redactPii(question).trim();
   const lang = locale === 'ar' ? 'ar' : locale === 'bn' ? 'bn' : 'en';
 
@@ -152,6 +154,19 @@ export async function runAssistantStream({ mode = 'ask', question, locale = 'en'
       items: kbMatches.map((m) => ({ id: m.id, title: m.title[lang] || m.title.en, href: m.href })),
     });
     emit({ type: 'offer_ticket', reason: 'user_requested' });
+    return;
+  }
+
+  if (role && !can(role, 'ops.org.view') && matchTopic(sanitized) === 'org_overview') {
+    const refusalText =
+      lang === 'ar'
+        ? 'بيانات المؤسسة (الفريق، الجودة، إعدادات المؤسسة) متاحة فقط للمنسّقين والمسؤولين. يمكنني مساعدتك في مهامك ومصطلحاتك وفواتيرك وتحضير جلستك، أو يمكنك التصعيد إلى الدعم البشري أدناه.'
+        : lang === 'bn'
+          ? 'সংস্থার স্তরের রেকর্ড (টিম, কোয়ালিটি, সংস্থার সেটিংস) শুধু কোঅর্ডিনেটর ও অ্যাডমিনদের জন্য। আমি আপনার নিজের অ্যাসাইনমেন্ট, গ্লসারি, বিলিং ও প্রস্তুতিতে সাহায্য করতে পারি, অথবা আপনি নিচে মানব সহায়তায় এস্কেলেট করতে পারেন।'
+          : 'Organization-level records (team, quality, org settings) are restricted to coordinators and admins. I can help with your own assignments, glossary, billing, and session prep — or escalate to human support below.';
+    emit({ type: 'delta', text: refusalText });
+    emit({ type: 'refusal', code: 'role_refused', topic: 'org_overview' });
+    emit({ type: 'offer_ticket', reason: 'role_scope' });
     return;
   }
 
@@ -271,6 +286,13 @@ export async function runAssistantStream({ mode = 'ask', question, locale = 'en'
 
 export function hashQuestion(q) {
   return crypto.createHash('sha256').update(String(q || '')).digest('hex').slice(0, 16);
+}
+
+export function assistantRateLimitMessage(locale = 'en') {
+  const lang = locale === 'ar' ? 'ar' : locale === 'bn' ? 'bn' : 'en';
+  if (lang === 'ar') return 'طلبات كثيرة جدًا. يرجى الانتظار قليلًا ثم المحاولة مرة أخرى.';
+  if (lang === 'bn') return 'অতিরিক্ত অনুরোধ। কিছুক্ষণ অপেক্ষা করে আবার চেষ্টা করুন।';
+  return 'Too many requests. Please wait a moment and try again.';
 }
 
 export function assistantServiceErrorMessage(locale = 'en') {
