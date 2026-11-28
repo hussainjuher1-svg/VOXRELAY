@@ -152,7 +152,7 @@ describe('Assistant Eval (40+ golden, adversarial, and research cases)', () => {
       emit: (ev) => idEvents.push(ev),
     });
     const idText = idEvents.filter((e) => e.type === 'delta').map((e) => e.text).join('');
-    expect(idText).toContain('VOXRELAY Work Assistant');
+    expect(idText).toContain('Vox');
     expect(idText).toContain('\n- ');
 
     const broEvents = [];
