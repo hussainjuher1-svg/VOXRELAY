@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { resolveActor } from './_lib/auth-session.js';
-import { hashQuestion, runAssistantStream } from './_lib/assistant-engine.js';
+import { assistantServiceErrorMessage, hashQuestion, runAssistantStream } from './_lib/assistant-engine.js';
 import { HttpError } from './_lib/authz.js';
 import { readJsonBody, sendJson } from './_lib/core.js';
 import { getLocalDb } from './_lib/local-db.js';
@@ -58,8 +58,8 @@ export default async function handler(req, res) {
         emit,
       });
       emit({ type: 'done' });
-    } catch (err) {
-      emit({ type: 'error', message: err?.message || 'Assistant stream failed.' });
+    } catch {
+      emit({ type: 'error', message: assistantServiceErrorMessage(parsed.data.locale) });
     } finally {
       res.end();
     }
@@ -81,8 +81,8 @@ export default async function handler(req, res) {
       emit,
     });
     emit({ type: 'done' });
-  } catch (err) {
-    emit({ type: 'error', message: err?.message || 'Assistant stream failed.' });
+  } catch {
+    emit({ type: 'error', message: assistantServiceErrorMessage(parsed.data.locale) });
   } finally {
     res.end();
   }

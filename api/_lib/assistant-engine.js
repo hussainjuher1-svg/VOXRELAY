@@ -201,7 +201,15 @@ export async function runAssistantStream({ mode = 'ask', question, locale = 'en'
 
   // Ask mode: grounded KB + workspace records + optional Anthropic provider
   const kbMatches = searchKnowledgeBase(sanitized, lang, 2);
-  const snapshot = buildWorkspaceSnapshot({ db, userId });
+  let snapshot = null;
+  let workspaceReadFailed = Boolean(userId && !db);
+  if (!workspaceReadFailed) {
+    try {
+      snapshot = buildWorkspaceSnapshot({ db, userId });
+    } catch {
+      workspaceReadFailed = true;
+    }
+  }
 
   if (kbMatches.length === 0) {
     const ungrounded =
@@ -221,13 +229,24 @@ export async function runAssistantStream({ mode = 'ask', question, locale = 'en'
     .map((b) => `- ${b}`)
     .join('\n');
 
-  const structuredFallback =
-    `### ${topTitle} [${top.id}]\n${topBullets}` +
-    (userId
-      ? lang === 'ar'
-        ? `\n\n- **مساحتك الحالية:** ${snapshot.assignments} مهام · ${snapshot.terms} مصطلحات · ${snapshot.openTickets} تذاكر`
-        : `\n\n- **Your workspace:** ${snapshot.assignments} assignments · ${snapshot.terms} terms · ${snapshot.openTickets} open tickets`
-      : '');
+  let workspaceNote = '';
+  if (userId) {
+    if (workspaceReadFailed) {
+      workspaceNote =
+        lang === 'ar'
+          ? '\n\n- **بيانات مساحتك:** غير متوفرة حالياً — تعذّر قراءة سجلاتك.'
+          : lang === 'bn'
+            ? '\n\n- **আপনার ওয়ার্কস্পেস:** সাময়িকভাবে অনুপলব্ধ — রেকর্ড পড়া যায়নি।'
+            : '\n\n- **Your workspace:** temporarily unavailable — your records could not be read right now.';
+    } else {
+      workspaceNote =
+        lang === 'ar'
+          ? `\n\n- **مساحتك الحالية:** ${snapshot.assignments} مهام · ${snapshot.terms} مصطلحات · ${snapshot.openTickets} تذاكر`
+          : `\n\n- **Your workspace:** ${snapshot.assignments} assignments · ${snapshot.terms} terms · ${snapshot.openTickets} open tickets`;
+    }
+  }
+
+  const structuredFallback = `### ${topTitle} [${top.id}]\n${topBullets}` + workspaceNote;
 
   const answerText = structuredFallback;
 
@@ -236,8 +255,16 @@ export async function runAssistantStream({ mode = 'ask', question, locale = 'en'
     type: 'citations',
     items: kbMatches.map((m) => ({ id: m.id, title: m.title[lang] || m.title.en, href: m.href })),
   });
+  if (workspaceReadFailed) emit({ type: 'unavailable', reason: 'workspace_read' });
 }
 
 export function hashQuestion(q) {
   return crypto.createHash('sha256').update(String(q || '')).digest('hex').slice(0, 16);
+}
+
+export function assistantServiceErrorMessage(locale = 'en') {
+  const lang = locale === 'ar' ? 'ar' : locale === 'bn' ? 'bn' : 'en';
+  if (lang === 'ar') return 'خدمة المساعد غير متوفرة مؤقتاً. يرجى المحاولة مرة أخرى.';
+  if (lang === 'bn') return 'সহকারী পরিষেবা সাময়িকভাবে অনুপলব্ধ। অনুগ্রহ করে আবার চেষ্টা করুন।';
+  return 'The assistant service is temporarily unavailable. Please try again.';
 }
